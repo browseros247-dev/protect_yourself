@@ -71,10 +71,15 @@ class NopoXApp : KillerApplication(), LifecycleObserver {
         protect.yourself.commons.utils.PackageManagerProvider.init(this)
 
         // 6. Phase 3+: Accessibility self-heal + guard
-        // AccessibilityPersistUtils.selfHealSafe()
-        // AccessibilityGuard.startWatching(AppCtx)
+        protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe()
+        try {
+            protect.yourself.features.protectedApps.AccessibilityGuard.getInstance()
+                .startWatching(this)
+        } catch (t: Throwable) {
+            Timber.w(t, "Failed to start AccessibilityGuard")
+        }
 
-        // 7. Schedule periodic data check worker
+        // 7. Schedule periodic data check worker + daily report worker
         protect.yourself.commons.utils.workManager.WorkerUtils.getInstance()
             .initAppDataCheckWorker(this)
 

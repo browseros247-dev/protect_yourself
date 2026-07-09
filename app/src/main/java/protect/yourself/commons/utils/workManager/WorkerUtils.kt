@@ -43,8 +43,43 @@ class WorkerUtils {
                 request
             )
             Timber.i("AppDataCheckWorker scheduled (every 24h)")
+
+            // Schedule daily report worker (runs at ~9 AM each day)
+            initDailyReportWorker(context)
         } catch (t: Throwable) {
             Timber.e(t, "Failed to schedule AppDataCheckWorker")
+        }
+    }
+
+    /**
+     * Initialize the periodic DailyReportWorker.
+     * Runs every 24 hours, shows daily summary notification.
+     */
+    private fun initDailyReportWorker(context: Context) {
+        try {
+            protect.yourself.commons.utils.notificationUtils.NotificationHelper
+                .createAllChannels(context)
+
+            val constraints = Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
+                .setRequiresBatteryNotLow(false)
+                .build()
+
+            val request = PeriodicWorkRequestBuilder<DailyReportWorker>(
+                24, TimeUnit.HOURS
+            )
+                .setConstraints(constraints)
+                .setInitialDelay(1, TimeUnit.HOURS) // delay first run by 1 hour
+                .build()
+
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                DailyReportWorker.WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                request
+            )
+            Timber.i("DailyReportWorker scheduled (every 24h)")
+        } catch (t: Throwable) {
+            Timber.e(t, "Failed to schedule DailyReportWorker")
         }
     }
 
