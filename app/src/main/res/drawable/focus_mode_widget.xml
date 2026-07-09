@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <!-- Orange gradient focus widget preview -->
+    <path
+        android:fillColor="#FFFF9900"
+        android:pathData="M0,0h120v120h-120z" />
+    <path
+        android:fillColor="#FFFF7100"
+        android:pathData="M0,60 L120,0 L120,120 L0,120 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M60,30 L70,55 L95,55 L75,70 L82,95 L60,80 L38,95 L45,70 L25,55 L50,55 Z" />
+</vector>

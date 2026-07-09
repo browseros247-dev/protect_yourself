@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Block screen layout (matches original page_porn_block.xml minus AdMob banner + PU promo banner) -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_blue_dark">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:animateLayoutChanges="true">
+
+        <!-- App logo + name header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:padding="16dp">
+
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@mipmap/ic_launcher"
+                android:visibility="visible" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="@string/app_name"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:textColor="@color/white"
+                android:fontFamily="@font/nunito_bold"
+                android:gravity="center"
+                android:visibility="visible" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="8dp" />
+
+        <!-- Optional motivation image (user-uploaded in Settings) -->
+        <ImageView
+            android:id="@+id/imgMotivation"
+            android:layout_width="200dp"
+            android:layout_height="200dp"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone" />
+
+        <!-- Block message -->
+        <TextView
+            android:id="@+id/txtPageMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:text="@string/block_page_default_message"
+            android:textSize="24sp"
+            android:textColor="@color/white"
+            android:fontFamily="@font/nunito_semibold"
+            android:gravity="center"
+            android:visibility="visible" />
+
+        <!-- Optional rating prompt (shown after N blocks) -->
+        <LinearLayout
+            android:id="@+id/llRatingContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="16dp"
+            android:orientation="vertical"
+            android:paddingTop="36dp"
+            android:paddingBottom="16dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/txtRatingMessage"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/play_store_rating_message"
+                android:textSize="18sp"
+                android:textColor="@color/white"
+                android:fontFamily="@font/nunito_semibold"
+                android:gravity="center"
+                android:letterSpacing="0.03"
+                android:lineSpacingExtra="6sp" />
+
+            <!-- NOTE: replace with RatingBar from com.willy.ratingbar library in Phase 3 -->
+            <RatingBar
+                android:id="@+id/ratingBar"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:layout_gravity="center"
+                android:numStars="5"
+                android:stepSize="1"
+                android:rating="0" />
+        </LinearLayout>
+
+        <!-- REMOVED: imgPuBanner (was PU promotion banner) -->
+    </LinearLayout>
+
+    <!-- Bottom controls -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <TextView
+            android:id="@+id/txtWhyContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="8dp"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:text="@string/why"
+            android:textSize="14sp"
+            android:textColor="@color/sub_title_text_color"
+            android:fontFamily="@font/nunito_semibold"
+            android:gravity="center"
+            android:letterSpacing="0.03"
+            android:lineSpacingExtra="6sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/txtWhy"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="8dp"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:text="@string/why"
+            android:textSize="16sp"
+            android:textColor="@color/accent_color"
+            android:fontFamily="@font/nunito_semibold"
+            android:gravity="center"
+            android:visibility="visible" />
+
+        <FrameLayout
+            android:id="@+id/txtCloseContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="16dp"
+            android:background="@drawable/bg_orange_gradient">
+
+            <TextView
+                android:id="@+id/txtClose"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:text="@string/close"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:textColor="@color/white"
+                android:fontFamily="@font/nunito_bold"
+                android:gravity="center"
+                android:textAlignment="center" />
+        </FrameLayout>
+
+        <!-- REMOVED: adViewContainer (was AdMob banner container) -->
+    </LinearLayout>
+</FrameLayout>

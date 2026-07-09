@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/mainContainer"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:id="@+id/llButtonContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:background="@drawable/bg_orange_gradient"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="14dp">
+
+        <ImageView
+            android:id="@+id/imgIcon"
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:padding="1dp"
+            android:src="@drawable/ic_focus"
+            android:contentDescription="@string/stop_me" />
+
+        <TextView
+            android:id="@+id/txtMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="2dp"
+            android:text="@string/stop_me"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/white"
+            android:fontFamily="@font/nunito_bold"
+            android:letterSpacing="0.03"
+            android:lineSpacingExtra="6sp"
+            android:ellipsize="end" />
+    </LinearLayout>
+</FrameLayout>

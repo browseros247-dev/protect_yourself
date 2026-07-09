@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- ============ Brand colors ============ -->
+    <color name="brand_orange">#FFFF7100</color>
+    <color name="brand_orange_light">#FFFF9900</color>
+    <color name="accent_color">#FF3ACFFE</color>
+
+    <!-- ============ Dark theme colors (matches original) ============ -->
+    <color name="colorPrimary">#FF1F323F</color>
+    <color name="colorAccent">#FFFFFFFF</color>
+
+    <color name="bg_blue">#FF151F26</color>
+    <color name="bg_blue_dark">#FF061620</color>
+    <color name="bg_blue_dark_overlay">#BF061620</color>
+    <color name="bg_splash">#FF152B35</color>
+
+    <color name="bottom_nav_active">#FF38D0FE</color>
+    <color name="bottom_nav_divider">#FF052233</color>
+    <color name="bottom_nav_inactive">#FF4D7389</color>
+    <color name="bottom_sheet_divider">#FF0A374A</color>
+
+    <color name="sub_title_text_color">#FFB7BABD</color>
+    <color name="about_message_color">#FFB7BABD</color>
+    <color name="biometric_error_color">#FFFF5722</color>
+
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+
+    <!-- ============ Brand orange gradient ============ -->
+    <color name="button_large_gradient_top_default">#FFFF9900</color>
+    <color name="button_large_gradient_bottom_default">#FFFF7100</color>
+
+    <!-- ============ Light theme colors (new — DayNight) ============ -->
+    <color name="light_bg">#FFF5F7FA</color>
+    <color name="light_surface">#FFFFFFFF</color>
+    <color name="light_on_bg">#FF061620</color>
+    <color name="light_subtitle">#FF6B7785</color>
+    <color name="light_bottom_nav_active">#FF1FA8D9</color>
+    <color name="light_bottom_nav_inactive">#FF7A8B96</color>
+    <color name="light_bottom_nav_divider">#FFE0E5EA</color>
+
+    <!-- ============ Misc ============ -->
+    <color name="transparent">#00000000</color>
+    <color name="card_background_dark">#FF0F1F28</color>
+    <color name="card_background_light">#FFFFFFFF</color>
+    <color name="divider_color_dark">#FF1F3B4B</color>
+    <color name="divider_color_light">#FFE0E5EA</color>
+
+    <!-- ============ Block screen ============ -->
+    <color name="block_screen_background">@color/bg_blue_dark</color>
+    <color name="block_screen_message_text">@color/white</color>
+    <color name="block_screen_close_button_text">@color/white</color>
+    <color name="block_screen_why_text">@color/accent_color</color>
+
+    <!-- ============ AMP SDK colors (kept for compatibility) ============ -->
+    <color name="amp_blue">#FF005488</color>
+    <color name="amp_dark_blue">#FF0C2A4B</color>
+    <color name="amp_gray">#FF60758B</color>
+    <color name="amp_light_gray">#FFE5E5E5</color>
+    <color name="amp_light_gray_2">#FFC6D0D9</color>
+    <color name="amp_transparent">#00000000</color>
+</resources>
