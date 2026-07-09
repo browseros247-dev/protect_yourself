@@ -7,8 +7,9 @@ import protect.yourself.R
 /**
  * Bottom nav screens.
  *
- * Original had: NopoX, Streak, Premium, Profile.
+ * Original had: Home, Streak, Premium, Profile.
  * Rebuild (per user): Premium tab replaced with About.
+ * The "Home" tab displays as "Protect Yourself" (via R.string.app_name).
  */
 sealed class MainPageScreen(
     val route: String,
@@ -16,8 +17,8 @@ sealed class MainPageScreen(
     @DrawableRes val icon: Int
 ) {
 
-    data object NopoX : MainPageScreen(
-        route = "NopoX",
+    data object Home : MainPageScreen(
+        route = "Home",
         resourceId = R.string.app_name,
         icon = R.drawable.ic_launcher_foreground
     )
@@ -42,6 +43,6 @@ sealed class MainPageScreen(
 
     companion object {
         /** Ordered list of bottom-nav items. */
-        val all: List<MainPageScreen> = listOf(NopoX, Streak, About, Profile)
+        val all: List<MainPageScreen> = listOf(Home, Streak, About, Profile)
     }
 }

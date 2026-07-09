@@ -29,7 +29,7 @@ object NotificationHelper {
 
     /**
      * Create all notification channels.
-     * Called from NopoXApp.onCreate.
+     * Called from ProtectYourselfApp.onCreate.
      */
     fun createAllChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return

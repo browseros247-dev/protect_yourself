@@ -138,13 +138,13 @@ class BlockerPageViewModel(
                 add(SettingPageItemModel(
                     identifier = SettingPageItemIdentifiers.SUPPORTED_BROWSERS,
                     title = "Supported browsers",
-                    info = "Browsers where NopoX can block content",
+                    info = "Browsers where Protect Yourself can block content",
                     actionLabel = "Manage"
                 ))
                 add(SettingPageItemModel(
                     identifier = SettingPageItemIdentifiers.SUPPORTED_SOCIAL_MEDIA,
                     title = "Supported social media",
-                    info = "Social apps where NopoX can block searches",
+                    info = "Social apps where Protect Yourself can block searches",
                     actionLabel = "Manage"
                 ))
                 add(SettingPageItemModel(
@@ -246,7 +246,7 @@ class BlockerPageViewModel(
                 add(SettingPageItemModel(
                     identifier = SettingPageItemIdentifiers.PREVENT_UNINSTALL_SETTINGS,
                     title = "Prevent uninstall",
-                    info = "Block attempts to uninstall NopoX",
+                    info = "Block attempts to uninstall Protect Yourself",
                     switchKey = SwitchIdentifier.PREVENT_UNINSTALL_SWITCH
                 ))
                 add(SettingPageItemModel(
@@ -363,7 +363,7 @@ class BlockerPageViewModel(
                 add(SettingPageItemModel(
                     identifier = SettingPageItemIdentifiers.SET_APP_LOCK,
                     title = "App lock",
-                    info = "Require PIN/password/pattern to open NopoX",
+                    info = "Require PIN/password/pattern to open Protect Yourself",
                     switchKey = SwitchIdentifier.SET_APP_LOCK_SWITCH
                 ))
                 add(SettingPageItemModel(
@@ -387,7 +387,7 @@ class BlockerPageViewModel(
                 ))
                 add(SettingPageItemModel(
                     identifier = SettingPageItemIdentifiers.KEEP_NOPOX_LIVE,
-                    title = "How to keep NopoX running",
+                    title = "How to keep Protect Yourself running",
                     info = "Battery + performance tips",
                     actionLabel = "View"
                 ))

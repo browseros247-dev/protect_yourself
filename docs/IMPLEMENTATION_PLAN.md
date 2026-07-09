@@ -1,8 +1,8 @@
-# NopoX Rebuild — Comprehensive Implementation Plan
+# Protect Yourself Rebuild — Comprehensive Implementation Plan
 
 > **Document version**: 1.0
 > **Date**: 2026-07-09
-> **Source APK**: `NopoX_modified_signed.apk` (v1.0.53, build 1053)
+> **Source APK**: `Protect Yourself_modified_signed.apk (original)` (v1.0.53, build 1053)
 > **Original package**: `com.planproductive.nopoz`
 > **Rebuild package**: `protect.yourself`
 > **Rebuild app name**: `protect.yourself`
@@ -11,13 +11,13 @@
 
 ## 1. Executive Summary
 
-This document is the single source of truth for rebuilding the **NopoX** Android application from scratch as a new Android Studio project. The original source code has been permanently lost; reconstruction is based on static analysis of the APK using **Apktool 2.11.1**, **JADX 1.5.0**, **androguard 4.1.2**, and **uber-apk-signer 1.3.0**.
+This document is the single source of truth for rebuilding the **Protect Yourself** Android application from scratch as a new Android Studio project. The original source code has been permanently lost; reconstruction is based on static analysis of the APK using **Apktool 2.11.1**, **JADX 1.5.0**, **androguard 4.1.2**, and **uber-apk-signer 1.3.0**.
 
 ### 1.1 Original App Profile
 
 | Property | Value |
 |---|---|
-| App name | NopoX |
+| App name | Protect Yourself |
 | Category | Productivity / Digital Wellbeing / Porn & App Blocker |
 | Version | 1.0.53 (build 1053) |
 | Package | `com.planproductive.nopoz` (note: "nopoz", not "nopox") |
@@ -134,7 +134,7 @@ This is the **complete feature inventory** extracted from the APK. Each item is 
 
 | Component | Original | Rebuild |
 |---|---|---|
-| Application class | `com.planproductive.nopox.core.NopoXApp` extends `bin.mt.signature.KillerApplication` | `protect.yourself.core.NopoXApp` extends `bin.mt.signature.KillerApplication` (kept per user request) |
+| Application class | `com.planproductive.nopox.core.ProtectYourselfApp` extends `bin.mt.signature.KillerApplication` | `protect.yourself.core.ProtectYourselfApp` extends `bin.mt.signature.KillerApplication` (kept per user request) |
 | Initialization order | `ProcessLifecycleOwner` observer → `initRoomDBInstance` → `initMavericksInstance` → `initFirebaseAppCheck` → `initTimberLog` → `initCrashlytics` → `initBranchSDK` → `initAmplitude` → `BlockerPageUtils.updateAccessibilityBlockingValues` → `setAppContainer` → `AccessibilityPersistUtils.selfHealSafe` → `AccessibilityGuard.startWatching` | Same order, **drop** `initBranchSDK` (replaced by App Links), `initAmplitude`, `initFirebaseAppCheck` (kept only if Firestore rules require it — keep by default) |
 | `AppContainer` | Holds `applicationScope`, `billingDataSource`, `premiumPageDataRepository` | Drop `billingDataSource` + `premiumPageDataRepository`. Keep `applicationScope`. Add `accountabilityRepository` for Real Friend feature. |
 | `onAppBackgrounded` | Calls `BlockerPageUtils.updateAccessibilityBlockingValues(GlobalScope)` | Same. |
@@ -249,7 +249,7 @@ This is the **complete feature inventory** extracted from the APK. Each item is 
 ```
 protect.yourself/
 ├── core/                           # Application class, DI container
-│   ├── NopoXApp.kt
+│   ├── ProtectYourselfApp.kt
 │   └── AppContainer.kt
 ├── commons/
 │   ├── components/                 # Reusable Compose components
@@ -371,7 +371,7 @@ The original uses Airbnb Mavericks (MvRx) for state. We will migrate to `ViewMod
    - Required checkbox: "I have read and agree to the Terms and Privacy Policy."
    - "Continue" button (disabled until checkbox ticked).
 2. **AccessibilityPermissionPage** — simple flow:
-   - One-page explanation: "NopoX needs Accessibility permission to block content."
+   - One-page explanation: "Protect Yourself needs Accessibility permission to block content."
    - "Grant permission" button → opens `Settings.ACTION_ACCESSIBILITY_SETTINGS`.
    - App detects when permission is granted (via `AccessibilityManager.isAccessibilityServiceEnabled()`) and auto-advances.
    - "Skip" button (per user choice) — allows deferring; app shows persistent banner on main screen until granted.
@@ -387,7 +387,7 @@ The original uses Airbnb Mavericks (MvRx) for state. We will migrate to `ViewMod
 **Original**: `MainActivity` (AppCompatActivity, singleTask, showOnLockScreen) → `setContent { MainActivityComposable() }`.
 
 **Bottom nav items** (per `MainPageScreen.kt`):
-- `NopoX` (icon: `ic_launcher_foreground`, label: app name)
+- `Protect Yourself` (icon: `ic_launcher_foreground`, label: app name)
 - `Streak` (icon: `ic_fire`, label: `@string/streak`)
 - `Premium` (icon: `ic_nav_crown`, label: `@string/nav_premium`) → **REPLACED** with `About` (icon: `ic_info`, label: `@string/about`)
 - `Profile` (icon: `ic_profile`, label: `@string/profile`)
@@ -395,7 +395,7 @@ The original uses Airbnb Mavericks (MvRx) for state. We will migrate to `ViewMod
 **Rebuild nav**:
 ```kotlin
 sealed class MainPageScreen(route, resourceId, icon) {
-    data object NopoX : MainPageScreen("NopoX", R.string.app_name, R.drawable.ic_launcher_foreground)
+    data object Protect Yourself : MainPageScreen("Protect Yourself", R.string.app_name, R.drawable.ic_launcher_foreground)
     data object Streak : MainPageScreen("Streak", R.string.streak, R.drawable.ic_fire)
     data object About : MainPageScreen("About", R.string.about, R.drawable.ic_info)
     data object Profile : MainPageScreen("Profile", R.string.profile, R.drawable.ic_profile)
@@ -408,12 +408,12 @@ sealed class MainPageScreen(route, resourceId, icon) {
 3. `initPageForLockScreen()` — show activity over lock screen.
 4. `initReceivers()` — register `AppSystemActionReceiver`.
 5. `initPeriodicWorkManager()` — enqueue `WorkerUtils.initAppDataCheckWorker`.
-6. `initPageUi()` — `setContent { NopoXApp() }`.
+6. `initPageUi()` — `setContent { ProtectYourselfApp() }`.
 7. `requestPostNotification()` — request `POST_NOTIFICATIONS` permission on API 33+.
 
 ### 5.3 Blocker Page (Home Screen)
 
-This is the most complex screen — the main "NopoX" tab. Per `BlockerPageViewModel` (40+ sub-init methods) and `BlockerPageRepository`.
+This is the most complex screen — the main "Protect Yourself" tab. Per `BlockerPageViewModel` (40+ sub-init methods) and `BlockerPageRepository`.
 
 #### 5.3.1 Page Sections
 
@@ -507,7 +507,7 @@ Per user remark: "block target as is so implement all as is org" — implement a
 | **Block settings page by title** | Accessibility detects settings activity title; if matches `setting_keywords_list`, block. |
 | **Block notification drawer** | Accessibility detects `StatusBar` window → block. |
 | **Block recent apps** | Accessibility detects recent apps window → block. |
-| **Block phone reboot** | Receiver on `BOOT_COMPLETED` → immediately re-launch NopoX + start blocking. |
+| **Block phone reboot** | Receiver on `BOOT_COMPLETED` → immediately re-launch Protect Yourself + start blocking. |
 
 #### 5.3.6 Block Screen (PornBlockActivity)
 
@@ -596,7 +596,7 @@ builder.addDisallowedApplication(packageName) // for each blocked app
 ```
 
 **VPN notification** — foreground service notification with:
-- Title: "NopoX VPN is active"
+- Title: "Protect Yourself VPN is active"
 - Custom message (stored in `vpn_notification_custom_message` switch)
 - Hide option (stored in `vpn_notification_hide` switch)
 
@@ -637,19 +637,19 @@ data class StopMeDurationItemModel(
    - When Device Admin is disabled, app shows warning + re-prompts.
 
 2. **Accessibility Watchdog** (`AccessibilityGuard`):
-   - Started in `NopoXApp.onCreate`.
+   - Started in `ProtectYourselfApp.onCreate`.
    - Detects when accessibility service is disabled (e.g. user killed it).
    - Re-enables via `AccessibilityPersistUtils.selfHealSafe()`.
    - Uses `AccessibilityService.takeScreenshot()` + `performGlobalAction()` for self-healing.
 
 3. **Prevent Uninstall switch** — when ON:
-   - Accessibility service listens for "NopoX" app info page.
+   - Accessibility service listens for "Protect Yourself" app info page.
    - When detected, immediately re-launches MainActivity (prevents user from tapping Uninstall).
    - Block screen shown with message: "Uninstall is prevented. Disable Prevent Uninstall switch first."
 
 4. **Block Phone Reboot** — `AppSystemActionReceiverAllTime` listens for `BOOT_COMPLETED`:
    - Immediately starts accessibility service + VPN service.
-   - Shows notification "NopoX is protecting you".
+   - Shows notification "Protect Yourself is protecting you".
 
 5. **Block Recent Apps** — accessibility listens for `StatusBar` window or recent apps activity:
    - When detected, performs `GLOBAL_ACTION_HOME` to dismiss.
@@ -742,7 +742,7 @@ data class StreakDatesItemModel(
 | Item | Implementation |
 |---|---|
 | Backup/Sync | Toggle. When ON: requires Firebase Auth sign-in. Uploads all DB tables to Firestore. Conflict resolution: last-write-wins. |
-| Import/Export | Export: serialize all DB tables to JSON, save to `Downloads/NopoX_backup_<timestamp>.json` via `FileProvider`. Import: pick JSON file, validate, replace DB contents. |
+| Import/Export | Export: serialize all DB tables to JSON, save to `Downloads/Protect Yourself_backup_<timestamp>.json` via `FileProvider`. Import: pick JSON file, validate, replace DB contents. |
 | FAQ + About | Static Compose screens. FAQ from `faq_*` strings. About: app version, credits, privacy policy link, terms link. |
 | Share app | System share sheet with Play Store link (or direct APK if sideloaded). |
 | Contact email | `Intent.ACTION_SENDTO` with `mailto:support@protectyourself.app` |
@@ -772,7 +772,7 @@ About
 │   ├── Privacy policy
 │   └── Terms of service
 └── Credits
-    ├── Original NopoX team
+    ├── Original Protect Yourself team
     └── Open source libraries
 ```
 
@@ -797,7 +797,7 @@ About
    - Stores in `partner_pending_request_table`
    - Sends email to friend via Firebase Cloud Functions (SMTP)
    - Email contains deep link: `https://protectyourself.app.link/approve?requestId=<UUID>`
-4. Friend clicks link → opens NopoX → `MainActivity.onNewIntent` parses deep link → shows approval dialog → friend approves/rejects.
+4. Friend clicks link → opens Protect Yourself → `MainActivity.onNewIntent` parses deep link → shows approval dialog → friend approves/rejects.
 5. Approval/rejection updates `partner_pending_request_table` + triggers the original switch toggle.
 
 **Rebuild**:
@@ -867,7 +867,7 @@ About
 
 **Dark theme** (primary, matches original):
 ```kotlin
-val NopoXDarkColors = darkColorScheme(
+val DarkColors = darkColorScheme(
     primary = Color(0xFF1F323F),          // colorPrimary
     onPrimary = Color.White,              // colorOnPrimary
     secondary = Color.Black,              // colorOnSecondary
@@ -885,7 +885,7 @@ val NopoXDarkColors = darkColorScheme(
 
 **Light theme** (new, follows system per user choice):
 ```kotlin
-val NopoXLightColors = lightColorScheme(
+val LightColors = lightColorScheme(
     primary = Color(0xFF1F323F),
     onPrimary = Color.White,
     secondary = Color.Black,
@@ -916,7 +916,7 @@ Original uses Cera Round Pro Bold/Medium/Regular — **proprietary**, cannot red
 **Replacement**: **Nunito** (open source, OFL license, similar geometric sans-serif feel).
 
 ```kotlin
-val NopoXTypography = Typography(
+val AppTypography = Typography(
     h1 = TextStyle(fontFamily = Nunito, fontWeight = Bold, fontSize = 24.sp),
     h2 = TextStyle(fontFamily = Nunito, fontWeight = Bold, fontSize = 20.sp),
     h3 = TextStyle(fontFamily = Nunito, fontWeight = SemiBold, fontSize = 18.sp),
@@ -929,13 +929,13 @@ val NopoXTypography = Typography(
 
 XML layouts (block screen, widgets) use:
 ```xml
-<style name="TextAppearance.NopoX.Bold" parent="@android:style/TextAppearance">
+<style name="TextAppearance.ProtectYourself.Bold" parent="@android:style/TextAppearance">
     <item name="android:fontFamily">@font/nunito_bold</item>
 </style>
-<style name="TextAppearance.NopoX.Medium" parent="@android:style/TextAppearance">
+<style name="TextAppearance.ProtectYourself.Medium" parent="@android:style/TextAppearance">
     <item name="android:fontFamily">@font/nunito_semibold</item>
 </style>
-<style name="TextAppearance.NopoX.Regular" parent="@android:style/TextAppearance">
+<style name="TextAppearance.ProtectYourself.Regular" parent="@android:style/TextAppearance">
     <item name="android:fontFamily">@font/nunito_regular</item>
 </style>
 ```
@@ -971,11 +971,11 @@ Estimated custom strings: ~400. All will be ported 1:1 with the only change bein
 
 All drawables + mipmaps from `apktool/res/drawable*/` and `apktool/res/mipmap*/` will be copied 1:1 to the rebuild project's `app/src/main/res/`.
 
-**Custom launcher icon** — since app name changes to `protect.yourself`, the original NopoX launcher icon should be replaced. Options:
+**Custom launcher icon** — since app name changes to `protect.yourself`, the original Protect Yourself launcher icon should be replaced. Options:
 1. Keep original icon (if user has rights)
 2. Generate new icon matching "protect.yourself" branding (use Android Studio Image Asset Studio)
 
-**Action item**: User must confirm whether to keep original NopoX launcher icon or generate new one.
+**Action item**: User must confirm whether to keep original Protect Yourself launcher icon or generate new one.
 
 ---
 
@@ -1015,7 +1015,7 @@ On first launch, the following must be pre-populated:
 4. **Default switch states** — all switches OFF except `porn_blocker_switch` (default ON).
 5. **Default supported browsers** — Chrome, Firefox, Brave, Edge, Opera, Samsung Internet, Vivaldi, DuckDuckGo.
 6. **Default supported social media** — Instagram, WhatsApp, Snapchat, Telegram, YouTube.
-7. **Default whitelist apps** — NopoX itself + system UI.
+7. **Default whitelist apps** — Protect Yourself itself + system UI.
 
 ---
 
@@ -1034,7 +1034,7 @@ This is the **most critical** part of the rebuild. The original has pervasive pr
 | `PremiumPageDataRepository` | same | DELETE |
 | `puPromotionPage/` package | `features/puPromotionPage/` (4 files) | **DELETE entire package** |
 | `PuPromotionActivity`, `PuPromotionActivityUtils` | same | DELETE |
-| `AppContainer.billingDataSource` + `premiumPageDataRepository` | `core/NopoXApp.kt` | Remove fields + initialization |
+| `AppContainer.billingDataSource` + `premiumPageDataRepository` | `core/ProtectYourselfApp.kt` | Remove fields + initialization |
 | `MainActivityState.premiumPlanDataList`, `isShowPremiumPage`, `isIntroPremiumPageActionDone`, `premiumFeatureIdentifiers`, `isPremiumActive`, `activePlanName`, `lifetimePlanDiscountText`, `isEligibleForBannerAd` | `MainActivityState` | Remove fields |
 | `SwitchStatusValues.getIsPremiumActiveNumber`, `getPremiumFeatureNotificationDisplayDate`, `getPremiumFeatureNotificationIndexData`, `getPremiumSaleEndNotificationTimeData`, `getPurchaseDataInFireStoreStatus`, `getPurchaseSuccessEventSubmitStatus`, `getIsEligibleForBannerAdNumber`, `getIsIntroPremiumPageActionDoneStatus`, `getOutSideAppOpenFlowIdentifierNumber` | `SwitchStatusValues` | Remove methods |
 | AdMob SDK + classes | `com.google.android.gms.ads.*` | Remove dependency + all usages |
@@ -1118,7 +1118,7 @@ data object About : MainPageScreen("About", R.string.about, R.drawable.ic_info)
 // Remove: data object Premium : MainPageScreen("Premium", R.string.nav_premium, R.drawable.ic_nav_crown)
 ```
 
-Update `MainActivityViewModel.initBottomNavItem` to return list of `[NopoX, Streak, About, Profile]`.
+Update `MainActivityViewModel.initBottomNavItem` to return list of `[Protect Yourself, Streak, About, Profile]`.
 
 ### 7.4 Block Screen Modification
 
@@ -1155,10 +1155,10 @@ In `PornBlockPage.kt`:
 4. Copy resources:
    - Lottie JSONs to `assets/`
    - Drawables from `apktool/res/drawable*/`
-   - Mipmaps (launcher icon — keep original NopoX or generate new)
+   - Mipmaps (launcher icon — keep original Protect Yourself or generate new)
    - Custom `bg_orange_gradient.xml`, `bg_blue_dark.xml`, etc.
 5. Create package structure (see Section 4.1).
-6. Set up `NopoXApp.kt` extending `bin.mt.signature.KillerApplication` (need to vendor this class since it's not a standard library).
+6. Set up `ProtectYourselfApp.kt` extending `bin.mt.signature.KillerApplication` (need to vendor this class since it's not a standard library).
 7. Configure `AndroidManifest.xml`:
    - All permissions (minus BILLING + AD_ID)
    - All activities (minus Premium + PU promotion)
@@ -1233,7 +1233,7 @@ In `PornBlockPage.kt`:
 **Deliverable**: Full blocker page UI with all settings sections working.
 
 1. Port `MainActivity.kt` + `MainActivityViewModel.kt`:
-   - Bottom nav (NopoX, Streak, About, Profile)
+   - Bottom nav (Protect Yourself, Streak, About, Profile)
    - Navigation
    - State management (StateFlow replaces Mavericks)
 2. Port `BlockerPageHome.kt` + `BlockerPageViewModel.kt`:
@@ -1309,7 +1309,7 @@ In `PornBlockPage.kt`:
    - Device Admin receiver + setup flow
    - Accessibility watchdog (`AccessibilityGuard`)
    - `AccessibilityPersistUtils.selfHealSafe()`
-   - Prevent Uninstall switch (accessibility detects NopoX app info page)
+   - Prevent Uninstall switch (accessibility detects Protect Yourself app info page)
    - Block Phone Reboot (boot receiver restarts services)
    - Block Recent Apps (accessibility detects + dismisses)
    - Block Notification Drawer (accessibility detects + dismisses)
@@ -1448,7 +1448,7 @@ Per user choice: **Comprehensive** (~300+ tests).
 
 1. **User reviews this plan** and confirms/adjusts.
 2. **User provides Firebase project** (`google-services.json`) — or we proceed with placeholder.
-3. **User confirms launcher icon** — keep NopoX or generate new "protect.yourself" icon.
+3. **User confirms launcher icon** — keep Protect Yourself or generate new "protect.yourself" icon.
 4. **User configures domain** `protectyourself.app.link` (or alternative) + hosts `assetlinks.json`.
 5. **Begin Phase 1** — project skeleton.
 
@@ -1464,7 +1464,7 @@ All reverse-engineering artifacts are at:
 ├── apktool/res/                        # decoded resources
 │   ├── values/strings.xml              # 884 strings
 │   ├── values/colors.xml               # all colors
-│   ├── values/styles.xml               # Theme.NopoX
+│   ├── values/styles.xml               # Theme.ProtectYourself
 │   ├── layout/page_porn_block.xml      # block screen layout
 │   ├── layout/stop_me_widget.xml       # Stop Me widget layout
 │   ├── layout/streak_widget.xml        # Streak widget layout
@@ -1476,7 +1476,7 @@ All reverse-engineering artifacts are at:
 │   └── xml/streak_widget_info.xml      # Streak widget info
 ├── apktool/assets/                     # 6 Lottie JSONs
 ├── jadx/sources/com/planproductive/nopox/  # 659 app source files
-│   ├── core/NopoXApp.java
+│   ├── core/ProtectYourselfApp.java
 │   ├── database/                       # Room entities + DAOs
 │   ├── features/                       # all feature packages
 │   └── commons/utils/                  # all utility packages
@@ -1503,7 +1503,7 @@ All reverse-engineering artifacts are at:
 | Content providers | 4 |
 | Permissions | 22 (20 after removing BILLING + AD_ID) |
 | Lottie animations | 6 |
-| Bottom nav tabs | 4 (NopoX, Streak, About, Profile) |
+| Bottom nav tabs | 4 (Protect Yourself, Streak, About, Profile) |
 
 ## Appendix C: User Decisions Log
 

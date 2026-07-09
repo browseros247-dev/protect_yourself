@@ -8,9 +8,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 /**
- * NopoX dark color scheme — matches original (#061620 dark blue, orange accents).
+ * Protect Yourself dark color scheme — matches original (#061620 dark blue, orange accents).
  */
-private val NopoXDarkColorScheme = darkColorScheme(
+private val DarkColorScheme = darkColorScheme(
     primary = DarkPrimary,
     onPrimary = DarkOnPrimary,
     primaryContainer = DarkPrimary,
@@ -42,9 +42,9 @@ private val NopoXDarkColorScheme = darkColorScheme(
 )
 
 /**
- * NopoX light color scheme — new for rebuild (DayNight support).
+ * Protect Yourself light color scheme — new for rebuild (DayNight support).
  */
-private val NopoXLightColorScheme = lightColorScheme(
+private val LightColorScheme = lightColorScheme(
     primary = LightPrimary,
     onPrimary = LightOnPrimary,
     primaryContainer = LightPrimary,
@@ -76,21 +76,21 @@ private val NopoXLightColorScheme = lightColorScheme(
 )
 
 /**
- * NopoX Material 3 theme — DayNight (follows system).
+ * Protect Yourself Material 3 theme — DayNight (follows system).
  *
  * Per user choice: theme follows system dark/light setting.
  * Dark theme is primary (matches original); light theme is new for rebuild.
  */
 @Composable
-fun NopoXTheme(
+fun AppTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) NopoXDarkColorScheme else NopoXLightColorScheme
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = NopoXTypography,
+        typography = AppTypography,
         content = content
     )
 }

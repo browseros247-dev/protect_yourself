@@ -13,7 +13,7 @@ import java.security.cert.X509Certificate
  * Signature Killer Application
  *
  * Replaces the original `bin.mt.signature.KillerApplication` class that the
- * modified NopoX APK extended. This class hooks into the Android package
+ * modified Protect Yourself APK extended. This class hooks into the Android package
  * manager so that calls to `PackageManager.getPackageInfo(..., GET_SIGNATURES)`
  * return a forged signature, allowing the modified APK to pass the original
  * app's signature checks (Firebase, Firebase AppCheck, OAuth, etc.).
@@ -24,11 +24,11 @@ import java.security.cert.X509Certificate
  *  - On Android 14+ (targetSdk 35+), some hooks may require additional
  *    SELinux exemptions or may not work at all on production devices.
  *  - This class is only necessary if you intend to install the rebuild
- *    alongside services that still verify the original NopoX signature.
+ *    alongside services that still verify the original Protect Yourself signature.
  *  - For a fresh install on a clean device, you do NOT need this class —
  *    simply extend `Application` directly.
  *
- * Vendored from: `bin.mt.signature.KillerApplication` (NopoX APK)
+ * Vendored from: `bin.mt.signature.KillerApplication` (Protect Yourself APK)
  */
 abstract class KillerApplication : Application() {
 
@@ -45,17 +45,17 @@ abstract class KillerApplication : Application() {
     /**
      * Returns the forged signature that the hooked PackageManager should report.
      *
-     * Default: returns the NopoX original signing certificate (SHA-1 of the
+     * Default: returns the Protect Yourself original signing certificate (SHA-1 of the
      * original release key). Override to provide a different signature.
      *
      * NOTE: This is intentionally a placeholder. In a production rebuild, you
      * would either:
      *  1. Replace this with `null` and let real signatures pass through, OR
-     *  2. Hardcode the original NopoX signing cert if you need to bypass
+     *  2. Hardcode the original Protect Yourself signing cert if you need to bypass
      *     Firebase AppCheck on the original Firebase project.
      */
     protected open fun getForgedSignature(): X509Certificate? {
-        // TODO: populate with original NopoX signing cert if needed for
+        // TODO: populate with original Protect Yourself signing cert if needed for
         // Firebase AppCheck compatibility. Otherwise return null to disable.
         return null
     }
@@ -176,7 +176,7 @@ abstract class KillerApplication : Application() {
     }
 
     /**
-     * Helper: load the original NopoX signing certificate from assets.
+     * Helper: load the original Protect Yourself signing certificate from assets.
      * Override [getForgedSignature] to call this if needed.
      */
     @Suppress("unused")

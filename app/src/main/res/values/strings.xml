@@ -95,8 +95,8 @@
     <string name="add_stop_me_schedule_select_start_time_error">Please select start time</string>
     <string name="add_white_list_keyword_page_text_hint">E.g. Quit porn</string>
     <string name="add_widget">Add widget</string>
-    <string name="add_widget_select_nopox_guide">"Note: Add the 'Focus mode!' widget after watching the video."</string>
-    <string name="add_widget_select_nopox_guide_streak">"Note: Add the 'Streak' widget after watching the video."</string>
+    <string name="add_widget_select_app_guide">"Note: Add the 'Focus mode!' widget after watching the video."</string>
+    <string name="add_widget_select_app_guide_streak">"Note: Add the 'Streak' widget after watching the video."</string>
 
     <!-- Cards -->
     <string name="app_lock_card_info">By doing this, any unauthorized access to this app is prevented.</string>

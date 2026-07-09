@@ -267,7 +267,7 @@ class AllDaosTest {
         val request = protect.yourself.database.pendingRequests.PendingRequestItemModel(
             key = "req1",
             requestIdentifier = "switch_off_vpn",
-            appName = "NopoX",
+            appName = "Protect Yourself",
             keyWord = "VPN",
             packageName = "protect.yourself",
             switchNumber = 13,

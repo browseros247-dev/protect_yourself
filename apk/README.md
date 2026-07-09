@@ -1,19 +1,20 @@
 # Pre-built APKs
 
-This directory contains pre-built, signed APKs of `protect.yourself` for direct installation.
+This directory contains pre-built, signed APKs of **Protect Yourself** for direct installation.
 
 ## Files
 
 | File | Size | Package | Build Type | Description |
 |---|---|---|---|---|
-| `protect.yourself-v1.0.0-release.apk` | ~20 MB | `protect.yourself` | Release | Production-style build (no debug suffix). **Recommended for installation.** |
-| `protect.yourself-v1.0.0-debug.apk` | ~28 MB | `protect.yourself` | Debug | Debug build with logging enabled. Larger due to unstripped debug info. |
+| `protect.yourself-v1.0.1-release.apk` | ~20 MB | `protect.yourself` | Release | Production-style build. **Recommended for installation.** |
+| `protect.yourself-v1.0.1-debug.apk` | ~28 MB | `protect.yourself` | Debug | Debug build with logging enabled. Larger due to unstripped debug info. |
 
 Both APKs target:
 - **Min Android**: 8.0 (API 26)
 - **Target Android**: 15 (API 35)
 - **Compile SDK**: 35
 - **Version**: 1.0.0 (versionCode 1)
+- **App label**: "Protect Yourself" (release) / "Protect Yourself DEBUG" (debug)
 
 ## Signing
 
@@ -31,16 +32,16 @@ For Play Store distribution, re-sign with your own release keystore before uploa
 2. On the device, open the APK file
 3. If prompted, allow "Install unknown apps" for your file manager / browser
 4. Tap **Install**
-5. Open `protect.yourself` from your app drawer
+5. Open **Protect Yourself** from your app drawer
 
-## First-launch Setup
+## First-Launch Setup
 
 After installation, the app will guide you through:
 
 1. **Terms & Privacy** — read and agree
 2. **Accessibility permission** — required for content blocking
 3. **Display Pop-up Window permission** — required to show block screen over other apps
-4. Optional: **Device Admin** (anti-uninstall), **VPN** (DNS blocking)
+4. Optional: **Device Admin** (anti-uninstall), **VPN** (DNS blocking), **App Lock**
 
 ## Firebase Configuration
 
@@ -76,7 +77,7 @@ Build commands:
 You can verify the APK signature using `uber-apk-signer`:
 
 ```bash
-java -jar uber-apk-signer.jar -a protect.yourself-v1.0.0-release.apk -y
+java -jar uber-apk-signer.jar -a protect.yourself-v1.0.1-release.apk -y
 ```
 
 Expected output: `signature verified [v2]` with the SHA256 above.

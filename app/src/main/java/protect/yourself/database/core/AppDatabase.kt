@@ -70,7 +70,7 @@ abstract class AppDatabase : RoomDatabase() {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
-                    "nopox_database.db"
+                    "protect_yourself_database.db"
                 )
                     .fallbackToDestructiveMigration()
                     .addCallback(AppDatabaseCallback(context.applicationContext))

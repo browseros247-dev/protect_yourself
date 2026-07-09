@@ -27,7 +27,7 @@ val NunitoFontFamily = FontFamily(
     Font(R.font.nunito_extrabold, FontWeight.ExtraBold),
 )
 
-val NopoXTypography = Typography(
+val AppTypography = Typography(
     // Display
     displayLarge = TextStyle(
         fontFamily = NunitoFontFamily,

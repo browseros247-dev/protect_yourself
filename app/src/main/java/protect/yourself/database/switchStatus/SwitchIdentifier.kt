@@ -1,7 +1,7 @@
 package protect.yourself.database.switchStatus
 
 /**
- * All switch keys used in the original NopoX app (60+ keys, exhaustive).
+ * All switch keys used in the original Protect Yourself app (60+ keys, exhaustive).
  * Ported from jadx-decompiled SwitchStatusValues.
  *
  * IMPORTANT: Do NOT remove keys even if the feature is removed — preserves

@@ -37,7 +37,7 @@ import protect.yourself.features.blockerPage.data.SettingPageItemModel
 import protect.yourself.theme.BrandOrange
 
 /**
- * BlockerPageHome — the main "NopoX" tab content.
+ * BlockerPageHome — the main "Protect Yourself" tab content.
  *
  * Renders a LazyColumn of SettingPageItemModel items, including:
  *  - Section headers (styled differently)

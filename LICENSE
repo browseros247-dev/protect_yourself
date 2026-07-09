@@ -22,7 +22,7 @@ SOFTWARE.
 
 ---
 
-This software is a community-maintained rebuild of the NopoX Android app,
+This software is a community-maintained rebuild of the Protect Yourself Android app,
 originally developed by PlanProductive. The rebuild is not affiliated with
 or endorsed by the original developers.
 
@@ -33,7 +33,6 @@ Open source components used:
 - Lottie by Airbnb (Apache 2.0)
 - Nunito font by Vernon Adams (SIL OFL)
 - Timber (Apache 2.0)
-- Splitties (Apache 2.0)
 - Joda-Time (Apache 2.0)
 - Gson (Apache 2.0)
 - Material Icons (Apache 2.0)

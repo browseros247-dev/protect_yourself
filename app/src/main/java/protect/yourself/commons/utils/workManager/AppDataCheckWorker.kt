@@ -78,7 +78,7 @@ class AppDataCheckWorker(
 
         /**
          * Create the notification channel (Android 8+).
-         * Called from NopoXApp.onCreate.
+         * Called from ProtectYourselfApp.onCreate.
          */
         fun createNotificationChannel(context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

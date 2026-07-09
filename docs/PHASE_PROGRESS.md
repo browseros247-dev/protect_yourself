@@ -28,13 +28,13 @@ Build environment:
 - [x] Gradle wrapper (8.10.2)
 - [x] AndroidManifest.xml with all 22 permissions (minus BILLING + AD_ID)
 - [x] All 4 activities + 4 services + 6 receivers + 3 providers registered
-- [x] Application class (`NopoXApp`) extending vendored `KillerApplication`
+- [x] Application class (`ProtectYourselfApp`) extending vendored `KillerApplication`
 - [x] Theme (DayNight) with dark + light color schemes
 - [x] Nunito typography (4 weights: Regular, SemiBold, Bold, ExtraBold)
 - [x] All 9 Room entities + 9 DAOs + AppDatabase v8
 - [x] All 6 Lottie animations imported from original APK
 - [x] Branded "protect.yourself" launcher icon (5 densities + adaptive v26)
-- [x] Bottom nav (NopoX, Streak, About, Profile) — Premium replaced with About
+- [x] Bottom nav (Protect Yourself, Streak, About, Profile) — Premium replaced with About
 - [x] Block screen layout XML (minus AdMob banner + PU promo banner)
 - [x] Stop Me widget layout XML + Streak widget layout XML
 - [x] All accessibility_setting, device_admin, file_paths, widget_info XMLs
@@ -164,13 +164,13 @@ Build environment:
   - LazyColumn of setting items
   - 4 item types: SectionHeader, SwitchRow, ActionRow, InfoRow
   - Material 3 Card-based layout matching original dark theme
-  - Wired into MainActivity's NopoX tab
+  - Wired into MainActivity's Protect Yourself tab
 - [x] SelectAppPageViewModel + SelectAppPage Compose UI (app picker)
 - [x] AppPasswordPage (PIN/password entry + biometric prompt stub)
 - [x] AppLockType enum (mirrors AppLockTypeIdentifiers)
 - [x] PackageManagerProvider (singleton for app picker)
-- [x] NopoXApp: init PackageManagerProvider
-- [x] MainActivity: BlockerPageHome wired into NopoX tab
+- [x] ProtectYourselfApp: init PackageManagerProvider
+- [x] MainActivity: BlockerPageHome wired into Protect Yourself tab
 
 ---
 
@@ -235,7 +235,7 @@ Build environment:
   - Checks Stop Me due schedules
   - Checks accessibility service state
 - [x] WorkerUtils: schedules both AppDataCheckWorker + DailyReportWorker
-- [x] NopoXApp.onCreate: starts AccessibilityGuard + schedules both workers
+- [x] ProtectYourselfApp.onCreate: starts AccessibilityGuard + schedules both workers
 
 ---
 
@@ -269,7 +269,7 @@ Build environment:
 - **GitHub URL**: <https://github.com/258044aamm-Dev/Protect-Yourself>
 
 ### What's Ready to Use
-- ✅ App launches with bottom nav (NopoX, Streak, About, Profile)
+- ✅ App launches with bottom nav (Protect Yourself, Streak, About, Profile)
 - ✅ Blocker page shows all 60+ setting items
 - ✅ Streak page with fire animation + relapse recording
 - ✅ About page with full credits + legal links

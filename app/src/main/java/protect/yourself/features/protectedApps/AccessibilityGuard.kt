@@ -35,7 +35,7 @@ class AccessibilityGuard {
     }
 
     /**
-     * Start watching — call from NopoXApp.onCreate.
+     * Start watching — call from ProtectYourselfApp.onCreate.
      */
     fun startWatching(context: Context) {
         if (isWatching.compareAndSet(false, true)) {
@@ -46,7 +46,7 @@ class AccessibilityGuard {
     }
 
     /**
-     * Stop watching — call from NopoXApp.onTerminate (not normally called).
+     * Stop watching — call from ProtectYourselfApp.onTerminate (not normally called).
      */
     fun stopWatching() {
         if (isWatching.compareAndSet(true, false)) {
@@ -112,13 +112,13 @@ class AccessibilityGuard {
 }
 
 /**
- * AccessibilityPersistUtils — provides the selfHealSafe() entry point used by NopoXApp.
+ * AccessibilityPersistUtils — provides the selfHealSafe() entry point used by ProtectYourselfApp.
  */
 object AccessibilityPersistUtils {
 
     /**
      * Safely attempt to self-heal accessibility service.
-     * Called from NopoXApp.onCreate().
+     * Called from ProtectYourselfApp.onCreate().
      */
     fun selfHealSafe() {
         try {

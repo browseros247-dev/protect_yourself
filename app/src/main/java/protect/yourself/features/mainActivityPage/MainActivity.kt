@@ -32,12 +32,12 @@ import protect.yourself.features.mainActivityPage.components.AboutPage
 import protect.yourself.features.mainActivityPage.repository.MainPageScreen
 import protect.yourself.features.profilePage.components.ProfilePage
 import protect.yourself.features.streakPage.components.StreakPage
-import protect.yourself.theme.NopoXTheme
+import protect.yourself.theme.AppTheme
 
 /**
  * Main launcher activity.
  *
- * Phase 1: Skeleton with bottom nav (4 tabs: NopoX, Streak, About, Profile).
+ * Phase 1: Skeleton with bottom nav (4 tabs: Protect Yourself, Streak, About, Profile).
  * Phase 4+: Full Compose UI for each tab.
  *
  * Original behavior:
@@ -70,7 +70,7 @@ class MainActivity : ComponentActivity() {
 
     private fun initPageUi() {
         setContent {
-            NopoXTheme {
+            AppTheme {
                 MainScreen()
             }
         }
@@ -84,10 +84,10 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun MainScreen() {
-    var selectedTab: MainPageScreen by remember { mutableStateOf(MainPageScreen.NopoX) }
+    var selectedTab: MainPageScreen by remember { mutableStateOf(MainPageScreen.Home) }
 
     Scaffold(
-        bottomBar = { NopoXBottomBar(selectedTab) { selectedTab = it } }
+        bottomBar = { AppBottomBar(selectedTab) { selectedTab = it } }
     ) { padding ->
         Box(
             modifier = Modifier
@@ -95,7 +95,7 @@ private fun MainScreen() {
                 .padding(padding)
         ) {
             when (selectedTab) {
-                is MainPageScreen.NopoX -> BlockerPageHome()
+                is MainPageScreen.Home -> BlockerPageHome()
                 is MainPageScreen.Streak -> StreakPage()
                 is MainPageScreen.About -> AboutPage()
                 is MainPageScreen.Profile -> ProfilePage()
@@ -115,7 +115,7 @@ private fun PlaceholderScreen(label: String) {
 }
 
 @Composable
-private fun NopoXBottomBar(
+private fun AppBottomBar(
     selected: MainPageScreen,
     onSelect: (MainPageScreen) -> Unit
 ) {
@@ -137,7 +137,7 @@ private fun NopoXBottomBar(
 }
 
 private fun MainPageScreen.vectorIcon(): ImageVector = when (this) {
-    is MainPageScreen.NopoX -> Icons.Filled.Shield
+    is MainPageScreen.Home -> Icons.Filled.Shield
     is MainPageScreen.Streak -> Icons.Filled.LocalFireDepartment
     is MainPageScreen.About -> Icons.Filled.Info
     is MainPageScreen.Profile -> Icons.Filled.Person

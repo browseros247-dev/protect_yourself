@@ -3,7 +3,7 @@ package protect.yourself.features.blockerPage.utils
 import java.util.Locale
 
 /**
- * Default VPN DNS presets — ported from original NopoX.
+ * Default VPN DNS presets — ported from original Protect Yourself.
  *
  * Each preset has a display name, two DNS IPs, and a flag indicating
  * whether it's pre-selected by default.

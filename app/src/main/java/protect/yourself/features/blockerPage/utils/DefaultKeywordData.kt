@@ -13,7 +13,7 @@ import java.util.Locale
  * Default keyword data loader.
  *
  * Loads preset block + whitelist keywords from `assets/preset_block_keywords.json`
- * and `assets/preset_whitelist_keywords.json` (extracted from original NopoX APK
+ * and `assets/preset_whitelist_keywords.json` (extracted from original Protect Yourself APK
  * via Base64-decoding the embedded data in BlockerPageUtils.blockingKeywords()).
  *
  * Original behavior:

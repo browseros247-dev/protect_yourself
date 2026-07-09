@@ -1,6 +1,6 @@
 # Contributing to protect.yourself
 
-Thanks for considering a contribution! This is a community-maintained rebuild of NopoX.
+Thanks for considering a contribution! This is a community-maintained rebuild of Protect Yourself.
 
 ## How to contribute
 

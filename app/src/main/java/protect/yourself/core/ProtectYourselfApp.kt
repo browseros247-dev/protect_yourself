@@ -19,7 +19,7 @@ import timber.log.Timber
  * failure crashes the app on launch. Non-critical failures are logged
  * but don't prevent the app from starting.
  */
-class NopoXApp : KillerApplication(), LifecycleObserver {
+class ProtectYourselfApp : KillerApplication(), LifecycleObserver {
 
     lateinit var appContainer: AppContainer
         private set
@@ -144,10 +144,10 @@ class NopoXApp : KillerApplication(), LifecycleObserver {
     }
 
     companion object {
-        private const val TAG = "NopoXApp"
+        private const val TAG = "ProtectYourselfApp"
 
         @JvmStatic
-        fun get(application: Application): NopoXApp =
-            application as NopoXApp
+        fun get(application: Application): ProtectYourselfApp =
+            application as ProtectYourselfApp
     }
 }

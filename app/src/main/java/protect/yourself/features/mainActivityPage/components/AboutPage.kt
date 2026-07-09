@@ -68,7 +68,7 @@ fun AboutPage() {
         // Rebuild info
         AboutCard("About this rebuild") {
             Text(
-                text = "This is a free rebuild of the original NopoX app, with all payment " +
+                text = "This is a free, open-source rebuild of the original app, with all payment " +
                     "functionality, ads, and tracking removed. Every feature is available at no cost.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface
@@ -108,7 +108,7 @@ fun AboutPage() {
         // Credits
         AboutCard("Credits") {
             Text(
-                text = "Original NopoX by PlanProductive — rebuilt from APK via reverse engineering.",
+                text = "Original app by PlanProductive — rebuilt from APK via reverse engineering.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

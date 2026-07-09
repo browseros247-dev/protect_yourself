@@ -5,7 +5,7 @@ import android.content.pm.PackageManager
 
 /**
  * Provides access to PackageManager without requiring a Context per call.
- * Initialized in NopoXApp.onCreate().
+ * Initialized in ProtectYourselfApp.onCreate().
  */
 object PackageManagerProvider {
     @Volatile

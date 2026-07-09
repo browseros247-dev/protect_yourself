@@ -3,7 +3,7 @@ package protect.yourself.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * NopoX color palette — ported from original `res/values/colors.xml`.
+ * Protect Yourself color palette — ported from original `res/values/colors.xml`.
  *
  * Dark theme is the primary theme (matches original exactly).
  * Light theme is new for the rebuild (DayNight support per user choice).
