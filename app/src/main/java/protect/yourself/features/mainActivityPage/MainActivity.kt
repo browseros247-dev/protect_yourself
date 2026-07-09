@@ -1,5 +1,6 @@
 package protect.yourself.features.mainActivityPage
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -21,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -55,12 +57,24 @@ class MainActivity : ComponentActivity() {
         initPageUi()
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // Phase 5: handle deep links (accountability partner approval)
+        // Phase 5: handle widget tab-open extras (EXTRA_OPEN_TAB)
+    }
+
     private fun initPageUi() {
         setContent {
             NopoXTheme {
                 MainScreen()
             }
         }
+    }
+
+    companion object {
+        /** Intent extra: name of the bottom-nav tab to open (e.g. "Streak"). */
+        const val EXTRA_OPEN_TAB = "extra_open_tab"
     }
 }
 
@@ -90,7 +104,7 @@ private fun MainScreen() {
 private fun PlaceholderScreen(label: String) {
     Box(
         modifier = Modifier.fillMaxSize(),
-        contentAlignment = androidx.compose.ui.Alignment.Center
+        contentAlignment = Alignment.Center
     ) {
         Text(label)
     }

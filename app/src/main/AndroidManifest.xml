@@ -175,6 +175,16 @@
             android:exported="false"
             android:theme="@style/Theme.Transparent" />
 
+        <!-- Porn block activity (block screen overlay) -->
+        <activity
+            android:name="protect.yourself.features.blockerPage.ui.PornBlockActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:screenOrientation="portrait"
+            android:showOnLockScreen="true"
+            android:theme="@style/Theme.NopoX.NoActionBar" />
+
         <!-- Image cropper (CanHub library) -->
         <activity
             android:name="com.canhub.cropper.CropImageActivity"
@@ -307,6 +317,16 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/streak_widget_info" />
+        </receiver>
+
+        <!-- Stop Me alarm receiver (for session start/end) -->
+        <receiver
+            android:name="protect.yourself.commons.utils.broadcastReceivers.StopMeAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="protect.yourself.action.STOP_ME_START" />
+                <action android:name="protect.yourself.action.STOP_ME_END" />
+            </intent-filter>
         </receiver>
 
         <!-- ===== Content Providers ===== -->
