@@ -45,9 +45,9 @@ fun AboutPage() {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // App info
-        AboutCard("About protect.yourself") {
+        AboutCard("About Protect Yourself") {
             Text(
-                text = "protect.yourself is a free, open-source app blocker & focus companion " +
+                text = "Protect Yourself is a free, open-source app blocker & focus companion " +
                     "designed to help you overcome porn addiction and build healthier digital habits.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface

@@ -321,8 +321,8 @@
             android:name="protect.yourself.commons.utils.broadcastReceivers.StopMeAlarmReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="protect.yourself.action.STOP_ME_START" />
-                <action android:name="protect.yourself.action.STOP_ME_END" />
+                <action android:name="protect_yourself.action.STOP_ME_START" />
+                <action android:name="protect_yourself.action.STOP_ME_END" />
             </intent-filter>
         </receiver>
 

@@ -53,7 +53,7 @@ fun ProfilePage() {
         ProfileItem("Import/Export", "Backup to local file or restore"),
         ProfileItem("FAQ", "Frequently asked questions"),
         ProfileItem("About", "App info, version, licenses"),
-        ProfileItem("Share app", "Share protect.yourself with friends"),
+        ProfileItem("Share app", "Share Protect Yourself with friends"),
         ProfileItem("Contact us", "Email support"),
         ProfileItem("Delete account", "Permanently delete your account + data", isDestructive = true)
     )
@@ -76,7 +76,7 @@ fun ProfilePage() {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "protect.yourself",
+                        text = "Protect Yourself",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = BrandOrange
@@ -106,8 +106,8 @@ fun ProfilePage() {
                         "Share app" -> {
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, "protect.yourself")
-                                putExtra(Intent.EXTRA_TEXT, "Check out protect.yourself — a free app blocker")
+                                putExtra(Intent.EXTRA_SUBJECT, "Protect Yourself")
+                                putExtra(Intent.EXTRA_TEXT, "Check out Protect Yourself — a free app blocker")
                             }
                             context.startActivity(Intent.createChooser(shareIntent, "Share via"))
                         }

@@ -222,8 +222,8 @@ class MyVpnService : VpnService() {
     }
 
     companion object {
-        const val ACTION_START = "protect.yourself.action.VPN_START"
-        const val ACTION_STOP = "protect.yourself.action.VPN_STOP"
+        const val ACTION_START = "protect_yourself.action.VPN_START"
+        const val ACTION_STOP = "protect_yourself.action.VPN_STOP"
         const val NOTIFICATION_ID = 1001
         const val NOTIFICATION_CHANNEL_ID = "vpn_service_channel"
 

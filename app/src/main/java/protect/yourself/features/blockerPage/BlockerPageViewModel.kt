@@ -382,7 +382,7 @@ class BlockerPageViewModel(
                 // ===== SECTION_FAQ =====
                 add(SettingPageItemModel(
                     identifier = SettingPageItemIdentifiers.SECTION_FAQ,
-                    title = "Keep protect.yourself Live",
+                    title = "Keep Protect Yourself Live",
                     isSection = true
                 ))
                 add(SettingPageItemModel(

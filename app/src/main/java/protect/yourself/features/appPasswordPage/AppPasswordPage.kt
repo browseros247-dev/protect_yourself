@@ -165,7 +165,7 @@ fun launchBiometricPrompt(
     )
 
     val info = BiometricPrompt.PromptInfo.Builder()
-        .setTitle("Unlock protect.yourself")
+        .setTitle("Unlock Protect Yourself")
         .setSubtitle("Use your fingerprint or face to unlock")
         .setNegativeButtonText("Use PIN/password instead")
         .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK)

@@ -65,7 +65,7 @@ fun AgreeTermsPage(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = "Welcome to protect.yourself",
+            text = "Welcome to Protect Yourself",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = BrandOrange
@@ -92,7 +92,7 @@ fun AgreeTermsPage(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "By using protect.yourself, you agree that:\n\n" +
+                    text = "By using Protect Yourself, you agree that:\n\n" +
                         "1. The app is provided 'as is' without warranty.\n" +
                         "2. You are responsible for your usage decisions.\n" +
                         "3. The app may use Accessibility service to block content.\n" +
@@ -123,7 +123,7 @@ fun AgreeTermsPage(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "protect.yourself respects your privacy:\n\n" +
+                    text = "Protect Yourself respects your privacy:\n\n" +
                         "• No personal data is collected without your consent.\n" +
                         "• Accessibility data is processed locally and never sent to servers.\n" +
                         "• Crash reports (Crashlytics) help us fix bugs — anonymous.\n" +
@@ -211,7 +211,7 @@ fun AccessibilityPermissionPage(
         )
 
         Text(
-            text = "protect.yourself needs Accessibility permission to block adult content " +
+            text = "Protect Yourself needs Accessibility permission to block adult content " +
                 "on your device. Without it, blocking will not work.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onBackground
@@ -232,7 +232,7 @@ fun AccessibilityPermissionPage(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "1. Tap 'Open Settings' below\n" +
-                        "2. Find 'protect.yourself' in the accessibility list\n" +
+                        "2. Find 'Protect Yourself' in the accessibility list\n" +
                         "3. Toggle it ON\n" +
                         "4. Return to this app",
                     style = MaterialTheme.typography.bodyMedium,
@@ -297,7 +297,7 @@ fun PopupPermissionPage(
         )
 
         Text(
-            text = "protect.yourself needs Display Pop-up Window permission to show " +
+            text = "Protect Yourself needs Display Pop-up Window permission to show " +
                 "the block screen over other apps.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onBackground

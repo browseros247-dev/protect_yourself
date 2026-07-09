@@ -37,7 +37,7 @@
     <!-- Block screen UI -->
     <string name="why">Why</string>
     <string name="close">Close</string>
-    <string name="play_store_rating_message">Are you finding protect.yourself helpful? Rate us!</string>
+    <string name="play_store_rating_message">Are you finding Protect Yourself helpful? Rate us!</string>
 
     <!-- Stop Me -->
     <string name="stop_me">Stop Me</string>
@@ -61,12 +61,12 @@
     <string name="section_insta_yt_blocking">Social Media Blocking</string>
     <string name="section_uninstall_protection">Uninstall Protection</string>
     <string name="section_advance_feature">Advance feature</string>
-    <string name="section_faq">Keep protect.yourself Live</string>
+    <string name="section_faq">Keep Protect Yourself Live</string>
 
     <!-- Permissions -->
-    <string name="accessibility_service_description">In order to block adult content on your device, protect.yourself will need this permission (accessibility services). protect.yourself will also be able to block specific websites/apps that you add to the list of blocked items with this permission.</string>
-    <string name="accessibility_service_summary">In order to block adult content on your device, protect.yourself will need this permission (accessibility services).</string>
-    <string name="accessibility_turn_off_alert_message">protect.yourself uses a system-managed service called BIND_ACCESSIBILITY_SERVICE. To enable blocking, turn this service on / restart it by turning it off and on again.</string>
+    <string name="accessibility_service_description">In order to block adult content on your device, Protect Yourself will need this permission (accessibility services). Protect Yourself will also be able to block specific websites/apps that you add to the list of blocked items with this permission.</string>
+    <string name="accessibility_service_summary">In order to block adult content on your device, Protect Yourself will need this permission (accessibility services).</string>
+    <string name="accessibility_turn_off_alert_message">Protect Yourself uses a system-managed service called BIND_ACCESSIBILITY_SERVICE. To enable blocking, turn this service on / restart it by turning it off and on again.</string>
     <string name="accessibility_turn_off_alert_title">Accessibility permission</string>
 
     <!-- App version -->
@@ -74,11 +74,11 @@
     <string name="app_update_version_available">Better, faster app version available</string>
 
     <!-- Accessibility -->
-    <string name="accessibility_on_guide_common">Go to protect.yourself</string>
-    <string name="accessibility_on_guide_samsung">Go to Installed Services -> protect.yourself</string>
-    <string name="accessibility_on_guide_xiaomi">Go to More downloaded services -> protect.yourself</string>
+    <string name="accessibility_on_guide_common">Go to Protect Yourself</string>
+    <string name="accessibility_on_guide_samsung">Go to Installed Services -> Protect Yourself</string>
+    <string name="accessibility_on_guide_xiaomi">Go to More downloaded services -> Protect Yourself</string>
     <string name="accessibility_on_skip">Skip</string>
-    <string name="accessibility_checkbox_alert_message">By checking this box, I grant protect.yourself permission to use the Accessibility service to block adult content.</string>
+    <string name="accessibility_checkbox_alert_message">By checking this box, I grant Protect Yourself permission to use the Accessibility service to block adult content.</string>
     <string name="accessibility_checkbox_error_message">Please read and check the box to turn on accessibility service.</string>
 
     <!-- Block screen error messages -->
@@ -103,7 +103,7 @@
     <string name="app_lock_card_title">App lock</string>
     <string name="backup_sync_card_info">"The purpose of this is to backup your keywords, selected apps, and other items. So you don't have to setup the app again and again."</string>
     <string name="backup_sync_card_title">Sync and back up your data</string>
-    <string name="battery_level_maintain_message">Maintain a battery level of 20% or higher to keep protect.yourself running uninterrupted.</string>
+    <string name="battery_level_maintain_message">Maintain a battery level of 20% or higher to keep Protect Yourself running uninterrupted.</string>
     <string name="block_all_website_info">"If on, you won't be able to access any websites in supported browsers. You need to add a website to your whitelist in order to access it."</string>
     <string name="block_all_website_title">Block all websites</string>
     <string name="block_image_video_search_card_info">"If on, you can't search images and videos on supported browsers."</string>
@@ -113,7 +113,7 @@
     <string name="block_new_install_App_card_info">Newly installed apps will automatically be blocked if this setting is enabled. You can unblock an app by long clicking it.</string>
     <string name="block_new_install_app_card_title">Block new install apps</string>
     <string name="block_recent_app_card_title">Block Recent Apps Screen</string>
-    <string name="block_recent_app_info">Using this feature, you will not be able to open recent apps. However, before enabling it, please lock protect.yourself in recent apps.</string>
+    <string name="block_recent_app_info">Using this feature, you will not be able to open recent apps. However, before enabling it, please lock Protect Yourself in recent apps.</string>
     <string name="block_screen_count_card_info">As soon as we prevent you from accessing adult content, this number will increase by one.</string>
     <string name="block_screen_count_card_title">Block screens</string>
     <string name="block_screen_count_down_hint">Enter seconds</string>
@@ -148,15 +148,15 @@
     <string name="delete_account_alert_message">Do you really want to delete your account? All data, including streak progress, will be cleared. Are you ready?</string>
     <string name="instagram_search_reels_blocking_card_info">You will be able to be more productive with this.</string>
     <string name="in_progress">In progress</string>
-    <string name="low_rating_message">If you have any suggestions or feedback for improving protect.yourself, please contact us by email.</string>
-    <string name="mi_allow_all_permission_message">Display pop-up window permissions are needed to block inappropriate content effectively with protect.yourself.</string>
+    <string name="low_rating_message">If you have any suggestions or feedback for improving Protect Yourself, please contact us by email.</string>
+    <string name="mi_allow_all_permission_message">Display pop-up window permissions are needed to block inappropriate content effectively with Protect Yourself.</string>
     <string name="protective_mode">Protective Mode</string>
     <string name="protective_mode_not_set_error">Please set protective Mode to modify any settings.</string>
     <string name="protective_mode_request_history_card_info">The request history for all types of protective Modes can be viewed here.</string>
     <string name="protective_mode_section_info">A switch/setting can only be disabled with the approval of a Protective Mode itself.</string>
     <string name="protective_mode_suggest_card_info">Kindly recommend some effective protective modes you would like to have in the app.</string>
     <string name="protective_mode_suggest_card_title">Suggest protective mode</string>
-    <string name="protective_mode_suggest_email_subject">Give Suggestion on protect.yourself protective mode</string>
+    <string name="protective_mode_suggest_email_subject">Give Suggestion on Protect Yourself protective mode</string>
     <string name="real_friend_card_info">The request to disable a switch/setting needs to be made after your real friend approved.</string>
     <string name="request_already_in_pending_message">"Request already in progress. It can't be sent until first request is completed."</string>
     <string name="request_approve">Approved the request</string>
@@ -176,14 +176,14 @@
 
     <!-- App lock notifications -->
     <string name="app_lock_notification_alert_message">A solution is available to keep you safe from unauthorized access. This way, no one can enter the app without your permission. Would you like to enable it?</string>
-    <string name="app_lock_notification_alert_title">protect.yourself: Protect the app from unauthorized access.</string>
-    <string name="pu_notification_alert_message">We have a solution to prevent you from uninstalling protect.yourself. This will prevent excessive cravings and urges. Would you like to enable uninstall protection?</string>
-    <string name="pu_notification_alert_title">protect.yourself: Extra protection against urges.</string>
+    <string name="app_lock_notification_alert_title">Protect Yourself: Protect the app from unauthorized access.</string>
+    <string name="pu_notification_alert_message">We have a solution to prevent you from uninstalling Protect Yourself. This will prevent excessive cravings and urges. Would you like to enable uninstall protection?</string>
+    <string name="pu_notification_alert_title">Protect Yourself: Extra protection against urges.</string>
     <string name="real_friend_notification_alert_message">We have a solution: set up protective Modes. By doing so, you will be able to resist high urges more easily. Are you interested in enabling it?</string>
-    <string name="real_friend_notification_alert_title">protect.yourself: Protective Mode (real friend).</string>
+    <string name="real_friend_notification_alert_title">Protect Yourself: Protective Mode (real friend).</string>
 
     <!-- VPN notification -->
-    <string name="vpn_notification_title">protect.yourself VPN active</string>
+    <string name="vpn_notification_title">Protect Yourself VPN active</string>
     <string name="vpn_notification_text">DNS blocking is protecting you from adult content</string>
     <string name="vpn_notification_channel">VPN service</string>
 

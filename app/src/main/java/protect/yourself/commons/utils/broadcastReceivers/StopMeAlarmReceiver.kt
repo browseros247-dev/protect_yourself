@@ -34,8 +34,8 @@ class StopMeAlarmReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        const val ACTION_STOP_ME_START = "protect.yourself.action.STOP_ME_START"
-        const val ACTION_STOP_ME_END = "protect.yourself.action.STOP_ME_END"
+        const val ACTION_STOP_ME_START = "protect_yourself.action.STOP_ME_START"
+        const val ACTION_STOP_ME_END = "protect_yourself.action.STOP_ME_END"
         const val EXTRA_SESSION_KEY = "extra_session_key"
     }
 }

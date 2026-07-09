@@ -103,6 +103,6 @@ class StopMeWidget : AppWidgetProvider() {
     }
 
     companion object {
-        const val ACTION_START_INSTANT = "protect.yourself.action.WIDGET_START_INSTANT"
+        const val ACTION_START_INSTANT = "protect_yourself.action.WIDGET_START_INSTANT"
     }
 }

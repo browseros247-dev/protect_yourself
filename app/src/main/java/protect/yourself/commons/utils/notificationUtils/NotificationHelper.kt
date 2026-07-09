@@ -118,7 +118,7 @@ object NotificationHelper {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ACCESSIBILITY_ALERT)
             .setSmallIcon(R.drawable.ic_info)
-            .setContentTitle("protect.yourself: Blocking disabled!")
+            .setContentTitle("Protect Yourself: Blocking disabled!")
             .setContentText("Tap to re-enable accessibility service")
             .setContentIntent(pending)
             .setAutoCancel(true)

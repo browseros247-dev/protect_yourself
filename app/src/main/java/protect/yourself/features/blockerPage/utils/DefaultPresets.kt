@@ -167,8 +167,7 @@ object DefaultSupportedSocialMedia {
 object DefaultWhitelistApps {
 
     val ALL: List<String> = listOf(
-        "protect.yourself",       // self
-        "protect.yourself.debug", // self debug
+        "protect.yourself",       // self (applicationId)
         "com.android.systemui",   // system UI
         "com.android.settings",   // settings (so user can grant permissions)
         "com.android.packageinstaller",
