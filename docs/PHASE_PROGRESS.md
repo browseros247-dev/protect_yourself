@@ -1,6 +1,21 @@
 # Phase Progress Tracker
 
-> Track each phase of the rebuild. All 7 phases complete.
+> Track each phase of the rebuild. All 7 phases complete + APK built + signed.
+
+## ✅ BUILD VERIFIED
+
+**Debug APK**: `protect.yourself-v1.0.0-debug.apk` (27.9 MB, package `protect.yourself.debug`)
+**Release APK**: `protect.yourself-v1.0.0-release.apk` (20.1 MB, package `protect.yourself`)
+
+Both built successfully and signed with the embedded debug keystore (Android Debug cert, valid until 2056). Both pass uber-apk-signer verification: zipalign + signature v2.
+
+Build environment:
+- Temurin JDK 17.0.13 (system Java 21 was JRE-only)
+- Android SDK Platform 35 + Build-Tools 35.0.0 + Platform-Tools
+- Gradle 8.10.2 + AGP 8.7.2 + Kotlin 2.0.21
+- Compose BOM 2024.10.01 + Room 2.6.1 + Firebase BoM 33.5.1
+
+---
 
 ## Phase 1: Project Skeleton ✅
 
