@@ -4,7 +4,9 @@ plugins {
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.kapt)
     alias(libs.plugins.google.services)
-    alias(libs.plugins.firebase.crashlytics)
+    // REMOVED: firebase.crashlytics plugin — auto-injects init code that can
+    // crash if the Firebase project doesn't have Crashlytics properly enabled.
+    // The app uses Firebase Crashlytics via direct API calls instead.
 }
 
 android {
@@ -170,7 +172,8 @@ dependencies {
     implementation(libs.firebase.auth.ktx)
     implementation(libs.firebase.firestore.ktx)
     implementation(libs.firebase.messaging.ktx)
-    implementation(libs.firebase.crashlytics.ktx)
+    // REMOVED: firebase.crashlytics.ktx — can crash on init if project not configured
+    // implementation(libs.firebase.crashlytics.ktx)
     implementation(libs.firebase.config.ktx)
 
     // Coroutines
