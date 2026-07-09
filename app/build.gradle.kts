@@ -38,7 +38,9 @@ android {
         debug {
             isDebuggable = true
             isMinifyEnabled = false
-            applicationIdSuffix = ".debug"
+            // No applicationIdSuffix — Firebase google-services.json only has
+            // 'protect.yourself' package. User can add a second app to Firebase
+            // for 'protect.yourself.debug' if side-by-side install is needed.
             versionNameSuffix = "-debug"
             manifestPlaceholders["appLabel"] = "protect.yourself DEBUG"
         }

@@ -1,5 +1,6 @@
 # Built application files
-*.apk
+# NOTE: APKs in /app/build/ are still ignored via the build/ rule below.
+# Final release APKs are explicitly committed to /apk/ directory.
 *.aar
 *.ap_
 *.aab
