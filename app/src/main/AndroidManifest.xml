@@ -341,19 +341,34 @@
 
         <!-- Image cropper file provider — removed, dependency stripped -->
 
-        <!-- AndroidX startup -->
+        <!-- AndroidX startup — DISABLED to prevent crashes from auto-initializers
+             that run BEFORE Application.onCreate(). Everything is initialized
+             manually in ProtectYourselfApp.onCreate() with try/catch. -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
-            android:directBootAware="false"
             android:exported="false"
             tools:node="merge">
+            <!-- Disable WorkManager auto-init (we use on-demand via WorkManager.getInstance) -->
             <meta-data
                 android:name="androidx.work.WorkManagerInitializer"
-                android:value="androidx.startup" />
+                android:value="androidx.startup"
+                tools:node="remove" />
+            <!-- Disable ProcessLifecycle auto-init (we add observer manually) -->
             <meta-data
                 android:name="androidx.lifecycle.ProcessLifecycleInitializer"
-                android:value="androidx.startup" />
+                android:value="androidx.startup"
+                tools:node="remove" />
+            <!-- Disable EmojiCompat auto-init (not used) -->
+            <meta-data
+                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+            <!-- Disable ProfileInstaller auto-init (not needed) -->
+            <meta-data
+                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
         </provider>
 
         <!-- ===== Meta-data ===== -->

@@ -3,10 +3,10 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.kapt)
-    alias(libs.plugins.google.services)
-    // REMOVED: firebase.crashlytics plugin — auto-injects init code that can
-    // crash if the Firebase project doesn't have Crashlytics properly enabled.
-    // The app uses Firebase Crashlytics via direct API calls instead.
+    // REMOVED: google.services plugin — generates FirebaseInitProvider config
+    // that auto-initializes Firebase BEFORE Application.onCreate(), crashing
+    // the app if the Firebase project is invalid/misconfigured.
+    // Firebase can be re-added later when properly configured.
 }
 
 android {
@@ -167,19 +167,21 @@ dependencies {
     // implementation(libs.androidx.recyclerview)  // removed, not used
     // implementation(libs.androidx.preference.ktx)  // removed, not used
 
-    // Firebase
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.auth.ktx)
-    implementation(libs.firebase.firestore.ktx)
-    implementation(libs.firebase.messaging.ktx)
-    // REMOVED: firebase.crashlytics.ktx — can crash on init if project not configured
-    // implementation(libs.firebase.crashlytics.ktx)
-    implementation(libs.firebase.config.ktx)
+    // Firebase — ALL REMOVED
+    // FirebaseInitProvider auto-initializes Firebase BEFORE Application.onCreate()
+    // and crashes the app if the project config is invalid.
+    // The app's core features (blocking, VPN, Stop Me, Streak, widgets) don't need Firebase.
+    // Firebase (Auth, Firestore, Messaging) can be re-added later when properly configured.
+    // implementation(platform(libs.firebase.bom))
+    // implementation(libs.firebase.auth.ktx)
+    // implementation(libs.firebase.firestore.ktx)
+    // implementation(libs.firebase.messaging.ktx)
+    // implementation(libs.firebase.config.ktx)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.kotlinx.coroutines.play.services)
+    // implementation(libs.kotlinx.coroutines.play.services)  // removed with Firebase
 
     // UI libraries
     implementation(libs.lottie.compose)

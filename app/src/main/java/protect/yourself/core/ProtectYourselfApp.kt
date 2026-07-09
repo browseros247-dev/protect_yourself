@@ -6,6 +6,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleObserver
 import androidx.lifecycle.OnLifecycleEvent
 import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.work.Configuration
 import protect.yourself.BuildConfig
 import protect.yourself.database.core.AppDatabase
 import timber.log.Timber
@@ -13,16 +14,19 @@ import timber.log.Timber
 /**
  * Application class for Protect Yourself.
  *
- * Extends Application directly (NOT KillerApplication — the signature killer
- * was removed because it uses reflection to replace IPackageManager, which
- * breaks on Android 14+ and causes crashes during Firebase initialization.
- * The signature killer was only needed for the modified APK to bypass
- * signature checks against the original app — not needed for a fresh install.)
+ * Extends Application directly (NO signature killer, NO Firebase).
  *
- * All initialization steps are wrapped in try/catch to ensure no single
- * failure crashes the app on launch.
+ * CRASH PREVENTION STRATEGY:
+ * 1. All auto-initializers disabled in AndroidManifest.xml (FirebaseInitProvider,
+ *    WorkManagerInitializer, ProcessLifecycleInitializer, EmojiCompat, ProfileInstaller)
+ * 2. Everything initialized manually here in onCreate() with try/catch
+ * 3. Global uncaught exception handler writes crash logs to cache/crash_log.txt
+ *
+ * Firebase was removed entirely because FirebaseInitProvider auto-initializes
+ * Firebase BEFORE Application.onCreate() and crashes if the project config is
+ * invalid. The app's core features don't need Firebase.
  */
-class ProtectYourselfApp : Application(), LifecycleObserver {
+class ProtectYourselfApp : Application(), LifecycleObserver, Configuration.Provider {
 
     lateinit var appContainer: AppContainer
         private set
@@ -36,7 +40,6 @@ class ProtectYourselfApp : Application(), LifecycleObserver {
         super.onCreate()
 
         // 0. Install global uncaught exception handler to log crashes to a file
-        // This helps debug crashes that happen before Timber is initialized
         installCrashHandler()
 
         // 1. Init Timber logging FIRST (so other init steps can log)
@@ -59,7 +62,7 @@ class ProtectYourselfApp : Application(), LifecycleObserver {
             protect.yourself.commons.utils.PackageManagerProvider.init(this)
         }
 
-        // 6. Accessibility self-heal + guard (Phase 6)
+        // 6. Accessibility self-heal + guard
         safeInit("AccessibilityGuard") {
             protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe()
             protect.yourself.features.protectedApps.AccessibilityGuard.getInstance()
@@ -83,6 +86,15 @@ class ProtectYourselfApp : Application(), LifecycleObserver {
     }
 
     /**
+     * WorkManager Configuration.Provider — enables on-demand initialization.
+     * WorkManager is initialized when first accessed, NOT during app startup.
+     */
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setMinimumLoggingLevel(if (BuildConfig.DEBUG) Log.DEBUG else Log.INFO)
+            .build()
+
+    /**
      * Wrapper that catches any exception from an init step and logs it
      * without crashing the app.
      */
@@ -102,11 +114,7 @@ class ProtectYourselfApp : Application(), LifecycleObserver {
 
     /**
      * Install a global uncaught exception handler that writes crash stacktraces
-     * to a file in the app's cache directory. This helps debug crashes that
-     * happen before any logging is set up.
-     *
-     * The crash log is written to: /data/data/protect.yourself/cache/crash_log.txt
-     * User can retrieve it via: adb shell run-as protect.yourself cat cache/crash_log.txt
+     * to a file in the app's cache directory.
      */
     private fun installCrashHandler() {
         val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
