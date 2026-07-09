@@ -15,22 +15,25 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import protect.yourself.database.core.AppDatabase
+import protect.yourself.database.selectedApps.SelectedAppListIdentifier
 import protect.yourself.database.switchStatus.SwitchIdentifier
 import protect.yourself.database.switchStatus.SwitchStatusValues
 import protect.yourself.features.blockerPage.data.SettingPageItemModel
 import protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers
 import protect.yourself.features.blockerPage.service.MyAccessibilityService
-import protect.yourself.features.blockerPage.service.MyVpnService
 import timber.log.Timber
 
 /**
  * Navigation events emitted by BlockerPageViewModel.
- * BlockerPageHome collects these and navigates accordingly.
  */
 sealed class BlockerPageNavigation {
-    data class OpenSelectAppPage(val title: String, val identifier: protect.yourself.database.selectedApps.SelectedAppListIdentifier) : BlockerPageNavigation()
+    data class OpenSelectAppPage(val title: String, val identifier: SelectedAppListIdentifier) : BlockerPageNavigation()
     data class OpenUrl(val url: String) : BlockerPageNavigation()
     data class ShowToast(val message: String) : BlockerPageNavigation()
+    data class EditTextField(val title: String, val currentValue: String, val hint: String, val switchKey: String) : BlockerPageNavigation()
+    data class EditNumberField(val title: String, val currentValue: Int, val min: Int, val max: Int, val switchKey: String) : BlockerPageNavigation()
+    data object RequestVpnPermission : BlockerPageNavigation()
+    data object StopVpn : BlockerPageNavigation()
     data object OpenAccessibilitySettings : BlockerPageNavigation()
     data object OpenOverlaySettings : BlockerPageNavigation()
     data object OpenAppLockSetup : BlockerPageNavigation()
@@ -38,6 +41,7 @@ sealed class BlockerPageNavigation {
     data object OpenStopMe : BlockerPageNavigation()
     data object OpenFaq : BlockerPageNavigation()
     data object OpenRequestHistory : BlockerPageNavigation()
+    data object PickBlockScreenImage : BlockerPageNavigation()
 }
 
 /**
@@ -63,16 +67,53 @@ class BlockerPageViewModel(
         viewModelScope.launch {
             val items = buildSettingItems()
 
-            // Load current switch values
+            // Load current switch values + dynamic action labels
             val itemsWithValues = items.map { item ->
+                var result = item
                 if (item.switchKey != null) {
-                    val value = loadSwitchValue(item.switchKey)
-                    item.copy(switchValue = value)
-                } else item
+                    result = result.copy(switchValue = loadSwitchValue(item.switchKey))
+                }
+                // Load dynamic action labels
+                result = loadDynamicActionLabel(result)
+                result
             }
 
             _state.update { it.copy(settingItems = itemsWithValues, isLoading = false) }
             Timber.i("BlockerPage loaded ${itemsWithValues.size} setting items")
+        }
+    }
+
+    private suspend fun loadDynamicActionLabel(item: SettingPageItemModel): SettingPageItemModel {
+        return when (item.identifier) {
+            SettingPageItemIdentifiers.BLOCK_SCREEN_COUNT -> {
+                val count = db.blockScreenCountDao().getCount()?.count ?: 0
+                item.copy(actionLabel = count.toString())
+            }
+            SettingPageItemIdentifiers.BLOCKED_SCREEN_COUNTDOWN -> {
+                val secs = switchValues.getBlockScreenCountDownSeconds()
+                item.copy(actionLabel = if (secs > 0) "${secs}s" else "Off")
+            }
+            SettingPageItemIdentifiers.TIME_DELAY_CUSTOM_DURATION -> {
+                val secs = switchValues.getTimeDelayCustomDurationSeconds()
+                item.copy(actionLabel = "${secs}s")
+            }
+            SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE -> {
+                val msg = switchValues.getVpnNotificationCustomMessage()
+                item.copy(actionLabel = if (msg.isNullOrBlank()) "Default" else "Custom")
+            }
+            SettingPageItemIdentifiers.BLOCKED_SCREEN_MESSAGE -> {
+                val msg = switchValues.getBlockScreenCustomMessage()
+                item.copy(actionLabel = if (msg.isNullOrBlank()) "Default" else "Custom")
+            }
+            SettingPageItemIdentifiers.CUSTOM_REDIRECT_URL_APP -> {
+                val url = switchValues.getBlockScreenRedirectUrl()
+                item.copy(actionLabel = if (url.isNullOrBlank()) "None" else "Set")
+            }
+            SettingPageItemIdentifiers.BLOCKED_SCREEN_IMAGE -> {
+                val path = switchValues.getBlockScreenStoreImagePath()
+                item.copy(actionLabel = if (path.isNullOrBlank()) "Choose" else "Set")
+            }
+            else -> item
         }
     }
 
@@ -116,14 +157,41 @@ class BlockerPageViewModel(
 
         viewModelScope.launch {
             // Special handling for VPN — requires VpnService.prepare()
-            if (switchKey == SwitchIdentifier.VPN_SWITCH && newValue) {
-                _navigation.emit(BlockerPageNavigation.ShowToast("Please grant VPN permission in system settings"))
-                // The actual VPN start happens via VpnService.prepare() in the UI layer
-                // For now, just persist the switch — the UI layer will handle VPN permission
-                switchValues.storeSwitchStatus(switchKey, newValue)
-            } else {
-                switchValues.storeSwitchStatus(switchKey, newValue)
+            if (switchKey == SwitchIdentifier.VPN_SWITCH) {
+                if (newValue) {
+                    // Request VPN permission before enabling
+                    _navigation.emit(BlockerPageNavigation.RequestVpnPermission)
+                    return@launch
+                } else {
+                    // Stopping VPN — emit event for UI to stop the service
+                    switchValues.storeSwitchStatus(switchKey, newValue)
+                    _navigation.emit(BlockerPageNavigation.StopVpn)
+                    _state.update { state ->
+                        state.copy(
+                            settingItems = state.settingItems.map {
+                                if (it.switchKey == switchKey) it.copy(switchValue = false)
+                                else it
+                            }
+                        )
+                    }
+                    return@launch
+                }
             }
+
+            // TOUCH_ID and DISABLE_FORGOT_PASSWORD should open App Lock setup
+            if (switchKey == SwitchIdentifier.TOUCH_ID_SWITCH || switchKey == SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH) {
+                _navigation.emit(BlockerPageNavigation.OpenAppLockSetup)
+                return@launch
+            }
+
+            // SET_APP_LOCK should open App Lock setup page
+            if (switchKey == SwitchIdentifier.SET_APP_LOCK_SWITCH && newValue) {
+                _navigation.emit(BlockerPageNavigation.OpenAppLockSetup)
+                return@launch
+            }
+
+            // Normal toggle
+            switchValues.storeSwitchStatus(switchKey, newValue)
 
             _state.update { state ->
                 state.copy(
@@ -141,41 +209,121 @@ class BlockerPageViewModel(
         }
     }
 
+    /**
+     * Called after VPN permission is granted — actually start the VPN + persist switch.
+     */
+    fun onVpnPermissionGranted() {
+        viewModelScope.launch {
+            switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, true)
+            _state.update { state ->
+                state.copy(
+                    settingItems = state.settingItems.map {
+                        if (it.switchKey == SwitchIdentifier.VPN_SWITCH) it.copy(switchValue = true)
+                        else it
+                    }
+                )
+            }
+            _navigation.emit(BlockerPageNavigation.ShowToast("VPN enabled"))
+        }
+    }
+
+    /**
+     * Save a text field value (from edit dialog).
+     */
+    fun saveTextField(switchKey: String, value: String) {
+        viewModelScope.launch {
+            switchValues.storeSwitchStatus(switchKey, value)
+            // Also set the "is set" flag for certain keys
+            when (switchKey) {
+                SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE -> {
+                    switchValues.storeSwitchStatus(SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE_SET, value.isNotBlank())
+                }
+                SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE -> {
+                    switchValues.storeSwitchStatus(SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE_SET, value.isNotBlank())
+                }
+                SwitchIdentifier.BLOCK_SCREEN_REDIRECT_URL -> {
+                    switchValues.storeSwitchStatus(SwitchIdentifier.BLOCK_SCREEN_REDIRECT_URL_SET, value.isNotBlank())
+                }
+            }
+            // Reload items to update action labels
+            loadSettingItems()
+        }
+    }
+
+    /**
+     * Save a number field value (from edit dialog).
+     */
+    fun saveNumberField(switchKey: String, value: Int) {
+        viewModelScope.launch {
+            switchValues.storeSwitchStatus(switchKey, value)
+            when (switchKey) {
+                SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET -> {
+                    switchValues.storeSwitchStatus(SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET, value)
+                }
+            }
+            loadSettingItems()
+        }
+    }
+
     fun onActionClick(item: SettingPageItemModel) {
         Timber.d("Action clicked: ${item.identifier}")
         viewModelScope.launch {
             val nav = when (item.identifier) {
+                // Permissions
                 SettingPageItemIdentifiers.ACCESSIBILITY_PERMISSION -> BlockerPageNavigation.OpenAccessibilitySettings
                 SettingPageItemIdentifiers.DISPLAY_POPUP_WINDOW_PERMISSION -> BlockerPageNavigation.OpenOverlaySettings
-                SettingPageItemIdentifiers.BLOCKLIST_APPS -> BlockerPageNavigation.OpenSelectAppPage(
-                    "Blocklist Apps", protect.yourself.database.selectedApps.SelectedAppListIdentifier.BLOCK_APPS
-                )
-                SettingPageItemIdentifiers.SUPPORTED_BROWSERS -> BlockerPageNavigation.OpenSelectAppPage(
-                    "Supported Browsers", protect.yourself.database.selectedApps.SelectedAppListIdentifier.SUPPORTED_BROWSER_APPS
-                )
-                SettingPageItemIdentifiers.SUPPORTED_SOCIAL_MEDIA -> BlockerPageNavigation.OpenSelectAppPage(
-                    "Supported Social Media", protect.yourself.database.selectedApps.SelectedAppListIdentifier.SUPPORTED_SOCIAL_MEDIA_APPS
-                )
-                SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER -> BlockerPageNavigation.OpenSelectAppPage(
-                    "Whitelist Browsers", protect.yourself.database.selectedApps.SelectedAppListIdentifier.WHITELIST_UNSUPPORTED_BROWSER
-                )
-                SettingPageItemIdentifiers.WHITELIST_VPN_APPS -> BlockerPageNavigation.OpenSelectAppPage(
-                    "VPN Whitelist Apps", protect.yourself.database.selectedApps.SelectedAppListIdentifier.VPN_WHITELIST_APPS
-                )
-                SettingPageItemIdentifiers.BLOCK_IN_APP_BROWSERS -> BlockerPageNavigation.OpenSelectAppPage(
-                    "Block In-App Browsers", protect.yourself.database.selectedApps.SelectedAppListIdentifier.BLOCK_IN_APP_BROWSER_APPS
-                )
-                SettingPageItemIdentifiers.BLOCK_NEW_INSTALL_APPS -> BlockerPageNavigation.OpenSelectAppPage(
-                    "Block New Install Apps", protect.yourself.database.selectedApps.SelectedAppListIdentifier.BLOCK_NEW_INSTALL_APPS
-                )
-                SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS -> BlockerPageNavigation.OpenSelectAppPage(
-                    "Setting Page Blocklist", protect.yourself.database.selectedApps.SelectedAppListIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_APPS
-                )
-                SettingPageItemIdentifiers.BLOCKER_CUSTOM_KEYWORD_WEBSITE -> BlockerPageNavigation.OpenKeywordManager
+
+                // App picker pages
+                SettingPageItemIdentifiers.BLOCKLIST_APPS -> BlockerPageNavigation.OpenSelectAppPage("Blocklist Apps", SelectedAppListIdentifier.BLOCK_APPS)
+                SettingPageItemIdentifiers.SUPPORTED_BROWSERS -> BlockerPageNavigation.OpenSelectAppPage("Supported Browsers", SelectedAppListIdentifier.SUPPORTED_BROWSER_APPS)
+                SettingPageItemIdentifiers.SUPPORTED_SOCIAL_MEDIA -> BlockerPageNavigation.OpenSelectAppPage("Supported Social Media", SelectedAppListIdentifier.SUPPORTED_SOCIAL_MEDIA_APPS)
+                SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER -> BlockerPageNavigation.OpenSelectAppPage("Whitelist Browsers", SelectedAppListIdentifier.WHITELIST_UNSUPPORTED_BROWSER)
+                SettingPageItemIdentifiers.WHITELIST_VPN_APPS -> BlockerPageNavigation.OpenSelectAppPage("VPN Whitelist Apps", SelectedAppListIdentifier.VPN_WHITELIST_APPS)
+                SettingPageItemIdentifiers.BLOCK_IN_APP_BROWSERS -> BlockerPageNavigation.OpenSelectAppPage("Block In-App Browsers", SelectedAppListIdentifier.BLOCK_IN_APP_BROWSER_APPS)
+                SettingPageItemIdentifiers.BLOCK_NEW_INSTALL_APPS -> BlockerPageNavigation.OpenSelectAppPage("Block New Install Apps", SelectedAppListIdentifier.BLOCK_NEW_INSTALL_APPS)
+                SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS -> BlockerPageNavigation.OpenSelectAppPage("Setting Page Blocklist", SelectedAppListIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_APPS)
+                SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP -> BlockerPageNavigation.OpenSelectAppPage("Blocklist Whitelist Detected Apps", SelectedAppListIdentifier.BLOCK_WHITELIST_DETECTED_APPS)
+
+                // Edit text fields
+                SettingPageItemIdentifiers.LONG_SENTENCE_CUSTOM_MESSAGE -> {
+                    val current = switchValues.getLongSentenceCustomMessage()
+                    BlockerPageNavigation.EditTextField("Long Sentence Message", current, "Enter the message users must type", SwitchIdentifier.LONG_SENTENCE_CUSTOM_MESSAGE)
+                }
+                SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE -> {
+                    val current = switchValues.getVpnNotificationCustomMessage() ?: ""
+                    BlockerPageNavigation.EditTextField("VPN Notification Message", current, "Custom message for VPN notification", SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE)
+                }
+                SettingPageItemIdentifiers.BLOCKED_SCREEN_MESSAGE -> {
+                    val current = switchValues.getBlockScreenCustomMessage() ?: ""
+                    BlockerPageNavigation.EditTextField("Block Screen Message", current, "Custom message shown on block screen", SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE)
+                }
+                SettingPageItemIdentifiers.CUSTOM_REDIRECT_URL_APP -> {
+                    val current = switchValues.getBlockScreenRedirectUrl() ?: ""
+                    BlockerPageNavigation.EditTextField("Redirect URL", current, "URL to open when user taps Close (e.g. https://...)", SwitchIdentifier.BLOCK_SCREEN_REDIRECT_URL)
+                }
+
+                // Edit number fields
+                SettingPageItemIdentifiers.TIME_DELAY_CUSTOM_DURATION -> {
+                    val current = switchValues.getTimeDelayCustomDurationSeconds()
+                    BlockerPageNavigation.EditNumberField("Time Delay (seconds)", current, 1, 300, SwitchIdentifier.TIME_DELAY_CUSTOM_DURATION)
+                }
+                SettingPageItemIdentifiers.BLOCKED_SCREEN_COUNTDOWN -> {
+                    val current = switchValues.getBlockScreenCountDownSeconds()
+                    BlockerPageNavigation.EditNumberField("Block Screen Countdown (seconds)", current, 3, 300, SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET)
+                }
+
+                // Image picker
+                SettingPageItemIdentifiers.BLOCKED_SCREEN_IMAGE -> BlockerPageNavigation.PickBlockScreenImage
+
+                // App lock
                 SettingPageItemIdentifiers.SET_APP_LOCK -> BlockerPageNavigation.OpenAppLockSetup
+
+                // Other
+                SettingPageItemIdentifiers.BLOCKER_CUSTOM_KEYWORD_WEBSITE -> BlockerPageNavigation.OpenKeywordManager
                 SettingPageItemIdentifiers.REQUEST_HISTORY -> BlockerPageNavigation.OpenRequestHistory
                 SettingPageItemIdentifiers.SUGGEST_PROTECTIVE_MODE -> BlockerPageNavigation.OpenUrl("mailto:support@protectyourself.app?subject=Suggest%20Protective%20Mode")
                 SettingPageItemIdentifiers.KEEP_NOPOX_LIVE -> BlockerPageNavigation.OpenFaq
+
                 else -> {
                     Timber.w("Unhandled action: ${item.identifier}")
                     null
@@ -235,18 +383,18 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Whitelist unsupported browsers", info = "Manage browser whitelist", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN, "VPN (DNS blocking)", info = "Block adult content at network level", switchKey = SwitchIdentifier.VPN_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_VPN_APPS, "Whitelist VPN apps", info = "Apps that bypass VPN", actionLabel = "Manage"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE, "VPN notification message", info = "Custom message for VPN notification", actionLabel = "Edit"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE, "VPN notification message", info = "Custom message for VPN notification", actionLabel = "Default"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_NOTIFICATION_HIDE, "Hide VPN notification content", switchKey = SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_NEW_INSTALL_APPS, "Block new install apps", info = "Auto-block newly installed apps", switchKey = SwitchIdentifier.BLOCK_NEW_INSTALL_APPS_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_IN_APP_BROWSERS, "Block in-app browsers", info = "Block in-app browsers inside other apps", switchKey = SwitchIdentifier.BLOCK_IN_APP_BROWSERS_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKED_SCREEN_IMAGE, "Blocked screen image for motivation", info = "Custom image shown on block screen", actionLabel = "Choose"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKED_SCREEN_MESSAGE, "Blocked screen message", info = "Custom message shown on block screen", actionLabel = "Edit"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKED_SCREEN_COUNTDOWN, "Blocked screen countdown", info = "Require waiting N seconds before Close (3-300)", actionLabel = "0s"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.CUSTOM_REDIRECT_URL_APP, "Custom redirect URL", info = "URL to open when user taps Close", actionLabel = "Edit"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKED_SCREEN_MESSAGE, "Blocked screen message", info = "Custom message shown on block screen", actionLabel = "Default"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKED_SCREEN_COUNTDOWN, "Blocked screen countdown", info = "Require waiting N seconds before Close (3-300)", actionLabel = "Off"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.CUSTOM_REDIRECT_URL_APP, "Custom redirect URL", info = "URL to open when user taps Close", actionLabel = "None"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP, "Blocklist whitelist detected apps", info = "Apps detected via accessibility events", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.SET_APP_LOCK, "App lock", info = "Require PIN/password/pattern to open app", switchKey = SwitchIdentifier.SET_APP_LOCK_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.TOUCH_ID, "Touch ID (biometric)", info = "Use fingerprint/face to unlock", switchKey = SwitchIdentifier.TOUCH_ID_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.DISABLE_FORGOT_PASSWORD, "Disable forgot password", info = "Hide forgot password option", switchKey = SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.TOUCH_ID, "Touch ID (biometric)", info = "Use fingerprint/face to unlock (configure in App Lock)", switchKey = SwitchIdentifier.TOUCH_ID_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.DISABLE_FORGOT_PASSWORD, "Disable Forgot Password", info = "Hide forgot password option (configure in App Lock)", switchKey = SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_FAQ, "Keep Protect Yourself Live", isSection = true))
         add(SettingPageItemModel(SettingPageItemIdentifiers.KEEP_NOPOX_LIVE, "How to keep app running", info = "Battery + performance tips", actionLabel = "View"))
