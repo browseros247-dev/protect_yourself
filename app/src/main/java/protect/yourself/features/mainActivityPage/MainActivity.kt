@@ -28,7 +28,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import protect.yourself.R
 import protect.yourself.features.blockerPage.components.BlockerPageHome
+import protect.yourself.features.mainActivityPage.components.AboutPage
 import protect.yourself.features.mainActivityPage.repository.MainPageScreen
+import protect.yourself.features.profilePage.components.ProfilePage
+import protect.yourself.features.streakPage.components.StreakPage
 import protect.yourself.theme.NopoXTheme
 
 /**
@@ -93,9 +96,9 @@ private fun MainScreen() {
         ) {
             when (selectedTab) {
                 is MainPageScreen.NopoX -> BlockerPageHome()
-                is MainPageScreen.Streak -> PlaceholderScreen("Streak (Phase 5)")
-                is MainPageScreen.About -> PlaceholderScreen("About (Phase 5)")
-                is MainPageScreen.Profile -> PlaceholderScreen("Profile (Phase 5)")
+                is MainPageScreen.Streak -> StreakPage()
+                is MainPageScreen.About -> AboutPage()
+                is MainPageScreen.Profile -> ProfilePage()
             }
         }
     }
