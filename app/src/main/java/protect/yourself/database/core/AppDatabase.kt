@@ -73,6 +73,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "nopox_database.db"
                 )
                     .fallbackToDestructiveMigration()
+                    .addCallback(AppDatabaseCallback(context.applicationContext))
                     .build()
                     .also { instance = it }
             }

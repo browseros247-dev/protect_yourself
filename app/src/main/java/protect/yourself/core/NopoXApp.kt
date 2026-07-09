@@ -71,6 +71,10 @@ class NopoXApp : KillerApplication(), LifecycleObserver {
         // AccessibilityPersistUtils.selfHealSafe()
         // AccessibilityGuard.startWatching(AppCtx)
 
+        // 7. Schedule periodic data check worker
+        protect.yourself.commons.utils.workManager.WorkerUtils.getInstance()
+            .initAppDataCheckWorker(this)
+
         Timber.i("NopoXApp initialized — protect.yourself v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         Log.i(TAG, "App initialized: ${packageName}")
     }
