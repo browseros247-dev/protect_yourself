@@ -13,7 +13,7 @@ navigation = "2.8.4"
 composeBom = "2024.10.01"
 room = "2.6.1"
 workManager = "2.10.0"
-biometric = "1.2.0"
+biometric = "1.1.0"
 browser = "1.8.0"
 documentfile = "1.0.1"
 fragment = "1.8.5"
@@ -39,8 +39,8 @@ ratingbar = "1.5.1"
 glance = "1.1.1"
 
 # Utility
-timber = "5.0.2"
-splitties = "3.0.0"
+timber = "5.0.1"
+splitties = "3.0.0"  # Note: only available on JitPack, removed from build.gradle.kts
 joda = "2.13.0"
 gson = "2.11.0"
 
@@ -130,8 +130,9 @@ androidx-glance-material3 = { module = "androidx.glance:glance-material3", versi
 
 # Utility
 timber = { module = "com.jakewharton.timber:timber", version.ref = "timber" }
-splitties-init = { module = "com.louiscad.splitties:splitties-init", version.ref = "splitties" }
-splitties-systemservices = { module = "com.louiscad.splitties:splitties-systemservices", version.ref = "splitties" }
+# Splitties removed - only available on JitPack, not used in rebuild
+# splitties-init = { module = "com.louiscad.splitties:splitties-init", version.ref = "splitties" }
+# splitties-systemservices = { module = "com.louiscad.splitties:splitties-systemservices", version.ref = "splitties" }
 joda = { module = "joda-time:joda-time", version.ref = "joda" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 

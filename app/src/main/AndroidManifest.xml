@@ -116,6 +116,7 @@
         android:largeHeap="true"
         android:isAccessibilityTool="true"
         android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+        tools:replace="android:label"
         tools:targetApi="33">
 
         <!-- ===== Activities ===== -->
@@ -185,11 +186,8 @@
             android:showOnLockScreen="true"
             android:theme="@style/Theme.NopoX.NoActionBar" />
 
-        <!-- Image cropper (CanHub library) -->
-        <activity
-            android:name="com.canhub.cropper.CropImageActivity"
-            android:exported="true"
-            android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar" />
+        <!-- Image cropper (CanHub library) — removed, dependency stripped -->
+        <!-- <activity android:name="com.canhub.cropper.CropImageActivity" .../> -->
 
         <!-- ===== Services ===== -->
 
@@ -342,16 +340,7 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Image cropper file provider -->
-        <provider
-            android:name="com.canhub.cropper.CropFileProvider"
-            android:authorities="${applicationId}.cropper.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/library_file_paths" />
-        </provider>
+        <!-- Image cropper file provider — removed, dependency stripped -->
 
         <!-- AndroidX startup -->
         <provider
@@ -364,9 +353,6 @@
                 android:name="androidx.work.WorkManagerInitializer"
                 android:value="androidx.startup"
                 tools:node="remove" />
-            <meta-data
-                android:name="splitties.init.AppCtxInitializer"
-                android:value="androidx.startup" />
             <meta-data
                 android:name="androidx.lifecycle.ProcessLifecycleInitializer"
                 android:value="androidx.startup" />

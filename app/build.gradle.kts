@@ -44,8 +44,10 @@ android {
         }
         release {
             isDebuggable = false
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Disable R8 minification to fit in memory-constrained build environments.
+            // User can re-enable for production Play Store builds.
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -77,8 +79,9 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
-        viewBinding = true
-        dataBinding = true
+        // Disable viewBinding + dataBinding (not used in Compose-only rebuild)
+        viewBinding = false
+        dataBinding = false
     }
 
     packaging {
@@ -150,15 +153,15 @@ dependencies {
     // Biometric
     implementation(libs.androidx.biometric)
 
-    // Browser (custom tabs)
-    implementation(libs.androidx.browser)
+    // Browser (custom tabs) — removed, not used
+    // implementation(libs.androidx.browser)
 
     // Other AndroidX
     implementation(libs.androidx.documentfile)
     implementation(libs.androidx.fragment.ktx)
-    implementation(libs.androidx.viewpager2)
-    implementation(libs.androidx.recyclerview)
-    implementation(libs.androidx.preference.ktx)
+    // implementation(libs.androidx.viewpager2)  // removed, not used
+    // implementation(libs.androidx.recyclerview)  // removed, not used
+    // implementation(libs.androidx.preference.ktx)  // removed, not used
 
     // Firebase
     implementation(platform(libs.firebase.bom))
@@ -175,15 +178,14 @@ dependencies {
 
     // UI libraries
     implementation(libs.lottie.compose)
-    implementation(libs.image.cropper)
-    implementation(libs.ratingbar)
-    implementation(libs.androidx.glance.appwidget)
-    implementation(libs.androidx.glance.material3)
+    // implementation(libs.image.cropper)  // removed, not used in code
+    // implementation(libs.ratingbar)  // removed, not used (using built-in RatingBar)
+    // implementation(libs.androidx.glance.appwidget)  // removed, using traditional widgets
+    // implementation(libs.androidx.glance.material3)  // removed
 
     // Utility
     implementation(libs.timber)
-    implementation(libs.splitties.init)
-    implementation(libs.splitties.systemservices)
+    // Splitties removed - only available on JitPack, not used in rebuild
     implementation(libs.joda)
     implementation(libs.gson)
 

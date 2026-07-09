@@ -84,7 +84,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun MainScreen() {
-    var selectedTab by remember { mutableStateOf(MainPageScreen.NopoX) }
+    var selectedTab: MainPageScreen by remember { mutableStateOf(MainPageScreen.NopoX) }
 
     Scaffold(
         bottomBar = { NopoXBottomBar(selectedTab) { selectedTab = it } }
