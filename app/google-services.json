@@ -1,16 +1,13 @@
 {
-  "_INFO_": "PLACEHOLDER google-services.json — REPLACE WITH REAL ONE FROM FIREBASE CONSOLE",
-  "_HOW_TO_REPLACE_": "1. Go to https://console.firebase.google.com/  2. Create a new project  3. Add Android app with package 'protect.yourself'  4. Download google-services.json  5. Replace this file with the real one  6. Rebuild",
-  "_STATUS_": "placeholder",
   "project_info": {
-    "project_number": "000000000000",
-    "project_id": "protect-yourself-placeholder",
-    "storage_bucket": "protect-yourself-placeholder.appspot.com"
+    "project_number": "149261109336",
+    "project_id": "flutter-ai-playground-64339",
+    "storage_bucket": "flutter-ai-playground-64339.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "mobilesdk_app_id": "1:149261109336:android:10a383c68a9b5a7626e22d",
         "android_client_info": {
           "package_name": "protect.yourself"
         }
@@ -18,26 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "PLACEHOLDER_API_KEY_REPLACE_ME"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
-        "android_client_info": {
-          "package_name": "protect.yourself.debug"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "PLACEHOLDER_API_KEY_REPLACE_ME"
+          "current_key": "AIzaSyCollfbEQ22fFYjklMZJJ35Dks5nuswMkw"
         }
       ],
       "services": {
