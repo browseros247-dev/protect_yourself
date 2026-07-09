@@ -32,6 +32,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,7 +60,6 @@ import protect.yourself.database.switchStatus.SwitchStatusValues
 import protect.yourself.features.appPasswordPage.AppLockManager
 import protect.yourself.features.appPasswordPage.AppLockScreen
 import protect.yourself.features.blockerPage.components.BlockerPageHome
-import protect.yourself.features.blockerPage.service.MyAccessibilityService
 import protect.yourself.features.mainActivityPage.components.AboutPage
 import protect.yourself.features.mainActivityPage.repository.MainPageScreen
 import protect.yourself.features.profilePage.components.ProfilePage
@@ -78,13 +79,50 @@ import timber.log.Timber
  *  3. If accepted → check if app lock enabled
  *  4. If locked → show AppLockScreen
  *  5. If unlocked → show MainScreen
+ *
+ * FIX: setContent is called ONCE in onCreate. State changes are observed
+ * by Compose via mutableStateOf, which triggers recomposition automatically.
+ * Previous version called setContent multiple times (once per state change),
+ * which created multiple composition trees and caused UI glitches.
  */
 class MainActivity : FragmentActivity() {
 
-    private var appState = AppState.LOADING
+    // Observable state — Compose watches this for changes
+    private var appState by mutableStateOf(AppState.LOADING)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Call setContent ONCE — Compose will recompose when appState changes
+        setContent {
+            AppTheme {
+                when (appState) {
+                    AppState.LOADING -> LoadingScreen()
+                    AppState.ONBOARDING -> OnboardingPage(
+                        onAccept = { openAccessibilitySettings ->
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                try {
+                                    val switchValues = SwitchStatusValues(
+                                        AppDatabase.getInstance(this@MainActivity).switchStatusDao()
+                                    )
+                                    switchValues.storeSwitchStatus(SwitchIdentifier.TERMS_APPROVE_STATUS, true)
+                                    Timber.i("Terms accepted")
+                                } catch (t: Throwable) {
+                                    Timber.e(t, "Failed to save terms acceptance")
+                                }
+                                appState = AppState.MAIN
+                            }
+                        }
+                    )
+                    AppState.LOCKED -> AppLockScreen(onUnlocked = {
+                        appState = AppState.MAIN
+                    })
+                    AppState.MAIN -> MainScreen()
+                }
+            }
+        }
+
+        // Check app state on background thread
         checkAppState()
     }
 
@@ -109,36 +147,6 @@ class MainActivity : FragmentActivity() {
                 Timber.e(t, "Failed to check app state — defaulting to MAIN")
                 appState = AppState.MAIN
             }
-            runOnUiThread { renderUI() }
-        }
-    }
-
-    private fun renderUI() {
-        setContent {
-            AppTheme {
-                when (appState) {
-                    AppState.LOADING -> LoadingScreen()
-                    AppState.ONBOARDING -> OnboardingPage(
-                        onAccept = {
-                            lifecycleScope.launch(Dispatchers.IO) {
-                                try {
-                                    val switchValues = SwitchStatusValues(
-                                        AppDatabase.getInstance(this@MainActivity).switchStatusDao()
-                                    )
-                                    switchValues.storeSwitchStatus(SwitchIdentifier.TERMS_APPROVE_STATUS, true)
-                                } catch (_: Throwable) {}
-                                appState = AppState.MAIN
-                                runOnUiThread { renderUI() }
-                            }
-                        }
-                    )
-                    AppState.LOCKED -> AppLockScreen(onUnlocked = {
-                        appState = AppState.MAIN
-                        renderUI()
-                    })
-                    AppState.MAIN -> MainScreen()
-                }
-            }
         }
     }
 
@@ -157,15 +165,27 @@ enum class AppState { LOADING, ONBOARDING, LOCKED, MAIN }
 @Composable
 private fun LoadingScreen() {
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center
     ) {
-        CircularProgressIndicator(color = BrandOrange)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            CircularProgressIndicator(color = BrandOrange)
+            Text(
+                text = "Loading Protect Yourself…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
     }
 }
 
 @Composable
-private fun OnboardingPage(onAccept: () -> Unit) {
+private fun OnboardingPage(onAccept: (openAccessibilitySettings: Boolean) -> Unit) {
     val context = LocalContext.current
     var agreed by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
@@ -178,6 +198,7 @@ private fun OnboardingPage(onAccept: () -> Unit) {
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Title
         Text(
             text = "Welcome to Protect Yourself",
             style = MaterialTheme.typography.headlineMedium,
@@ -266,26 +287,36 @@ private fun OnboardingPage(onAccept: () -> Unit) {
             }
         }
 
+        // Accept & open accessibility settings
         Button(
             onClick = {
-                // Open accessibility settings after accepting
+                // Open accessibility settings
                 try {
                     val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
                     context.startActivity(intent)
                 } catch (_: Throwable) {}
-                onAccept()
+                // Accept terms + transition to main
+                onAccept(true)
             },
             enabled = agreed,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = BrandOrange)
+            colors = ButtonDefaults.buttonColors(
+                containerColor = BrandOrange,
+                disabledContainerColor = BrandOrange.copy(alpha = 0.3f)
+            )
         ) {
             Text("Accept & Open Accessibility Settings", fontWeight = FontWeight.Bold)
         }
 
-        TextButton(onClick = onAccept, modifier = Modifier.fillMaxWidth()) {
-            Text("Skip for now")
+        // Skip (also accepts terms, but doesn't open settings)
+        TextButton(
+            onClick = { onAccept(false) },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = agreed
+        ) {
+            Text("Accept & Continue to App")
         }
 
         Spacer(modifier = Modifier.height(40.dp))
