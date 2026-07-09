@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import protect.yourself.R
+import protect.yourself.features.blockerPage.components.BlockerPageHome
 import protect.yourself.features.mainActivityPage.repository.MainPageScreen
 import protect.yourself.theme.NopoXTheme
 
@@ -91,7 +92,7 @@ private fun MainScreen() {
                 .padding(padding)
         ) {
             when (selectedTab) {
-                is MainPageScreen.NopoX -> PlaceholderScreen("NopoX (Phase 4)")
+                is MainPageScreen.NopoX -> BlockerPageHome()
                 is MainPageScreen.Streak -> PlaceholderScreen("Streak (Phase 5)")
                 is MainPageScreen.About -> PlaceholderScreen("About (Phase 5)")
                 is MainPageScreen.Profile -> PlaceholderScreen("Profile (Phase 5)")

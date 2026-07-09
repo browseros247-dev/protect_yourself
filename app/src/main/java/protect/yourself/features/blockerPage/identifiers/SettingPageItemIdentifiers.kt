@@ -1,0 +1,89 @@
+package protect.yourself.features.blockerPage.identifiers
+
+/**
+ * SettingPageItemIdentifiers — ported 1:1 from original.
+ *
+ * 60+ identifiers covering all setting items in the BlockerPage.
+ * Used by BlockerPageViewModel.getSettingPageItemList() to render the page.
+ *
+ * PREMIUM_LOGIN_ICON + PREMIUM_OFFER + LOGIN_NOW are kept for compatibility
+ * but not rendered (premium removed).
+ */
+enum class SettingPageItemIdentifiers {
+    // Alert section
+    PREMIUM_LOGIN_ICON,
+    BLOCK_SCREEN_COUNT,
+    PREMIUM_OFFER,
+    LOGIN_NOW,
+    SECTION_ALERT,
+
+    // Permissions
+    ACCESSIBILITY_PERMISSION,
+    DISPLAY_POPUP_WINDOW_PERMISSION,
+
+    // Accountability partner section
+    SECTION_ACCOUNTABILITY_PARTNER,
+    LONG_SENTENCE,
+    LONG_SENTENCE_CUSTOM_MESSAGE,
+    TIME_DELAY,
+    TIME_DELAY_CUSTOM_DURATION,
+    REAL_FRIEND,
+    DAILY_REPORT,
+    SUGGEST_PROTECTIVE_MODE,
+    REQUEST_HISTORY,
+
+    // Content blocking section
+    SECTION_CONTENT_BLOCKING,
+    SUPPORTED_BROWSERS,
+    SUPPORTED_SOCIAL_MEDIA,
+    PORN_BLOCKER,
+    BLOCKER_CUSTOM_KEYWORD_WEBSITE,
+    BLOCKLIST_APPS,
+    BLOCK_ALL_WEBSITE,
+    SAFE_SEARCH,
+    BLOCK_IMAGE_VIDEO_SEARCH,
+    MAKE_ANY_BROWSER_SUPPORTED,
+
+    // Social media blocking section
+    SECTION_INSTA_YT_BLOCKING,
+    BLOCK_SNAPCHAT_STORIES,
+    BLOCK_SNAPCHAT_SPOTLIGHT,
+    BLOCK_INSTA_REELS,
+    BLOCK_INSTA_SEARCH,
+    BLOCK_WHATSAPP_STATUS,
+    BLOCK_YT_SHORTS,
+    BLOCK_YT_SEARCH,
+    BLOCK_TELEGRAM_SEARCH,
+
+    // Uninstall protection section
+    SECTION_UNINSTALL_PROTECTION,
+    PREVENT_UNINSTALL_SETTINGS,
+    BLOCK_NOTIFICATION_DRAWER,
+    BLOCK_PHONE_REBOOT,
+    BLOCK_RECENT_APPS,
+    BLOCK_SETTING_PAGE_BY_TITLE,
+    BLOCK_SETTING_PAGE_BY_TITLE_APPS,
+
+    // Advanced features section
+    SECTION_ADVANCE_FEATURE,
+    BLOCK_UNSUPPORTED_BROWSERS,
+    WHITELIST_UNSUPPORTED_BROWSER,
+    VPN,
+    WHITELIST_VPN_APPS,
+    VPN_NOTIFICATION_MESSAGE,
+    VPN_NOTIFICATION_HIDE,
+    BLOCK_NEW_INSTALL_APPS,
+    BLOCK_IN_APP_BROWSERS,
+    BLOCKED_SCREEN_IMAGE,
+    BLOCKED_SCREEN_MESSAGE,
+    BLOCKED_SCREEN_COUNTDOWN,
+    CUSTOM_REDIRECT_URL_APP,
+    BLOCK_WHITELIST_DETECTED_APP,
+    SET_APP_LOCK,
+    TOUCH_ID,
+    DISABLE_FORGOT_PASSWORD,
+
+    // FAQ section
+    SECTION_FAQ,
+    KEEP_NOPOX_LIVE
+}

@@ -67,6 +67,9 @@ class NopoXApp : KillerApplication(), LifecycleObserver {
         appContainer = AppContainer(this)
         setAppContainer(appContainer)
 
+        // 5b. Initialize PackageManagerProvider for app picker
+        protect.yourself.commons.utils.PackageManagerProvider.init(this)
+
         // 6. Phase 3+: Accessibility self-heal + guard
         // AccessibilityPersistUtils.selfHealSafe()
         // AccessibilityGuard.startWatching(AppCtx)
