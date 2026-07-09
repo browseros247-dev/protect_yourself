@@ -7,14 +7,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import protect.yourself.database.blockScreensCount.BlockScreenCountItemModel
-import protect.yourself.database.selectedApps.SelectedAppItemModel
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
-import protect.yourself.database.stopMeDuration.StopMeDurationItemModel
-import protect.yourself.database.stopMeSessionCount.StopMeSessionCountItemModel
+import protect.yourself.database.selectedKeywords.SelectedKeywordIdentifier
 import protect.yourself.database.switchStatus.SwitchIdentifier
-import protect.yourself.database.switchStatus.SwitchStatusItemModel
-import protect.yourself.database.vpnCustomDns.VpnCustomDnsItemModel
 import protect.yourself.features.blockerPage.utils.DefaultDnsPresets
 import protect.yourself.features.blockerPage.utils.DefaultKeywordData
 import protect.yourself.features.blockerPage.utils.DefaultStopMeDurations
@@ -26,184 +21,201 @@ import timber.log.Timber
 /**
  * Room database callback that pre-populates the database on first launch.
  *
- * Inserted data:
- *  - 1 BlockScreenCountItemModel (count=0)
- *  - 1 StopMeSessionCountItemModel (duration=0)
- *  - 50+ SwitchStatusItemModel (all default switches)
- *  - 4 VpnCustomDnsItemModel (Cloudflare, OpenDNS, CleanBrowsing, AdGuard)
- *  - 4 StopMeDurationItemModel (15m, 30m, 1h, 2h)
- *  - 11 SelectedAppItemModel for SUPPORTED_BROWSER_APPS
- *  - 5 SelectedAppItemModel for SUPPORTED_SOCIAL_MEDIA_APPS
- *  - 6 SelectedAppItemModel for VPN_WHITELIST_APPS (default whitelist)
- *  - 1189 SelectedKeywordItemModel for PORN_BLOCK_WORDS (preset)
- *  - 20 SelectedKeywordItemModel for PORN_WHITE_LIST_WORDS (preset)
+ * CRITICAL: The `onCreate` callback runs while the database creation transaction
+ * is still open. Using DAOs (which open their own transactions) here causes a
+ * deadlock / "database is locked" exception that crashes the app.
+ *
+ * FIX: All pre-population is done via `db.execSQL()` directly on the
+ * SupportSQLiteDatabase parameter, which executes within the same transaction
+ * as the table creation. This is the correct Room pattern.
+ *
+ * Keyword pre-population (1189+ entries) is deferred to a background coroutine
+ * that runs AFTER the DB is fully created, using DAOs safely.
  */
 class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
 
     override fun onCreate(db: SupportSQLiteDatabase) {
         super.onCreate(db)
-        Timber.i("AppDatabase created — pre-populating default data")
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            prePopulate()
+        Timber.i("AppDatabase created — pre-populating default data via execSQL")
+
+        try {
+            // === 1. Block screen count (single row, key=0, count=0) ===
+            db.execSQL(
+                "INSERT OR REPLACE INTO block_screen_count_table (`key`, count) VALUES (0, 0)"
+            )
+
+            // === 2. Stop Me session count (single row, key=0, count=0) ===
+            db.execSQL(
+                "INSERT OR REPLACE INTO stop_me_session_count_table (`key`, duration) VALUES (0, 0)"
+            )
+
+            // === 3. Default switches (all OFF except porn_blocker) ===
+            insertDefaultSwitches(db)
+
+            // === 4. Default VPN DNS presets ===
+            insertDnsPresets(db)
+
+            // === 5. Default Stop Me durations (instant type: days=0) ===
+            insertStopMeDurations(db)
+
+            // === 6. Default supported browsers ===
+            insertSupportedBrowsers(db)
+
+            // === 7. Default supported social media ===
+            insertSupportedSocialMedia(db)
+
+            // === 8. Default whitelist apps ===
+            insertWhitelistApps(db)
+
+            Timber.i("Core default data inserted via execSQL")
+
+            // === 9. Preset keywords (1189+ entries) — deferred to background ===
+            // These are too many to insert synchronously during onCreate.
+            // Launch a background coroutine that runs AFTER onCreate returns
+            // and the DB transaction is committed.
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                try {
+                    insertPresetKeywords()
+                } catch (t: Throwable) {
+                    Timber.e(t, "Failed to insert preset keywords (non-fatal)")
+                }
+            }
+        } catch (t: Throwable) {
+            Timber.e(t, "Failed to pre-populate database (critical)")
         }
     }
 
-    private suspend fun prePopulate() {
-        val db = AppDatabase.getInstance(context)
-        Timber.i("Pre-populating default data...")
-
-        // === 1. Block screen count (single row, key=0, count=0) ===
-        db.blockScreenCountDao().upsert(BlockScreenCountItemModel(key = 0, count = 0))
-
-        // === 2. Stop Me session count (single row, key=0, count=0) ===
-        db.stopMeSessionCountDao().upsert(StopMeSessionCountItemModel(key = 0, duration = 0))
-
-        // === 3. Default switches (all OFF except porn_blocker) ===
-        val defaultSwitches = listOf(
-            // Content blocking — porn blocker default ON
-            SwitchStatusItemModel(SwitchIdentifier.PORN_BLOCKER_SWITCH, "true", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_ALL_WEBSITE_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.SAFE_SEARCH_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_IMAGE_VIDEO_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.MAKE_ANY_BROWSER_SUPPORTED_SWITCH, "false", "boolean"),
-            // Social media
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_SNAPCHAT_STORIES_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_SNAPCHAT_SPOTLIGHT_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_INSTA_REELS_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_INSTA_SEARCH_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_WHATSAPP_STATUS_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_YT_SHORTS_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_YT_SEARCH_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_TELEGRAM_SEARCH_SWITCH, "false", "boolean"),
-            // Uninstall protection
-            SwitchStatusItemModel(SwitchIdentifier.PREVENT_UNINSTALL_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_NOTIFICATION_DRAWER_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_PHONE_REBOOT_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_RECENT_APPS_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_SWITCH, "false", "boolean"),
-            // Advanced
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.VPN_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_NEW_INSTALL_APPS_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_IN_APP_BROWSERS_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.SET_APP_LOCK_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel("app_lock_type", "0", "long"),  // OFF
-            SwitchStatusItemModel(SwitchIdentifier.TOUCH_ID_SWITCH, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH, "false", "boolean"),
-            // Accountability partner
-            SwitchStatusItemModel(
-                SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, "0", "long"
-            ),  // NONE
-            SwitchStatusItemModel(SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET, "false", "boolean"),
-            SwitchStatusItemModel(
-                SwitchIdentifier.LONG_SENTENCE_CUSTOM_MESSAGE,
-                "I will not give in to my urges",
-                "string"
-            ),
-            SwitchStatusItemModel(SwitchIdentifier.TIME_DELAY_DURATION_SET, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.TIME_DELAY_CUSTOM_DURATION, "30", "int"),
-            SwitchStatusItemModel(SwitchIdentifier.REAL_FRIEND_EMAIL, "", "string"),
-            SwitchStatusItemModel(SwitchIdentifier.REAL_FRIEND_VISIBLE, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.DAILY_REPORT_SWITCH, "false", "boolean"),
-            // Block screen customization
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET, "0", "int"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE_SET, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE, "", "string"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_SCREEN_REDIRECT_URL_SET, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_SCREEN_REDIRECT_URL, "", "string"),
-            SwitchStatusItemModel(SwitchIdentifier.BLOCK_SCREEN_STORE_IMAGE_PATH, "", "string"),
-            // VPN customization
-            SwitchStatusItemModel(SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE_SET, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE, "", "string"),
-            SwitchStatusItemModel(SwitchIdentifier.VPN_DNS_CUSTOM_LIST_SET, "false", "boolean"),
-            // Stop Me
-            SwitchStatusItemModel(SwitchIdentifier.STOP_ME_WHITELIST_APPS_SET, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.SUPPORTED_BROWSER_DEFAULT_APP_SET, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.SUPPORTED_SOCIAL_MEDIA_DEFAULT_APP_SET, "false", "boolean"),
-            // App state
-            SwitchStatusItemModel(SwitchIdentifier.TERMS_APPROVE_STATUS, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.RATING_GIVEN_STATUS, "false", "boolean"),
-            SwitchStatusItemModel(SwitchIdentifier.FIREBASE_TOKEN, "", "string"),
-            SwitchStatusItemModel(SwitchIdentifier.LAST_BACKUP_CREATED_TIME, "0", "long"),
-            SwitchStatusItemModel(SwitchIdentifier.USER_DEVICE_CURRENCY_CODE, "", "string")
+    private fun insertDefaultSwitches(db: SupportSQLiteDatabase) {
+        val switches = listOf(
+            Triple(SwitchIdentifier.PORN_BLOCKER_SWITCH, "true", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_ALL_WEBSITE_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.SAFE_SEARCH_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_IMAGE_VIDEO_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.MAKE_ANY_BROWSER_SUPPORTED_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_SNAPCHAT_STORIES_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_SNAPCHAT_SPOTLIGHT_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_INSTA_REELS_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_INSTA_SEARCH_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_WHATSAPP_STATUS_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_YT_SHORTS_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_YT_SEARCH_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_TELEGRAM_SEARCH_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.PREVENT_UNINSTALL_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_NOTIFICATION_DRAWER_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_PHONE_REBOOT_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_RECENT_APPS_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.VPN_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_NEW_INSTALL_APPS_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_IN_APP_BROWSERS_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.SET_APP_LOCK_SWITCH, "false", "boolean"),
+            Triple("app_lock_type", "0", "long"),
+            Triple(SwitchIdentifier.TOUCH_ID_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, "0", "long"),
+            Triple(SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET, "false", "boolean"),
+            Triple(SwitchIdentifier.LONG_SENTENCE_CUSTOM_MESSAGE, "I will not give in to my urges", "string"),
+            Triple(SwitchIdentifier.TIME_DELAY_DURATION_SET, "false", "boolean"),
+            Triple(SwitchIdentifier.TIME_DELAY_CUSTOM_DURATION, "30", "int"),
+            Triple(SwitchIdentifier.REAL_FRIEND_EMAIL, "", "string"),
+            Triple(SwitchIdentifier.REAL_FRIEND_VISIBLE, "false", "boolean"),
+            Triple(SwitchIdentifier.DAILY_REPORT_SWITCH, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET, "0", "int"),
+            Triple(SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE_SET, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE, "", "string"),
+            Triple(SwitchIdentifier.BLOCK_SCREEN_REDIRECT_URL_SET, "false", "boolean"),
+            Triple(SwitchIdentifier.BLOCK_SCREEN_REDIRECT_URL, "", "string"),
+            Triple(SwitchIdentifier.BLOCK_SCREEN_STORE_IMAGE_PATH, "", "string"),
+            Triple(SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE_SET, "false", "boolean"),
+            Triple(SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE, "", "string"),
+            Triple(SwitchIdentifier.VPN_DNS_CUSTOM_LIST_SET, "false", "boolean"),
+            Triple(SwitchIdentifier.STOP_ME_WHITELIST_APPS_SET, "false", "boolean"),
+            Triple(SwitchIdentifier.SUPPORTED_BROWSER_DEFAULT_APP_SET, "false", "boolean"),
+            Triple(SwitchIdentifier.SUPPORTED_SOCIAL_MEDIA_DEFAULT_APP_SET, "false", "boolean"),
+            Triple(SwitchIdentifier.TERMS_APPROVE_STATUS, "false", "boolean"),
+            Triple(SwitchIdentifier.RATING_GIVEN_STATUS, "false", "boolean"),
+            Triple(SwitchIdentifier.FIREBASE_TOKEN, "", "string"),
+            Triple(SwitchIdentifier.LAST_BACKUP_CREATED_TIME, "0", "long"),
+            Triple(SwitchIdentifier.USER_DEVICE_CURRENCY_CODE, "", "string")
         )
-        db.switchStatusDao().upsertAll(defaultSwitches)
-        Timber.i("Inserted ${defaultSwitches.size} default switch states")
 
-        // === 4. Default VPN DNS presets ===
-        val dnsPresets = DefaultDnsPresets.ALL.map { preset ->
-            VpnCustomDnsItemModel(
-                key = preset.key,
-                firstDns = preset.firstDns,
-                secondDns = preset.secondDns,
-                isSelected = preset.isSelectedByDefault
+        for ((key, value, type) in switches) {
+            db.execSQL(
+                "INSERT OR REPLACE INTO switch_status (`key`, value, type) VALUES (?, ?, ?)",
+                arrayOf(key, value, type)
             )
         }
-        dnsPresets.forEach { db.vpnCustomDnsDao().upsert(it) }
-        Timber.i("Inserted ${dnsPresets.size} DNS presets")
+        Timber.i("Inserted ${switches.size} default switch states")
+    }
 
-        // === 5. Default Stop Me durations (instant type: days=0) ===
-        val stopMeDurations = DefaultStopMeDurations.ALL.map { preset ->
-            StopMeDurationItemModel(
-                key = preset.key,
-                duration = preset.durationMillis,
-                endTime = 0L,
-                days = 0,
-                startTime = 0L,
-                startTimeDayMillis = 0L
+    private fun insertDnsPresets(db: SupportSQLiteDatabase) {
+        for (preset in DefaultDnsPresets.ALL) {
+            db.execSQL(
+                "INSERT OR REPLACE INTO vpn_custom_dns (`key`, first_dns, second_dns, is_selected) VALUES (?, ?, ?, ?)",
+                arrayOf(preset.key, preset.firstDns, preset.secondDns, preset.isSelectedByDefault)
             )
         }
-        stopMeDurations.forEach { db.stopMeDurationDao().upsert(it) }
-        Timber.i("Inserted ${stopMeDurations.size} Stop Me durations")
+        Timber.i("Inserted ${DefaultDnsPresets.ALL.size} DNS presets")
+    }
 
-        // === 6. Default supported browsers ===
-        val supportedBrowsers = DefaultSupportedBrowsers.ALL.mapIndexed { index, app ->
-            SelectedAppItemModel(
-                key = "preset_browser_${app.packageName}",
-                packageName = app.packageName,
-                appName = app.displayName,
-                identifier = SelectedAppListIdentifier.SUPPORTED_BROWSER_APPS.value,
-                isSelected = true
+    private fun insertStopMeDurations(db: SupportSQLiteDatabase) {
+        for (preset in DefaultStopMeDurations.ALL) {
+            db.execSQL(
+                "INSERT OR REPLACE INTO stop_me_duration_table (`key`, duration, end_time, days, start_time, start_time_day_millis) VALUES (?, ?, ?, ?, ?, ?)",
+                arrayOf(preset.key, preset.durationMillis, 0L, 0, 0L, 0L)
             )
         }
-        db.selectedAppsListDao().upsertAll(supportedBrowsers)
-        Timber.i("Inserted ${supportedBrowsers.size} supported browsers")
+        Timber.i("Inserted ${DefaultStopMeDurations.ALL.size} Stop Me durations")
+    }
 
-        // === 7. Default supported social media ===
-        val socialMedia = DefaultSupportedSocialMedia.ALL.mapIndexed { index, app ->
-            SelectedAppItemModel(
-                key = "preset_social_${app.packageName}",
-                packageName = app.packageName,
-                appName = app.displayName,
-                identifier = SelectedAppListIdentifier.SUPPORTED_SOCIAL_MEDIA_APPS.value,
-                isSelected = true
+    private fun insertSupportedBrowsers(db: SupportSQLiteDatabase) {
+        for (app in DefaultSupportedBrowsers.ALL) {
+            db.execSQL(
+                "INSERT OR REPLACE INTO selected_apps_table (`key`, package_name, app_name, identifier, is_selected) VALUES (?, ?, ?, ?, ?)",
+                arrayOf("preset_browser_${app.packageName}", app.packageName, app.displayName,
+                    SelectedAppListIdentifier.SUPPORTED_BROWSER_APPS.value, true)
             )
         }
-        db.selectedAppsListDao().upsertAll(socialMedia)
-        Timber.i("Inserted ${socialMedia.size} supported social media apps")
+        Timber.i("Inserted ${DefaultSupportedBrowsers.ALL.size} supported browsers")
+    }
 
-        // === 8. Default whitelist apps (Stop Me + VPN) ===
-        val whitelistApps = DefaultWhitelistApps.ALL.map { pkg ->
-            SelectedAppItemModel(
-                key = "preset_whitelist_stop_me_$pkg",
-                packageName = pkg,
-                appName = pkg.substringAfterLast('.'),
-                identifier = SelectedAppListIdentifier.WHITELIST_STOP_ME_APPS.value,
-                isSelected = true
+    private fun insertSupportedSocialMedia(db: SupportSQLiteDatabase) {
+        for (app in DefaultSupportedSocialMedia.ALL) {
+            db.execSQL(
+                "INSERT OR REPLACE INTO selected_apps_table (`key`, package_name, app_name, identifier, is_selected) VALUES (?, ?, ?, ?, ?)",
+                arrayOf("preset_social_${app.packageName}", app.packageName, app.displayName,
+                    SelectedAppListIdentifier.SUPPORTED_SOCIAL_MEDIA_APPS.value, true)
             )
         }
-        db.selectedAppsListDao().upsertAll(whitelistApps)
-        Timber.i("Inserted ${whitelistApps.size} whitelist apps")
+        Timber.i("Inserted ${DefaultSupportedSocialMedia.ALL.size} supported social media apps")
+    }
 
-        // === 9. Preset block + whitelist keywords ===
+    private fun insertWhitelistApps(db: SupportSQLiteDatabase) {
+        for (pkg in DefaultWhitelistApps.ALL) {
+            db.execSQL(
+                "INSERT OR REPLACE INTO selected_apps_table (`key`, package_name, app_name, identifier, is_selected) VALUES (?, ?, ?, ?, ?)",
+                arrayOf("preset_whitelist_stop_me_$pkg", pkg, pkg.substringAfterLast('.'),
+                    SelectedAppListIdentifier.WHITELIST_STOP_ME_APPS.value, true)
+            )
+        }
+        Timber.i("Inserted ${DefaultWhitelistApps.ALL.size} whitelist apps")
+    }
+
+    /**
+     * Insert preset block + whitelist keywords.
+     * Runs in a background coroutine AFTER the DB is fully created.
+     */
+    private suspend fun insertPresetKeywords() {
+        val db = AppDatabase.getInstance(context)
         val keywordData = DefaultKeywordData.getInstance(context)
+
         val blockKeywords = keywordData.getDefaultBlockKeywordModels()
         val whitelistKeywords = keywordData.getDefaultWhitelistKeywordModels()
+
         db.selectedKeywordDao().upsertAll(blockKeywords)
         db.selectedKeywordDao().upsertAll(whitelistKeywords)
         Timber.i("Inserted ${blockKeywords.size} block keywords + ${whitelistKeywords.size} whitelist keywords")
-
-        Timber.i("Pre-population complete")
     }
 }

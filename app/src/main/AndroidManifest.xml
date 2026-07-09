@@ -116,7 +116,6 @@
         android:largeHeap="true"
         android:isAccessibilityTool="true"
         android:appComponentFactory="androidx.core.app.CoreComponentFactory"
-        tools:replace="android:label"
         tools:targetApi="33">
 
         <!-- ===== Activities ===== -->
@@ -351,8 +350,7 @@
             tools:node="merge">
             <meta-data
                 android:name="androidx.work.WorkManagerInitializer"
-                android:value="androidx.startup"
-                tools:node="remove" />
+                android:value="androidx.startup" />
             <meta-data
                 android:name="androidx.lifecycle.ProcessLifecycleInitializer"
                 android:value="androidx.startup" />

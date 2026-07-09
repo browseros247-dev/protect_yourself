@@ -31,7 +31,7 @@ android {
         }
 
         // Custom app name placeholder
-        manifestPlaceholders["appLabel"] = "protect.yourself"
+        manifestPlaceholders["appLabel"] = "Protect Yourself"
     }
 
     buildTypes {
@@ -42,7 +42,7 @@ android {
             // 'protect.yourself' package. User can add a second app to Firebase
             // for 'protect.yourself.debug' if side-by-side install is needed.
             versionNameSuffix = "-debug"
-            manifestPlaceholders["appLabel"] = "protect.yourself DEBUG"
+            manifestPlaceholders["appLabel"] = "Protect Yourself DEBUG"
         }
         release {
             isDebuggable = false

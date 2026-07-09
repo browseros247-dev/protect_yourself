@@ -13,25 +13,11 @@ import protect.yourself.database.core.AppDatabase
 import timber.log.Timber
 
 /**
- * Application class for protect.yourself.
+ * Application class for Protect Yourself.
  *
- * Initialization order (matches original NopoXApp):
- *  1. ProcessLifecycleOwner observer (for ON_STOP background events)
- *  2. super.onCreate()
- *  3. initRoomDBInstance()
- *  4. initTimberLog()
- *  5. initCrashlytics()
- *  6. BlockerPageUtils.updateAccessibilityBlockingValues() (Phase 3+)
- *  7. setAppContainer()
- *  8. AccessibilityPersistUtils.selfHealSafe() (Phase 6)
- *  9. AccessibilityGuard.startWatching() (Phase 6)
- *
- * Differences from original:
- *  - REMOVED: initBranchSDK (replaced by standard App Links)
- *  - REMOVED: initAmplitude
- *  - REMOVED: initFirebaseAppCheck (skipped — user can re-enable if needed)
- *  - REMOVED: initMavericksInstance (using ViewModel + StateFlow instead)
- *  - REMOVED: BillingDataSource + PremiumPageDataRepository from AppContainer
+ * All initialization steps are wrapped in try/catch to ensure no single
+ * failure crashes the app on launch. Non-critical failures are logged
+ * but don't prevent the app from starting.
  */
 class NopoXApp : KillerApplication(), LifecycleObserver {
 
@@ -44,59 +30,76 @@ class NopoXApp : KillerApplication(), LifecycleObserver {
 
     @OnLifecycleEvent(Lifecycle.Event.ON_STOP)
     fun onAppBackgrounded() {
-        // Phase 3+: BlockerPageUtils.updateAccessibilityBlockingValues(GlobalScope)
         Timber.d("App backgrounded")
     }
 
     override fun onCreate() {
         super.onCreate()
 
-        // 1. Lifecycle observer
-        ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+        // 1. Init Timber logging FIRST (so other init steps can log)
+        safeInit("TimberLog") { initTimberLog() }
 
-        // 2. Init Room database
-        initRoomDBInstance()
+        // 2. Init Room database (non-blocking — just creates the instance)
+        safeInit("RoomDB") { AppDatabase.getInstance(this) }
 
-        // 3. Init Timber logging
-        initTimberLog()
+        // 3. Init Crashlytics (optional — may fail if Firebase not configured)
+        safeInit("Crashlytics") { initCrashlytics() }
 
-        // 4. Init Crashlytics (kept per user choice; Amplitude + Analytics removed)
-        initCrashlytics()
-
-        // 5. App container (manual DI)
-        appContainer = AppContainer(this)
-        setAppContainer(appContainer)
-
-        // 5b. Initialize PackageManagerProvider for app picker
-        protect.yourself.commons.utils.PackageManagerProvider.init(this)
-
-        // 6. Phase 3+: Accessibility self-heal + guard
-        protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe()
-        try {
-            protect.yourself.features.protectedApps.AccessibilityGuard.getInstance()
-                .startWatching(this)
-        } catch (t: Throwable) {
-            Timber.w(t, "Failed to start AccessibilityGuard")
+        // 4. Lifecycle observer
+        safeInit("LifecycleObserver") {
+            ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         }
 
-        // 7. Schedule periodic data check worker + daily report worker
-        protect.yourself.commons.utils.workManager.WorkerUtils.getInstance()
-            .initAppDataCheckWorker(this)
+        // 5. App container (manual DI)
+        safeInit("AppContainer") {
+            appContainer = AppContainer(this)
+        }
 
-        Timber.i("NopoXApp initialized — protect.yourself v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-        Log.i(TAG, "App initialized: ${packageName}")
+        // 6. Initialize PackageManagerProvider for app picker
+        safeInit("PackageManagerProvider") {
+            protect.yourself.commons.utils.PackageManagerProvider.init(this)
+        }
+
+        // 7. Accessibility self-heal + guard (Phase 6)
+        safeInit("AccessibilityGuard") {
+            protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe()
+            protect.yourself.features.protectedApps.AccessibilityGuard.getInstance()
+                .startWatching(this)
+        }
+
+        // 8. Schedule periodic workers (non-critical — app works without them)
+        safeInit("WorkManager") {
+            protect.yourself.commons.utils.workManager.WorkerUtils.getInstance()
+                .initAppDataCheckWorker(this)
+        }
+
+        // 9. Create notification channels
+        safeInit("NotificationChannels") {
+            protect.yourself.commons.utils.notificationUtils.NotificationHelper
+                .createAllChannels(this)
+        }
+
+        Timber.i("Protect Yourself v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) initialized")
+        Log.i(TAG, "App initialized: $packageName")
     }
 
-    private fun initRoomDBInstance() {
-        // Eagerly initialize Room database so it's ready before any screen
-        AppDatabase.getInstance(this)
+    /**
+     * Wrapper that catches any exception from an init step and logs it
+     * without crashing the app.
+     */
+    private fun safeInit(stepName: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (t: Throwable) {
+            Timber.e(t, "Init step '$stepName' failed (non-fatal)")
+            Log.e(TAG, "Init step '$stepName' failed", t)
+        }
     }
 
     private fun initTimberLog() {
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         } else {
-            // In release, plant a Crashlytics tree so errors are reported
             Timber.plant(CrashlyticsTree())
         }
     }
@@ -109,13 +112,8 @@ class NopoXApp : KillerApplication(), LifecycleObserver {
             crashlytics.setCustomKey("build_number", BuildConfig.VERSION_CODE.toLong())
             crashlytics.setCustomKey("package", packageName)
         } catch (t: Throwable) {
-            // Crashlytics may not be configured if google-services.json is placeholder
-            Timber.w(t, "Crashlytics init failed (likely placeholder google-services.json)")
+            Timber.w(t, "Crashlytics init failed (likely Firebase not configured)")
         }
-    }
-
-    private fun setAppContainer(container: AppContainer) {
-        // container is already set above; this method exists for parity with original
     }
 
     /**

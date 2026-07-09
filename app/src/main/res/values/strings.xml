@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- App identity -->
-    <string name="app_name">protect.yourself</string>
+    <string name="app_name">Protect Yourself</string>
 
     <!-- Bottom nav -->
     <string name="nav_premium">Premium</string>
