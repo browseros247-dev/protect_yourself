@@ -124,7 +124,7 @@ fun BlockerPageHome() {
             SimpleSubPage(title = "Keyword Manager") { currentPage = null }
         }
         SubPage.AppLockSetup -> {
-            SimpleSubPage(title = "App Lock Setup") { currentPage = null }
+            protect.yourself.features.appPasswordPage.AppLockSetupPage(onBack = { currentPage = null })
         }
         SubPage.RequestHistory -> {
             SimpleSubPage(title = "Request History") { currentPage = null }

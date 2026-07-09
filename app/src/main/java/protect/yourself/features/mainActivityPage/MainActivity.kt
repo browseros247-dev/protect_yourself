@@ -18,6 +18,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,22 +27,51 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import protect.yourself.R
+import protect.yourself.features.appPasswordPage.AppLockManager
+import protect.yourself.features.appPasswordPage.AppLockScreen
 import protect.yourself.features.blockerPage.components.BlockerPageHome
 import protect.yourself.features.mainActivityPage.components.AboutPage
 import protect.yourself.features.mainActivityPage.repository.MainPageScreen
 import protect.yourself.features.profilePage.components.ProfilePage
 import protect.yourself.features.streakPage.components.StreakPage
 import protect.yourself.theme.AppTheme
+import timber.log.Timber
 
 /**
  * Main launcher activity.
+ *
+ * Extends FragmentActivity for BiometricPrompt support (App Lock).
+ *
+ * On launch:
+ *  1. Checks if app lock is enabled (PIN/password/pattern)
+ *  2. If enabled, shows AppLockScreen
+ *  3. After successful unlock, shows main app UI
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
+
+    private var isLocked = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        initPageUi()
+
+        // Check if app lock is enabled
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val lockManager = AppLockManager.getInstance(this@MainActivity)
+                val lockEnabled = lockManager.isLockEnabled()
+                isLocked = lockEnabled
+                Timber.i("App lock enabled: $lockEnabled")
+            } catch (t: Throwable) {
+                Timber.e(t, "Failed to check app lock state")
+                isLocked = false
+            }
+            runOnUiThread { initPageUi() }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -52,7 +82,16 @@ class MainActivity : ComponentActivity() {
     private fun initPageUi() {
         setContent {
             AppTheme {
-                MainScreen()
+                if (isLocked) {
+                    // Show lock screen
+                    AppLockScreen(onUnlocked = {
+                        isLocked = false
+                        // Recompose to show main UI
+                        initPageUi()
+                    })
+                } else {
+                    MainScreen()
+                }
             }
         }
     }
