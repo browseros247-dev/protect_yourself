@@ -138,7 +138,7 @@ class BlockerPageViewModel(
         SwitchIdentifier.TOUCH_ID_SWITCH -> switchValues.isTouchIdSwitchOn()
         SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH -> switchValues.isDisableForgotPasswordSwitchOn()
         SwitchIdentifier.DAILY_REPORT_SWITCH -> switchValues.isDailyReportSwitchOn()
-        SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET -> switchValues.isLongSentenceMessageSet()
+        // LONG_SENTENCE_MESSAGE_SET removed from UI — always ON in background
         SwitchIdentifier.TIME_DELAY_DURATION_SET -> switchValues.isTimeDelayDurationSet()
         SwitchIdentifier.REAL_FRIEND_VISIBLE -> switchValues.isRealFriendVisible()
         else -> false
@@ -207,37 +207,29 @@ class BlockerPageViewModel(
             }
 
             // Protective mode switches — only one can be active at a time
-            // Enabling one disables the others + updates ACCOUNTABILITY_PARTNER_TYPE
+            // Long Sentence is ALWAYS active in the background automatically
+            // (removed from UI — no user toggle needed)
             when (switchKey) {
-                SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET -> {
-                    if (newValue) {
-                        // Enabling Long Sentence → disable Time Delay + Real Friend
-                        switchValues.storeSwitchStatus(SwitchIdentifier.TIME_DELAY_DURATION_SET, false)
-                        switchValues.storeSwitchStatus(SwitchIdentifier.REAL_FRIEND_VISIBLE, false)
-                        switchValues.storeSwitchStatus(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, 1L)
-                        _navigation.emit(BlockerPageNavigation.ShowToast("Long Sentence protective mode enabled"))
-                    } else {
-                        switchValues.storeSwitchStatus(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, 0L)
-                        _navigation.emit(BlockerPageNavigation.ShowToast("Long Sentence disabled"))
-                    }
-                }
                 SwitchIdentifier.TIME_DELAY_DURATION_SET -> {
                     if (newValue) {
-                        switchValues.storeSwitchStatus(SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET, false)
                         switchValues.storeSwitchStatus(SwitchIdentifier.REAL_FRIEND_VISIBLE, false)
                         switchValues.storeSwitchStatus(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, 2L)
+                        // Long Sentence always ON in background
+                        switchValues.storeSwitchStatus(SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET, true)
                         _navigation.emit(BlockerPageNavigation.ShowToast("Time Delay protective mode enabled"))
                     } else {
                         switchValues.storeSwitchStatus(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, 0L)
+                        // Keep Long Sentence ON even when Time Delay is OFF
+                        switchValues.storeSwitchStatus(SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET, true)
                         _navigation.emit(BlockerPageNavigation.ShowToast("Time Delay disabled"))
                     }
                 }
                 SwitchIdentifier.REAL_FRIEND_VISIBLE -> {
                     if (newValue) {
-                        switchValues.storeSwitchStatus(SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET, false)
                         switchValues.storeSwitchStatus(SwitchIdentifier.TIME_DELAY_DURATION_SET, false)
                         switchValues.storeSwitchStatus(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, 3L)
-                        // Prompt for friend's email
+                        // Long Sentence always ON in background
+                        switchValues.storeSwitchStatus(SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET, true)
                         val currentEmail = switchValues.getRealFriendEmail() ?: ""
                         _navigation.emit(BlockerPageNavigation.EditTextField(
                             "Real Friend Email",
@@ -248,6 +240,7 @@ class BlockerPageViewModel(
                         _navigation.emit(BlockerPageNavigation.ShowToast("Real Friend enabled — enter partner's email"))
                     } else {
                         switchValues.storeSwitchStatus(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, 0L)
+                        switchValues.storeSwitchStatus(SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET, true)
                         _navigation.emit(BlockerPageNavigation.ShowToast("Real Friend disabled"))
                     }
                 }
@@ -369,10 +362,7 @@ class BlockerPageViewModel(
                 SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP -> BlockerPageNavigation.OpenSelectAppPage("Blocklist Whitelist Detected Apps", SelectedAppListIdentifier.BLOCK_WHITELIST_DETECTED_APPS)
 
                 // Edit text fields
-                SettingPageItemIdentifiers.LONG_SENTENCE_CUSTOM_MESSAGE -> {
-                    val current = switchValues.getLongSentenceCustomMessage()
-                    BlockerPageNavigation.EditTextField("Long Sentence Message", current, "Enter the message users must type", SwitchIdentifier.LONG_SENTENCE_CUSTOM_MESSAGE)
-                }
+                // LONG_SENTENCE_CUSTOM_MESSAGE removed from UI — uses default message
                 SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE -> {
                     val current = switchValues.getVpnNotificationCustomMessage() ?: ""
                     BlockerPageNavigation.EditTextField("VPN Notification Message", current, "Custom message for VPN notification", SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE)
@@ -424,8 +414,7 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.DISPLAY_POPUP_WINDOW_PERMISSION, "Display pop-up window permission", info = "Required to show block screen", actionLabel = "Grant"))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_ACCOUNTABILITY_PARTNER, "Protective Mode", isSection = true))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.LONG_SENTENCE, "Long Sentence", info = "Type a long message to disable a switch", switchKey = SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.LONG_SENTENCE_CUSTOM_MESSAGE, "Long Sentence custom message", info = "Edit the message users must type", actionLabel = "Edit"))
+        // Long Sentence removed from UI — always active in background automatically
         add(SettingPageItemModel(SettingPageItemIdentifiers.TIME_DELAY, "Time Delay", info = "Wait before disabling a switch", switchKey = SwitchIdentifier.TIME_DELAY_DURATION_SET))
         add(SettingPageItemModel(SettingPageItemIdentifiers.TIME_DELAY_CUSTOM_DURATION, "Time Delay duration", info = "Set delay in seconds", actionLabel = "30s"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.REAL_FRIEND, "Real Friend", info = "Require friend's approval to disable switches", switchKey = SwitchIdentifier.REAL_FRIEND_VISIBLE))
