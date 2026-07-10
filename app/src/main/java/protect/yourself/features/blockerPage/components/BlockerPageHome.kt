@@ -83,6 +83,20 @@ fun BlockerPageHome() {
         }
     }
 
+    // Image picker launcher (for block screen motivation image)
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            // Save the image URI to DB
+            viewModel.saveTextField(
+                protect.yourself.database.switchStatus.SwitchIdentifier.BLOCK_SCREEN_STORE_IMAGE_PATH,
+                uri.toString()
+            )
+            android.widget.Toast.makeText(context, "Image selected", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // Collect navigation events
     LaunchedEffect(Unit) {
         viewModel.navigation.collect { nav ->
@@ -146,7 +160,15 @@ fun BlockerPageHome() {
                     currentPage = SubPage.StopMe
                 }
                 is BlockerPageNavigation.PickBlockScreenImage -> {
-                    currentPage = SubPage.ImagePicker
+                    imagePickerLauncher.launch("image/*")
+                }
+                is BlockerPageNavigation.RequestDeviceAdmin -> {
+                    try {
+                        val adminManager = protect.yourself.features.protectedApps.DeviceAdminManager.getInstance(context)
+                        adminManager.requestActive()
+                    } catch (t: Throwable) {
+                        android.widget.Toast.makeText(context, "Could not open Device Admin settings", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }

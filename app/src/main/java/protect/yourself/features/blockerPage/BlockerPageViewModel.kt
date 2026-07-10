@@ -42,6 +42,7 @@ sealed class BlockerPageNavigation {
     data object OpenFaq : BlockerPageNavigation()
     data object OpenRequestHistory : BlockerPageNavigation()
     data object PickBlockScreenImage : BlockerPageNavigation()
+    data object RequestDeviceAdmin : BlockerPageNavigation()
 }
 
 /**
@@ -197,6 +198,14 @@ class BlockerPageViewModel(
                 return@launch
             }
 
+            // PREVENT_UNINSTALL ON → request Device Admin
+            if (switchKey == SwitchIdentifier.PREVENT_UNINSTALL_SWITCH && newValue) {
+                _navigation.emit(BlockerPageNavigation.RequestDeviceAdmin)
+                // Don't toggle yet — wait for user to grant Device Admin
+                // The UI will check if admin was granted and then persist
+                return@launch
+            }
+
             // Protective mode switches — only one can be active at a time
             // Enabling one disables the others + updates ACCOUNTABILITY_PARTNER_TYPE
             when (switchKey) {
@@ -325,6 +334,7 @@ class BlockerPageViewModel(
             }
             // Reload items to update action labels
             loadSettingItems()
+            _navigation.emit(BlockerPageNavigation.ShowToast("Saved"))
         }
     }
 
@@ -334,12 +344,8 @@ class BlockerPageViewModel(
     fun saveNumberField(switchKey: String, value: Int) {
         viewModelScope.launch {
             switchValues.storeSwitchStatus(switchKey, value)
-            when (switchKey) {
-                SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET -> {
-                    switchValues.storeSwitchStatus(SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET, value)
-                }
-            }
             loadSettingItems()
+            _navigation.emit(BlockerPageNavigation.ShowToast("Saved: $value"))
         }
     }
 
