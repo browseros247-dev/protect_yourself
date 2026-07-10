@@ -69,6 +69,14 @@ object SwitchIdentifier {
     // Stop Me
     const val STOP_ME_WHITELIST_APPS_SET = "stop_me_whitelist_apps_set"
 
+    // KB-18 fix: pseudo-switch keys used by the edit-text-dialog flow. These
+    // are NOT real boolean switches — they are routing keys that tell
+    // BlockerPageViewModel.saveTextField() to insert the user's text input as
+    // a keyword rather than persisting it as a switch value. Declared here so
+    // they are not hidden raw strings scattered across the ViewModel.
+    const val BLOCK_SETTING_TITLE_INPUT = "block_setting_title_input"
+    const val BLOCK_PACKAGE_INTENT_INPUT = "block_package_intent_input"
+
     // App state
     const val TERMS_APPROVE_STATUS = "terms_approve_status"
     const val RATING_GIVEN_STATUS = "rating_given_status"

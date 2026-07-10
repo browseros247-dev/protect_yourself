@@ -24,6 +24,7 @@ import protect.yourself.database.switchStatus.SwitchStatusDao
 import protect.yourself.database.switchStatus.SwitchStatusItemModel
 import protect.yourself.database.vpnCustomDns.VpnCustomDnsDao
 import protect.yourself.database.vpnCustomDns.VpnCustomDnsItemModel
+import timber.log.Timber
 
 /**
  * App Room database — Phase 1 placeholder.
@@ -76,6 +77,13 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "protect_yourself_database.db"
                 )
+                    // v8 → v9: add display_name column to vpn_custom_dns.
+                    // IMPORTANT: we add the migration BEFORE fallbackToDestructiveMigration()
+                    // so that existing v1.0.33 users keep their data (streak, block count,
+                    // keywords, app lists, etc.) when they upgrade to v1.0.34+.
+                    // fallbackToDestructiveMigration() is only a last-resort fallback
+                    // for any future schema bumps that don't have a migration written.
+                    .addMigrations(MIGRATION_8_9)
                     .fallbackToDestructiveMigration()
                     .addCallback(AppDatabaseCallback(context.applicationContext))
                     .build()
@@ -83,12 +91,41 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        // Reserved: original had MIGRATION_1_2 through MIGRATION_6_7.
-        // We do not need these for the rebuild (fresh install).
-        @Suppress("unused")
-        private val MIGRATION_7_8 = object : Migration(7, 8) {
+        /**
+         * Migration v8 → v9: adds the `display_name` column to `vpn_custom_dns`.
+         *
+         * Before this migration, the table had columns (key, first_dns, second_dns,
+         * is_selected) — display names were looked up from DefaultDnsPresets.ALL
+         * by matching the key. v9 adds a `display_name` column so the VPN management
+         * UI can render provider names directly from the DB (and so user-added
+         * custom presets can have their own display name).
+         *
+         * The migration:
+         *   1. ALTERs the table to add `display_name TEXT NOT NULL DEFAULT ''`.
+         *   2. Backfills the display_name for the 4 default presets by matching key.
+         *
+         * This preserves all user data (streak, block count, keywords, app lists,
+         * switch states, custom DNS presets, etc.) — only the new column is added.
+         */
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                // No-op: rebuild uses fresh schema.
+                Timber.i("Running migration v8 → v9: adding display_name to vpn_custom_dns")
+                // Add the column with a safe default (empty string). NOT NULL so
+                // future inserts can never leave it null.
+                database.execSQL(
+                    "ALTER TABLE vpn_custom_dns ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"
+                )
+                // Backfill the display names for the 4 default presets. User-added
+                // presets (if any exist — not possible in v8 because there was no
+                // add UI, but defensive) keep the empty default; the VPN management
+                // UI falls back to the key when displayName is blank.
+                for (preset in protect.yourself.features.blockerPage.utils.DefaultDnsPresets.ALL) {
+                    database.execSQL(
+                        "UPDATE vpn_custom_dns SET display_name = ? WHERE `key` = ?",
+                        arrayOf(preset.displayName, preset.key)
+                    )
+                }
+                Timber.i("Migration v8 → v9 complete")
             }
         }
     }

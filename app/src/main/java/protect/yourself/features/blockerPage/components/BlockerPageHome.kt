@@ -159,6 +159,16 @@ fun BlockerPageHome() {
                 is BlockerPageNavigation.ShowToast -> {
                     android.widget.Toast.makeText(context, nav.message, android.widget.Toast.LENGTH_SHORT).show()
                 }
+                is BlockerPageNavigation.ShowToastRes -> {
+                    // VPN-14 fix: resolve the string resource in the UI layer
+                    // (the ViewModel does not have a Context).
+                    val msg = if (nav.args.isEmpty()) {
+                        context.getString(nav.resId)
+                    } else {
+                        context.getString(nav.resId, *nav.args.toTypedArray())
+                    }
+                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                }
                 is BlockerPageNavigation.EditTextField -> {
                     editDialog = EditDialogData(nav.title, nav.currentValue, nav.hint, nav.switchKey)
                 }

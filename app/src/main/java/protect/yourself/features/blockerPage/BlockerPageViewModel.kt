@@ -32,6 +32,13 @@ sealed class BlockerPageNavigation {
     data class OpenSelectAppPage(val title: String, val identifier: SelectedAppListIdentifier) : BlockerPageNavigation()
     data class OpenUrl(val url: String) : BlockerPageNavigation()
     data class ShowToast(val message: String) : BlockerPageNavigation()
+    /**
+     * Show a toast using a string resource + optional format args. Use this
+     * instead of [ShowToast] when the message needs to be localizable — the
+     * ViewModel does not have a Context to resolve string resources itself,
+     * so it emits the resource ID and the UI layer resolves it.
+     */
+    data class ShowToastRes(val resId: Int, val args: List<Any> = emptyList()) : BlockerPageNavigation()
     data class EditTextField(val title: String, val currentValue: String, val hint: String, val switchKey: String) : BlockerPageNavigation()
     data class EditNumberField(val title: String, val currentValue: Int, val min: Int, val max: Int, val switchKey: String) : BlockerPageNavigation()
     data object RequestVpnPermission : BlockerPageNavigation()
@@ -319,9 +326,6 @@ class BlockerPageViewModel(
                     }
                 )
             }
-            // Refresh VPN management state so the toggle on VpnManagementPage
-            // reflects the new ON state immediately.
-            loadVpnManagementState()
             _navigation.emit(BlockerPageNavigation.ShowToast("VPN enabled"))
         }
     }
@@ -372,7 +376,7 @@ class BlockerPageViewModel(
     fun saveTextField(switchKey: String, value: String) {
         viewModelScope.launch {
             // Special handling: setting page title input → insert as keyword
-            if (switchKey == "block_setting_title_input") {
+            if (switchKey == SwitchIdentifier.BLOCK_SETTING_TITLE_INPUT) {
                 if (value.isNotBlank()) {
                     val item = protect.yourself.database.selectedKeywords.SelectedKeywordItemModel(
                         key = "setting_title_${System.currentTimeMillis()}",
@@ -385,14 +389,14 @@ class BlockerPageViewModel(
                     switchValues.storeSwitchStatus(SwitchIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_SWITCH, true)
                     // Refresh accessibility service config
                     MyAccessibilityService.instance?.refreshBlockingConfig()
-                    _navigation.emit(BlockerPageNavigation.ShowToast("Title '$value' added. Settings pages + apps with matching class names will be blocked."))
+                    _navigation.emit(BlockerPageNavigation.ShowToast("Title '$value' will be blocked in Settings"))
                 }
                 loadSettingItems()
                 return@launch
             }
 
             // NEW: Package + Intent name blocking input
-            if (switchKey == "block_package_intent_input") {
+            if (switchKey == SwitchIdentifier.BLOCK_PACKAGE_INTENT_INPUT) {
                 if (value.isNotBlank()) {
                     val input = value.trim()
                     // If it looks like a package name (contains dots), store as app entry
@@ -442,9 +446,20 @@ class BlockerPageViewModel(
             // Reload items to update action labels
             loadSettingItems()
             // Also refresh VPN management state if a VPN-related field changed,
-            // so the VPN management page reflects the new value live.
+            // so the VPN management page reflects the new value live. VPN-08 fix:
+            // if the VPN is running, restart it so the new notification text
+            // takes effect immediately.
             if (switchKey == SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE) {
                 loadVpnManagementState()
+                if (switchValues.isVpnSwitchOn()) {
+                    _navigation.emit(BlockerPageNavigation.RestartVpn)
+                    _navigation.emit(
+                        BlockerPageNavigation.ShowToastRes(
+                            protect.yourself.R.string.vpn_notification_changes_applied_toast
+                        )
+                    )
+                    return@launch
+                }
             }
             _navigation.emit(BlockerPageNavigation.ShowToast("Saved"))
         }
@@ -481,7 +496,7 @@ class BlockerPageViewModel(
                         "Title to Block in Settings",
                         "",
                         "Enter a settings page title (e.g. 'battery', 'apps')",
-                        "block_setting_title_input"
+                        SwitchIdentifier.BLOCK_SETTING_TITLE_INPUT
                     )
                 }
                 SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS ->
@@ -562,18 +577,18 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKER_CUSTOM_KEYWORD_WEBSITE, "Blocklist keywords", info = "Add/remove keywords that trigger block", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKLIST_APPS, "Blocklist apps", info = "Apps that get blocked on launch", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.SAFE_SEARCH, "SafeSearch enforcement", info = "Redirect Google/Bing/YouTube/DuckDuckGo to SafeSearch variants. VPN adds DNS-level enforcement.", switchKey = SwitchIdentifier.SAFE_SEARCH_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS, "Block unsupported browsers", info = "Block all browsers except those in your whitelist", switchKey = SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Whitelist unsupported browsers", info = "Allow specific browsers to bypass the unsupported-browser block", actionLabel = "Manage"))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_UNINSTALL_PROTECTION, "Uninstall Protection", isSection = true))
         add(SettingPageItemModel(SettingPageItemIdentifiers.PREVENT_UNINSTALL_SETTINGS, "Prevent uninstall", info = "Block attempts to uninstall (requires Device Admin)", switchKey = SwitchIdentifier.PREVENT_UNINSTALL_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_PHONE_REBOOT, "Block phone reboot", info = "Restart blocking automatically after reboot", switchKey = SwitchIdentifier.BLOCK_PHONE_REBOOT_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE, "Title-based block setting", info = "Block settings pages by title (e.g. 'battery' blocks the battery page). Also blocks apps whose activity class name matches.", actionLabel = "Add"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE, "Title-based block setting", info = "Enter a title to block in any app (e.g. 'battery', 'settings')", actionLabel = "Add"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS, "Manage blocked titles", info = "View and remove blocked titles", actionLabel = "Manage"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_PACKAGE_INTENT, "Package + Intent Blocking", info = "Block apps by package name (e.g. com.example.app) or intent/class name", switchKey = SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK, "Manage blocked packages/intents", info = "Add, view, and remove package + intent entries", actionLabel = "Manage"))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_ADVANCE_FEATURE, "Advanced feature", isSection = true))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS, "Block unsupported browsers", info = "Block any browser that isn't in your supported list or whitelist", switchKey = SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Whitelist unsupported browsers", info = "Allow specific browsers to bypass the unsupported-browser block", actionLabel = "Manage"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_PACKAGE_INTENT, "Package + Intent Blocking", info = "Block apps by package name (e.g. com.example.app) or intent/class name", switchKey = SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK, "Manage blocked packages/intents", info = "Add, view, and remove package + intent entries", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN, "VPN (DNS blocking)", info = "Block adult content at network level. Tap Manage to choose a filtering mode.", switchKey = SwitchIdentifier.VPN_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_MANAGE, "VPN mode", info = "Choose Balanced, Strict, or Custom DNS provider.", actionLabel = "Balanced"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_VPN_APPS, "Whitelist VPN apps", info = "Apps that bypass VPN", actionLabel = "Manage"))
@@ -614,13 +629,24 @@ class BlockerPageViewModel(
 
     /**
      * Toggles the "hide VPN notification content" switch from the VPN
-     * management page. The change takes effect on the next VPN restart.
+     * management page. VPN-08 fix: if the VPN is currently running, restart
+     * it so the new notification text takes effect immediately (otherwise the
+     * user would have to manually restart the VPN to see the change).
      */
     fun setVpnNotificationHidden(hidden: Boolean) {
         viewModelScope.launch {
             switchValues.storeSwitchStatus(SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH, hidden)
             loadVpnManagementState()
             loadSettingItems()
+            // VPN-08 fix: restart the VPN so the notification text updates.
+            if (switchValues.isVpnSwitchOn()) {
+                _navigation.emit(BlockerPageNavigation.RestartVpn)
+                _navigation.emit(
+                    BlockerPageNavigation.ShowToastRes(
+                        protect.yourself.R.string.vpn_notification_changes_applied_toast
+                    )
+                )
+            }
         }
     }
 
@@ -628,6 +654,11 @@ class BlockerPageViewModel(
      * Loads the dedicated VPN management page state: current VPN on/off flag,
      * current filtering mode, list of available custom DNS presets, and which
      * preset is currently selected.
+     *
+     * VPN-15 fix: do NOT reset isLoading=true if the state has already been
+     * loaded once. This prevents a brief spinner when the user navigates away
+     * from the VPN management page and back — the previous state stays visible
+     * while the new data loads in the background.
      */
     fun loadVpnManagementState() {
         viewModelScope.launch {
@@ -638,7 +669,7 @@ class BlockerPageViewModel(
             val hideNotification = switchValues.isVpnNotificationHideSwitchOn()
             val notificationMessage = switchValues.getVpnNotificationCustomMessage() ?: ""
 
-            _vpnManagementState.update {
+            _vpnManagementState.update { prev ->
                 VpnManagementState(
                     isVpnEnabled = vpnOn,
                     currentMode = mode,
@@ -646,7 +677,9 @@ class BlockerPageViewModel(
                     selectedCustomDnsKey = selectedPresetKey,
                     isNotificationHidden = hideNotification,
                     notificationMessage = notificationMessage,
-                    isLoading = false
+                    // VPN-15: keep the previous isLoading value if we've already
+                    // loaded once. Only show the spinner on the very first load.
+                    isLoading = prev.isLoading && prev.customDnsPresets.isEmpty()
                 )
             }
         }
@@ -656,9 +689,22 @@ class BlockerPageViewModel(
      * Switches the VPN filtering mode. Persists the new mode, then if the VPN
      * is currently running, asks the UI to restart the service so the new DNS
      * takes effect immediately.
+     *
+     * VPN-06 fix: early-return if the mode is unchanged — no need to restart
+     * the VPN or show a toast when the user taps the already-selected card.
+     *
+     * VPN-14 fix: use string resources for the toast instead of hardcoded
+     * English, and pick the right string based on whether a restart will happen.
      */
     fun setVpnMode(mode: VpnConnectionTypeIdentifiers) {
         viewModelScope.launch {
+            // VPN-06 fix: no-op if the mode is unchanged.
+            val currentMode = switchValues.getVpnConnectionType()
+            if (currentMode == mode) {
+                Timber.d("setVpnMode: mode unchanged ($mode) — no-op")
+                return@launch
+            }
+
             switchValues.storeVpnConnectionType(mode)
 
             // Refresh the VPN management state + the main settings list so the
@@ -666,23 +712,25 @@ class BlockerPageViewModel(
             loadVpnManagementState()
             loadSettingItems()
 
-            val isVpnOn = switchValues.isVpnSwitchOn()
-
             // Restart the VPN service if it is currently running so the new
             // DNS server takes effect immediately. The actual restart is done
             // by the UI layer (which has the Context) — see RestartVpn handler
             // in BlockerPageHome.kt.
-            if (isVpnOn) {
+            val willRestart = switchValues.isVpnSwitchOn()
+            if (willRestart) {
                 _navigation.emit(BlockerPageNavigation.RestartVpn)
                 _navigation.emit(
-                    BlockerPageNavigation.ShowToast(
-                        "VPN mode changed to ${vpnModeLabel(mode)}. Restarting VPN…"
+                    BlockerPageNavigation.ShowToastRes(
+                        protect.yourself.R.string.vpn_mode_changed_toast,
+                        listOf(vpnModeLabel(mode))
                     )
                 )
             } else {
+                // VPN-14 fix: use the no-restart variant of the toast.
                 _navigation.emit(
-                    BlockerPageNavigation.ShowToast(
-                        "VPN mode changed to ${vpnModeLabel(mode)}."
+                    BlockerPageNavigation.ShowToastRes(
+                        protect.yourself.R.string.vpn_mode_changed_no_restart_toast,
+                        listOf(vpnModeLabel(mode))
                     )
                 )
             }
@@ -693,6 +741,12 @@ class BlockerPageViewModel(
      * Selects a custom DNS preset (used when the VPN is in CUSTOM mode).
      * Persists the selection and asks the UI to restart the VPN if it is
      * currently running.
+     *
+     * VPN-07 fix: only show the "Restarting VPN…" toast when a restart will
+     * actually happen (VPN is ON AND in CUSTOM mode). Otherwise show a
+     * simpler "updated" toast.
+     *
+     * VPN-14 fix: use string resources for the toast instead of hardcoded English.
      */
     fun selectCustomDnsPreset(presetKey: String) {
         viewModelScope.launch {
@@ -700,17 +754,21 @@ class BlockerPageViewModel(
 
             loadVpnManagementState()
 
-            val isVpnOn = switchValues.isVpnSwitchOn()
-            val isCustomMode = switchValues.getVpnConnectionType() == VpnConnectionTypeIdentifiers.CUSTOM
-
-            if (isVpnOn && isCustomMode) {
+            // VPN-07 fix: only restart if the VPN is ON AND in CUSTOM mode.
+            val willRestart = switchValues.isVpnSwitchOn() &&
+                switchValues.getVpnConnectionType() == VpnConnectionTypeIdentifiers.CUSTOM
+            if (willRestart) {
                 _navigation.emit(BlockerPageNavigation.RestartVpn)
                 _navigation.emit(
-                    BlockerPageNavigation.ShowToast("Custom DNS provider updated. Restarting VPN…")
+                    BlockerPageNavigation.ShowToastRes(
+                        protect.yourself.R.string.vpn_custom_dns_changed_toast
+                    )
                 )
             } else {
                 _navigation.emit(
-                    BlockerPageNavigation.ShowToast("Custom DNS provider updated.")
+                    BlockerPageNavigation.ShowToastRes(
+                        protect.yourself.R.string.vpn_custom_dns_updated_toast
+                    )
                 )
             }
         }
@@ -725,6 +783,124 @@ class BlockerPageViewModel(
         VpnConnectionTypeIdentifiers.POWERFUL -> "Strict"
         VpnConnectionTypeIdentifiers.CUSTOM -> "Custom DNS"
         VpnConnectionTypeIdentifiers.OFF -> "Balanced"
+    }
+
+    // ===== Custom DNS preset add / delete (NopoX parity gap fix) =====
+
+    /**
+     * Adds a user-defined custom DNS preset to the vpn_custom_dns table.
+     *
+     * Validates that both DNS IPs are well-formed (IPv4 or IPv6) and that the
+     * name is non-blank. The new preset is NOT auto-selected — the user must
+     * tap it to make it active. This avoids surprising the user by switching
+     * their active DNS provider without explicit action.
+     *
+     * Returns true on success, false on validation failure. The UI shows an
+     * error toast on failure (handled by the caller via the return value).
+     */
+    fun addCustomDnsPreset(name: String, firstDns: String, secondDns: String): Boolean {
+        // Validate inputs synchronously so we can return a Boolean to the UI.
+        val utils = protect.yourself.features.blockerPage.utils.BlockerPageUtils.getInstance()
+        val trimmedName = name.trim()
+        val trimmedFirst = firstDns.trim()
+        val trimmedSecond = secondDns.trim()
+        if (trimmedName.isBlank()) {
+            viewModelScope.launch {
+                _navigation.emit(
+                    BlockerPageNavigation.ShowToastRes(
+                        protect.yourself.R.string.dns_name_empty_error
+                    )
+                )
+            }
+            return false
+        }
+        if (!utils.isValidDNS(trimmedFirst)) {
+            viewModelScope.launch {
+                _navigation.emit(
+                    BlockerPageNavigation.ShowToastRes(
+                        protect.yourself.R.string.dns_1_empty_error
+                    )
+                )
+            }
+            return false
+        }
+        if (!utils.isValidDNS(trimmedSecond)) {
+            viewModelScope.launch {
+                _navigation.emit(
+                    BlockerPageNavigation.ShowToastRes(
+                        protect.yourself.R.string.dns_2_empty_error
+                    )
+                )
+            }
+            return false
+        }
+
+        viewModelScope.launch {
+            // Generate a unique key — use timestamp to avoid collisions with
+            // the default preset keys ("preset_cloudflare_family" etc.).
+            val key = "user_${System.currentTimeMillis()}"
+            val preset = protect.yourself.database.vpnCustomDns.VpnCustomDnsItemModel(
+                key = key,
+                displayName = trimmedName,
+                firstDns = trimmedFirst,
+                secondDns = trimmedSecond,
+                isSelected = false
+            )
+            db.vpnCustomDnsDao().upsert(preset)
+            // Mark that the user has edited the custom DNS list — this flag
+            // was previously unused; we set it now so a future seed-on-upgrade
+            // path could decide not to clobber user presets.
+            switchValues.storeSwitchStatus(
+                SwitchIdentifier.VPN_DNS_CUSTOM_LIST_SET, true
+            )
+            loadVpnManagementState()
+            _navigation.emit(
+                BlockerPageNavigation.ShowToastRes(
+                    protect.yourself.R.string.vpn_custom_dns_added_toast
+                )
+            )
+        }
+        return true
+    }
+
+    /**
+     * Deletes a user-defined custom DNS preset. If the deleted preset was the
+     * selected one, falls back to the default Cloudflare Family preset (so
+     * CUSTOM mode always has a valid upstream).
+     *
+     * Default presets (key starts with "preset_") cannot be deleted — the UI
+     * should hide the delete affordance for them, but we also guard here.
+     */
+    fun deleteCustomDnsPreset(presetKey: String) {
+        viewModelScope.launch {
+            if (presetKey.startsWith("preset_")) {
+                _navigation.emit(
+                    BlockerPageNavigation.ShowToastRes(
+                        protect.yourself.R.string.vpn_custom_dns_cannot_delete_default
+                    )
+                )
+                return@launch
+            }
+            val selected = db.vpnCustomDnsDao().getSelected()
+            db.vpnCustomDnsDao().deleteByKey(presetKey)
+            // If we just deleted the selected preset, fall back to Cloudflare.
+            if (selected?.key == presetKey) {
+                db.vpnCustomDnsDao().setSelected(
+                    protect.yourself.features.blockerPage.utils.DefaultDnsPresets.CLOUDFLARE_FAMILY.key
+                )
+                if (switchValues.isVpnSwitchOn() &&
+                    switchValues.getVpnConnectionType() == VpnConnectionTypeIdentifiers.CUSTOM
+                ) {
+                    _navigation.emit(BlockerPageNavigation.RestartVpn)
+                }
+            }
+            loadVpnManagementState()
+            _navigation.emit(
+                BlockerPageNavigation.ShowToastRes(
+                    protect.yourself.R.string.vpn_custom_dns_deleted_toast
+                )
+            )
+        }
     }
 
     companion object {

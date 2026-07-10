@@ -27,6 +27,14 @@ interface SelectedKeywordDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(items: List<SelectedKeywordItemModel>)
 
+    /**
+     * KB-12 fix: INSERT OR IGNORE — inserts all rows but skips any whose primary
+     * key already exists. Used by the preset-keyword seeder so that user-deleted
+     * presets are NOT re-added on app update.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllOrIgnore(items: List<SelectedKeywordItemModel>)
+
     @Query("DELETE FROM selected_keyword_table WHERE `key` = :key")
     suspend fun deleteByKey(key: String)
 

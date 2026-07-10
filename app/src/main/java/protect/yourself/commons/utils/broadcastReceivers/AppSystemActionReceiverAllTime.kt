@@ -11,7 +11,6 @@ import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.switchStatus.SwitchIdentifier
 import protect.yourself.database.switchStatus.SwitchStatusValues
 import protect.yourself.features.blockerPage.service.MyAccessibilityService
-import protect.yourself.features.blockerPage.service.MyVpnService
 import timber.log.Timber
 
 /**
@@ -46,13 +45,19 @@ class AppSystemActionReceiverAllTime : BroadcastReceiver() {
                         // Refresh accessibility blocking config
                         MyAccessibilityService.instance?.refreshBlockingConfig()
 
-                        // Restart VPN if it was active before reboot
+                        // Restart VPN if it was active before reboot.
+                        // VPN-05 fix: on Android 12+ (API 31+) a broadcast
+                        // receiver cannot start a foreground service directly —
+                        // the system throws ForegroundServiceStartNotAllowedException.
+                        // Schedule an expedited WorkManager request instead,
+                        // which is exempt from the background-start restriction.
                         try {
                             val db = AppDatabase.getInstance(context)
                             val switchValues = SwitchStatusValues(db.switchStatusDao())
                             if (switchValues.isVpnSwitchOn()) {
-                                MyVpnService.start(context)
-                                Timber.i("VPN restarted after boot")
+                                protect.yourself.commons.utils.workManager.VpnRestartWorker
+                                    .enqueue(context)
+                                Timber.i("VPN restart scheduled after boot (via WorkManager)")
                             }
                         } catch (t: Throwable) {
                             Timber.w(t, "Failed to check VPN state after boot")

@@ -88,6 +88,9 @@ fun KeywordManagerPage(
 
     var newKeywordText by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
+    // KB-11 fix: keyword pending deletion — shows a confirmation dialog before
+    // actually deleting. Prevents accidental taps on the delete icon.
+    var keywordToDelete by remember { mutableStateOf<SelectedKeywordItemModel?>(null) }
 
     Scaffold(
         topBar = {
@@ -214,7 +217,11 @@ fun KeywordManagerPage(
             TabDescriptionCard(activeTab = state.activeTab)
 
             // Keyword list
-            val filtered = state.filteredKeywords()
+            // KB-17 fix: memoize the filtered list so we don't recompute it
+            // (532 filter ops) on every recomposition.
+            val filtered = remember(state.blockKeywords, state.whitelistKeywords, state.settingTitleKeywords, state.activeTab, state.searchQuery) {
+                state.filteredKeywords()
+            }
             if (filtered.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -259,12 +266,37 @@ fun KeywordManagerPage(
                                 KeywordTab.WHITELIST -> BrandOrange
                                 KeywordTab.SETTING_TITLES -> MaterialTheme.colorScheme.primary
                             },
-                            onDelete = { viewModel.deleteKeyword(keyword.key) }
+                            onDelete = { keywordToDelete = keyword }  // KB-11: confirm before delete
                         )
                     }
                 }
             }
         }
+    }
+
+    // KB-11 fix: delete confirmation dialog. Prevents accidental keyword
+    // deletion when the user taps the trash icon.
+    keywordToDelete?.let { keyword ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { keywordToDelete = null },
+            title = { Text("Delete keyword?") },
+            text = { Text("\"${keyword.keyword}\" will be removed from your ${state.activeTab.title.lowercase()}.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        viewModel.deleteKeyword(keyword.key)
+                        keywordToDelete = null
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { keywordToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

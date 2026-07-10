@@ -26,18 +26,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.GppGood
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.ShieldMoon
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,6 +50,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -102,13 +110,35 @@ fun VpnManagementPage(
     )
     val state by viewModel.vpnManagementState.collectAsState()
 
+    // Dialog state for the "Add custom DNS" + "Delete preset" flows.
+    var showAddDialog by remember { mutableStateOf(false) }
+    var presetToDelete by remember { mutableStateOf<VpnCustomDnsItemModel?>(null) }
+
     // Load the VPN management state when the page opens.
     LaunchedEffect(Unit) { viewModel.loadVpnManagementState() }
 
-    // NOTE: Navigation events (RestartVpn, ShowToast, etc.) are handled by the
-    // parent BlockerPageHome's LaunchedEffect collector. We do NOT collect
-    // navigation here — collecting in both places would cause double execution
-    // (e.g. MyVpnService.restart() called twice, Toast shown twice).
+    // Collect navigation events (RestartVpn + ShowToast + ShowToastRes) while
+    // this page is on top.
+    LaunchedEffect(Unit) {
+        viewModel.navigation.collect { nav ->
+            when (nav) {
+                is BlockerPageNavigation.RestartVpn -> MyVpnService.restart(context)
+                is BlockerPageNavigation.ShowToast -> {
+                    android.widget.Toast.makeText(context, nav.message, android.widget.Toast.LENGTH_SHORT).show()
+                }
+                is BlockerPageNavigation.ShowToastRes -> {
+                    // VPN-14 fix: resolve the string resource in the UI layer.
+                    val msg = if (nav.args.isEmpty()) {
+                        context.getString(nav.resId)
+                    } else {
+                        context.getString(nav.resId, *nav.args.toTypedArray())
+                    }
+                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                }
+                else -> Unit // Other navigation events are handled by the parent.
+            }
+        }
+    }
 
     // VPN permission launcher — required to turn the VPN on.
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
@@ -240,8 +270,26 @@ fun VpnManagementPage(
                 preset = preset,
                 isSelected = preset.key == state.selectedCustomDnsKey,
                 isCustomModeActive = state.currentMode == VpnConnectionTypeIdentifiers.CUSTOM,
-                onSelect = { viewModel.selectCustomDnsPreset(preset.key) }
+                onSelect = { viewModel.selectCustomDnsPreset(preset.key) },
+                // Only user-added presets (key starts with "user_") can be deleted.
+                // Default presets (key starts with "preset_") are not deletable.
+                onDelete = if (preset.key.startsWith("user_")) {
+                    { presetToDelete = preset }
+                } else null
             )
+        }
+        // "+ Add custom DNS" button — opens the add dialog.
+        item {
+            TextButton(
+                onClick = { showAddDialog = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = stringResource(R.string.vpn_custom_dns_add_button),
+                    color = BrandOrange,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
 
         // === Advanced settings ===
@@ -279,6 +327,48 @@ fun VpnManagementPage(
         }
 
         item { Spacer(modifier = Modifier.height(80.dp)) }
+    }
+
+    // === Add custom DNS dialog ===
+    if (showAddDialog) {
+        AddCustomDnsDialog(
+            onDismiss = { showAddDialog = false },
+            onSave = { name, dns1, dns2 ->
+                if (viewModel.addCustomDnsPreset(name, dns1, dns2)) {
+                    showAddDialog = false
+                }
+                // If validation failed, the ViewModel already showed a toast —
+                // keep the dialog open so the user can fix their input.
+            }
+        )
+    }
+
+    // === Delete preset confirmation dialog ===
+    presetToDelete?.let { preset ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { presetToDelete = null },
+            title = { Text(stringResource(R.string.vpn_custom_dns_delete_dialog_title)) },
+            text = { Text(stringResource(R.string.vpn_custom_dns_delete_dialog_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteCustomDnsPreset(preset.key)
+                        presetToDelete = null
+                    }
+                ) {
+                    Text(
+                        stringResource(R.string.vpn_custom_dns_delete_dialog_confirm),
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { presetToDelete = null }) {
+                    Text(stringResource(R.string.vpn_custom_dns_delete_dialog_cancel))
+                }
+            }
+        )
     }
 }
 
@@ -326,7 +416,10 @@ private fun VpnStatusHeader(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = if (isVpnEnabled) Icons.Filled.Shield else Icons.Filled.Shield,
+                            // VPN-12 fix: use a different icon for the disconnected
+                            // state so the user can tell at a glance whether the VPN
+                            // is active. Shield = active, ShieldMoon = inactive.
+                            imageVector = if (isVpnEnabled) Icons.Filled.Shield else Icons.Filled.ShieldMoon,
                             contentDescription = null,
                             tint = contentColor,
                             modifier = Modifier.size(24.dp)
@@ -484,7 +577,9 @@ private fun ModeSelectorCard(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Active",
+                            // VPN-11 fix: use a string resource instead of a
+                            // hardcoded English "Active" label.
+                            text = stringResource(R.string.vpn_mode_active),
                             style = MaterialTheme.typography.labelMedium,
                             color = BrandOrange,
                             fontWeight = FontWeight.Bold
@@ -503,10 +598,15 @@ private fun CustomDnsPresetRow(
     preset: VpnCustomDnsItemModel,
     isSelected: Boolean,
     isCustomModeActive: Boolean,
-    onSelect: () -> Unit
+    onSelect: () -> Unit,
+    onDelete: (() -> Unit)? = null
 ) {
     val borderColor = if (isSelected) BrandOrange else Color.Transparent
     val borderWidth = if (isSelected) 2.dp else 0.dp
+    // VPN-10 fix: when Custom mode is not active, dim the row to hint to the
+    // user that their selection won't take effect immediately. The row stays
+    // clickable so the user can pre-pick a provider before switching to Custom.
+    val contentAlpha = if (isCustomModeActive) 1f else 0.55f
 
     Card(
         modifier = Modifier
@@ -545,14 +645,24 @@ private fun CustomDnsPresetRow(
                 Text(
                     text = preset.displayName?.ifBlank { null } ?: preset.key,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha),
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
                     text = "${preset.firstDns}  ·  ${preset.secondDns}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
                 )
+                // VPN-10 fix: show a hint when Custom mode is not active so the
+                // user understands why the row looks dimmed.
+                if (!isCustomModeActive && isSelected) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.vpn_custom_dns_inactive_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             if (isSelected) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -579,8 +689,102 @@ private fun CustomDnsPresetRow(
                     )
                 }
             }
+            // Delete affordance — only shown on user-added presets (onDelete != null).
+            if (onDelete != null) {
+                Spacer(modifier = Modifier.width(4.dp))
+                TextButton(
+                    onClick = onDelete,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.vpn_custom_dns_delete_dialog_confirm),
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
         }
     }
+}
+
+// ===== Add custom DNS dialog =====
+
+@Composable
+private fun AddCustomDnsDialog(
+    onDismiss: () -> Unit,
+    onSave: (name: String, dns1: String, dns2: String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var dns1 by remember { mutableStateOf("") }
+    var dns2 by remember { mutableStateOf("") }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.vpn_custom_dns_add_dialog_title)) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.vpn_custom_dns_add_dialog_hint_name)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = BrandOrange,
+                        focusedLabelColor = BrandOrange,
+                        cursorColor = BrandOrange
+                    )
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = dns1,
+                    onValueChange = { dns1 = it },
+                    label = { Text(stringResource(R.string.vpn_custom_dns_add_dialog_hint_dns1)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = BrandOrange,
+                        focusedLabelColor = BrandOrange,
+                        cursorColor = BrandOrange
+                    )
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = dns2,
+                    onValueChange = { dns2 = it },
+                    label = { Text(stringResource(R.string.vpn_custom_dns_add_dialog_hint_dns2)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = BrandOrange,
+                        focusedLabelColor = BrandOrange,
+                        cursorColor = BrandOrange
+                    )
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(name, dns1, dns2) },
+                enabled = name.isNotBlank() && dns1.isNotBlank() && dns2.isNotBlank(),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = BrandOrange,
+                    contentColor = Color.White
+                )
+            ) {
+                Text(
+                    stringResource(R.string.vpn_custom_dns_add_dialog_save),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.vpn_custom_dns_add_dialog_cancel))
+            }
+        }
+    )
 }
 
 // ===== Advanced rows =====

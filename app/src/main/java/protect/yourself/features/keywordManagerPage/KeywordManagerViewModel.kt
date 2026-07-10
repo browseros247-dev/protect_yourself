@@ -87,7 +87,8 @@ class KeywordManagerViewModel(
      */
     fun addBlockKeyword(keyword: String) {
         val trimmed = keyword.trim()
-        if (trimmed.isBlank()) return
+        // KB-10 fix: validate min 2 chars, max 100 chars, no duplicate.
+        if (!isValidKeyword(trimmed, _state.value.blockKeywords)) return
         viewModelScope.launch {
             try {
                 val item = SelectedKeywordItemModel(
@@ -110,7 +111,8 @@ class KeywordManagerViewModel(
      */
     fun addWhitelistKeyword(keyword: String) {
         val trimmed = keyword.trim()
-        if (trimmed.isBlank()) return
+        // KB-10 fix: validate.
+        if (!isValidKeyword(trimmed, _state.value.whitelistKeywords)) return
         viewModelScope.launch {
             try {
                 val item = SelectedKeywordItemModel(
@@ -133,7 +135,8 @@ class KeywordManagerViewModel(
      */
     fun addSettingTitleKeyword(keyword: String) {
         val trimmed = keyword.trim()
-        if (trimmed.isBlank()) return
+        // KB-10 fix: validate.
+        if (!isValidKeyword(trimmed, _state.value.settingTitleKeywords)) return
         viewModelScope.launch {
             try {
                 val item = SelectedKeywordItemModel(
@@ -149,6 +152,37 @@ class KeywordManagerViewModel(
                 Timber.e(t, "Failed to add setting title keyword: $trimmed")
             }
         }
+    }
+
+    /**
+     * KB-10 fix: validate a keyword before adding it.
+     *  - Min 2 characters (matches NopoX behaviour)
+     *  - Max 100 characters (prevents abuse / performance issues)
+     *  - Not blank
+     *  - Not a duplicate of an existing keyword (case-insensitive)
+     *
+     * Returns true if valid, false otherwise.
+     */
+    private fun isValidKeyword(keyword: String, existing: List<SelectedKeywordItemModel>): Boolean {
+        if (keyword.isBlank()) {
+            Timber.w("KB-10: keyword is blank — rejected")
+            return false
+        }
+        if (keyword.length < 2) {
+            Timber.w("KB-10: keyword '$keyword' too short (< 2 chars) — rejected")
+            return false
+        }
+        if (keyword.length > 100) {
+            Timber.w("KB-10: keyword too long (> 100 chars) — rejected")
+            return false
+        }
+        // KB-10: duplicate check (case-insensitive, trimmed).
+        val lowerKeyword = keyword.lowercase()
+        if (existing.any { it.keyword.trim().lowercase() == lowerKeyword }) {
+            Timber.w("KB-10: keyword '$keyword' is a duplicate — rejected")
+            return false
+        }
+        return true
     }
 
     /**
@@ -181,9 +215,17 @@ class KeywordManagerViewModel(
     }
 
     private fun refreshAccessibility() {
+        // KB-03 fix: use targeted refresh (only the changed list) instead of
+        // full refreshBlockingConfig (which re-reads ALL 1189+ rows).
+        // The active tab tells us which list was modified.
         try {
-            protect.yourself.features.blockerPage.service.MyAccessibilityService.instance
-                ?.refreshBlockingConfig()
+            val service = protect.yourself.features.blockerPage.service.MyAccessibilityService.instance
+            val identifier = when (_state.value.activeTab) {
+                KeywordTab.BLOCKLIST -> SelectedKeywordIdentifier.PORN_BLOCK_WORDS
+                KeywordTab.WHITELIST -> SelectedKeywordIdentifier.PORN_WHITE_LIST_WORDS
+                KeywordTab.SETTING_TITLES -> SelectedKeywordIdentifier.SETTING_KEYWORDS_LIST_WORDS
+            }
+            service?.refreshKeywordList(identifier)
         } catch (_: Throwable) {}
     }
 
