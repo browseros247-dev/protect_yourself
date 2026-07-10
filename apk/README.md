@@ -6,8 +6,10 @@ This directory contains pre-built, signed APKs of **Protect Yourself** for direc
 
 | File | Size | Package | Build Type | Description |
 |---|---|---|---|---|
-| `protect.yourself-v1.0.30-release.apk` | ~15 MB | `protect.yourself` | Release | Production-style build. **Recommended for installation.** Adds comprehensive local crash logging system. |
-| `protect.yourself-v1.0.30-debug.apk` | ~22 MB | `protect.yourself` | Debug | Debug build with logging enabled. Larger due to unstripped debug info. |
+| `protect.yourself-v1.0.31-release.apk` | ~15 MB | `protect.yourself` | Release | Production-style build. **Recommended for installation.** Adds in-app Stop Me page + Keyword Manager page. |
+| `protect.yourself-v1.0.31-debug.apk` | ~22 MB | `protect.yourself` | Debug | Debug build with logging enabled. Larger due to unstripped debug info. |
+| `protect.yourself-v1.0.30-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (local crash logging system). |
+| `protect.yourself-v1.0.30-debug.apk` | ~22 MB | `protect.yourself` | Debug | Previous build debug. |
 | `protect.yourself-v1.0.29-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (local JSON Backup/Restore). |
 | `protect.yourself-v1.0.29-debug.apk` | ~22 MB | `protect.yourself` | Debug | Previous build debug. |
 | `protect.yourself-v1.0.28-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (NopoX-style SafeSearch enforcement). |
@@ -21,7 +23,7 @@ Both APKs target:
 - **Min Android**: 8.0 (API 26)
 - **Target Android**: 15 (API 35)
 - **Compile SDK**: 35
-- **Version**: 1.0.30 (versionCode 30)
+- **Version**: 1.0.31 (versionCode 31)
 - **App label**: "Protect Yourself" (release) / "Protect Yourself DEBUG" (debug)
 
 ## Signing

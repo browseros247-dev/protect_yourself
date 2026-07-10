@@ -231,10 +231,14 @@ fun BlockerPageHome() {
                 onBack = { currentPage = null }
             )
         }
-        SubPage.KeywordManager -> SimpleSubPage("Keyword Manager") { currentPage = null }
+        SubPage.KeywordManager -> protect.yourself.features.keywordManagerPage.KeywordManagerPage(
+            onBack = { currentPage = null }
+        )
         SubPage.RequestHistory -> SimpleSubPage("Request History") { currentPage = null }
         SubPage.Faq -> SimpleSubPage("FAQ") { currentPage = null }
-        SubPage.StopMe -> SimpleSubPage("Stop Me") { currentPage = null }
+        SubPage.StopMe -> protect.yourself.features.stopMePage.StopMePage(
+            onBack = { currentPage = null }
+        )
         SubPage.ImagePicker -> SimpleSubPage("Choose Image") { currentPage = null }
     }
 }
