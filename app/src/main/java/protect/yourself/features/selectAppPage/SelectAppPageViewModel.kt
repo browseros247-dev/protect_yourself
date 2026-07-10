@@ -83,7 +83,10 @@ class SelectAppPageViewModel(
     fun searchApp(query: String) {
         _state.update { state ->
             val filtered = if (query.isBlank()) state.allApps
-            else state.allApps.filter { it.appName.contains(query, ignoreCase = true) }
+            else state.allApps.filter {
+                it.appName.contains(query, ignoreCase = true) ||
+                it.packageName.contains(query, ignoreCase = true)
+            }
             state.copy(filteredApps = filtered, searchQuery = query)
         }
     }

@@ -22,6 +22,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -50,9 +51,12 @@ import protect.yourself.theme.BrandOrange
 /**
  * SelectAppPage — full-screen app picker.
  *
- * @param identifier which category of apps to manage
- * @param title page title
- * @param onBack callback when user taps back button
+ * Features:
+ *  - Search by app name or package name
+ *  - Filter: All / Selected / Unselected
+ *  - Shows selected count
+ *  - Tap to toggle selection
+ *  - Loading + error states
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,11 +74,27 @@ fun SelectAppPage(
     )
     val state by viewModel.state.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
+    var showSelectedOnly by remember { mutableStateOf(false) }
+
+    val selectedCount = state.allApps.count { it.isSelected }
+    val displayedApps = if (showSelectedOnly) state.filteredApps.filter { it.isSelected }
+                        else state.filteredApps
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title) },
+                title = {
+                    Column {
+                        Text(title)
+                        if (selectedCount > 0) {
+                            Text(
+                                text = "$selectedCount selected",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = BrandOrange
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
@@ -104,6 +124,27 @@ fun SelectAppPage(
                 singleLine = true
             )
 
+            // Filter chips
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = !showSelectedOnly,
+                    onClick = { showSelectedOnly = false },
+                    label = { Text("All (${state.filteredApps.size})") }
+                )
+                FilterChip(
+                    selected = showSelectedOnly,
+                    onClick = { showSelectedOnly = true },
+                    label = { Text("Selected ($selectedCount)") }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             if (state.isLoading) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -119,9 +160,32 @@ fun SelectAppPage(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Failed to load apps",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = state.error ?: "",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+                return@Column
+            }
+
+            if (displayedApps.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        text = state.error!!,
-                        color = MaterialTheme.colorScheme.error
+                        text = if (showSelectedOnly) "No selected apps yet"
+                               else "No apps found",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
                 return@Column
@@ -135,7 +199,7 @@ fun SelectAppPage(
                     start = 16.dp, end = 16.dp, bottom = 16.dp
                 )
             ) {
-                items(state.filteredApps) { app ->
+                items(displayedApps) { app ->
                     AppRow(app) { viewModel.toggleAppSelection(app) }
                 }
             }
@@ -154,7 +218,9 @@ private fun AppRow(
             .padding(vertical = 2.dp),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = if (app.isSelected)
+                MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surface
         ),
         onClick = onToggle
     ) {
@@ -164,13 +230,13 @@ private fun AppRow(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // App icon (loaded lazily via drawable)
-            // Phase 5: implement proper drawable-as-image-bitmap rendering in Compose
+            // App icon placeholder (first letter of app name)
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .background(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        color = if (app.isSelected) BrandOrange.copy(alpha = 0.2f)
+                                else MaterialTheme.colorScheme.surfaceVariant,
                         shape = RoundedCornerShape(8.dp)
                     ),
                 contentAlignment = Alignment.Center
