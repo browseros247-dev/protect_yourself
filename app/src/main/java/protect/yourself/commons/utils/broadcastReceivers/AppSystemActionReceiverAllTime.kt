@@ -3,21 +3,86 @@ package protect.yourself.commons.utils.broadcastReceivers
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import protect.yourself.database.core.AppDatabase
+import protect.yourself.database.switchStatus.SwitchIdentifier
+import protect.yourself.database.switchStatus.SwitchStatusValues
+import protect.yourself.features.blockerPage.service.MyAccessibilityService
+import protect.yourself.features.blockerPage.service.MyVpnService
 import timber.log.Timber
 
 /**
  * Always-on receiver for boot + screen state events.
  *
- * Actions:
+ * Layer 3 of uninstall protection — ensures services restart after reboot.
+ *
+ * Actions handled:
  *  - BOOT_COMPLETED, REBOOT, LOCKED_BOOT_COMPLETED
  *  - QUICKBOOT_POWERON (htc + comhtc)
  *  - SCREEN_ON, USER_PRESENT
- *
- * Phase 6 — full implementation (restart accessibility + VPN services on boot).
+ *  - MY_PACKAGE_REPLACED (app updated)
  */
 class AppSystemActionReceiverAllTime : BroadcastReceiver() {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onReceive(context: Context, intent: Intent) {
         Timber.i("AllTime action: ${intent.action}")
-        // TODO Phase 6
+        val pendingResult = goAsync()
+
+        scope.launch {
+            try {
+                when (intent.action) {
+                    Intent.ACTION_BOOT_COMPLETED,
+                    Intent.ACTION_REBOOT,
+                    Intent.ACTION_LOCKED_BOOT_COMPLETED,
+                    "android.intent.action.QUICKBOOT_POWERON",
+                    "com.htc.intent.action.QUICKBOOT_POWERON" -> {
+                        Timber.i("Boot/reboot detected — restarting services")
+
+                        // Refresh accessibility blocking config
+                        MyAccessibilityService.instance?.refreshBlockingConfig()
+
+                        // Restart VPN if it was active before reboot
+                        try {
+                            val db = AppDatabase.getInstance(context)
+                            val switchValues = SwitchStatusValues(db.switchStatusDao())
+                            if (switchValues.isVpnSwitchOn()) {
+                                MyVpnService.start(context)
+                                Timber.i("VPN restarted after boot")
+                            }
+                        } catch (t: Throwable) {
+                            Timber.w(t, "Failed to check VPN state after boot")
+                        }
+
+                        // Show notification that protection is active
+                        try {
+                            protect.yourself.commons.utils.notificationUtils.NotificationHelper
+                                .showDailyReportNotification(
+                                    context,
+                                    blockCount = try {
+                                        AppDatabase.getInstance(context).blockScreenCountDao()
+                                            .getCount()?.count ?: 0
+                                    } catch (_: Throwable) { 0 },
+                                    streakDays = 0
+                                )
+                        } catch (_: Throwable) {}
+                    }
+
+                    Intent.ACTION_SCREEN_ON,
+                    Intent.ACTION_USER_PRESENT -> {
+                        // Refresh accessibility blocking when screen turns on
+                        MyAccessibilityService.instance?.refreshBlockingConfig()
+                    }
+                }
+            } catch (t: Throwable) {
+                Timber.e(t, "Failed to handle system action: ${intent.action}")
+            } finally {
+                pendingResult.finish()
+            }
+        }
     }
 }

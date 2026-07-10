@@ -61,6 +61,8 @@ class MyAccessibilityService : AccessibilityService() {
     private var isBlockInAppBrowsersOn = false
     private var isBlockUnsupportedBrowsersOn = false
     private var isBlockSettingsByTitleOn = false
+    private var isPreventUninstallOn = false
+    private var isBlockPhoneRebootOn = false
     // BLOCK_NOTIFICATION_DRAWER + BLOCK_RECENT_APPS removed from UI
     private var cachedSettingTitles: List<String> = emptyList()
     private var isStopMeRunning = false
@@ -143,6 +145,20 @@ class MyAccessibilityService : AccessibilityService() {
         // Settings page title blocking
         if (isBlockSettingsByTitleOn && isSettingsPage(packageName, text)) {
             launchBlockActivity(packageName, "block_page_default_system_keyword_message")
+            return
+        }
+
+        // Prevent Uninstall: detect when user is on our app info page
+        if (isPreventUninstallOn && isAppInfoPage(packageName, className, text)) {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            launchBlockActivity(packageName, "block_page_default_pu_message")
+            return
+        }
+
+        // Block phone reboot: detect power menu / ultra power saving
+        if (isBlockPhoneRebootOn && isPowerMenu(className, packageName, text)) {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            launchBlockActivity(packageName, "block_phone_reboot_bw_message")
             return
         }
 
@@ -333,11 +349,79 @@ class MyAccessibilityService : AccessibilityService() {
         if (packageName != "com.android.settings" && !packageName.contains(".settings")) return false
         if (cachedSettingTitles.isEmpty()) return false
         val lower = text.lowercase(Locale.ROOT)
-        // Check if any user-entered title matches the settings page text
         return cachedSettingTitles.any { title ->
             val t = title.lowercase(Locale.ROOT).trim()
             t.isNotBlank() && lower.contains(t)
         }
+    }
+
+    /**
+     * Detect if the user is on the app info page for our package.
+     * This is the page where the Uninstall button lives.
+     */
+    private fun isAppInfoPage(packageName: String, className: String, text: String): Boolean {
+        // Must be a settings app
+        if (packageName != "com.android.settings" && !packageName.contains(".settings")) {
+            return false
+        }
+
+        val lower = text.lowercase(Locale.ROOT)
+        val lowerClass = className.lowercase(Locale.ROOT)
+
+        // Check if class name indicates an app info / installed app details page
+        if (lowerClass.contains("appinfodashboard") ||
+            lowerClass.contains("installedappdetails") ||
+            lowerClass.contains("appinfoactivity") ||
+            lowerClass.contains("appinfopage")
+        ) {
+            return true
+        }
+
+        // Check if text contains our app name
+        try {
+            val appName = getString(protect.yourself.R.string.app_name).lowercase(Locale.ROOT)
+            if (appName.isNotBlank() && lower.contains(appName)) {
+                return true
+            }
+        } catch (_: Throwable) {}
+
+        // Check against device admin text patterns (localized)
+        val deviceAdminTexts = BlockerPageUtils.DEVICE_ADMIN_TEXTS_TO_MATCH
+        for (matchText in deviceAdminTexts) {
+            if (lower.contains(matchText.lowercase(Locale.ROOT))) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /**
+     * Detect power menu / ultra power saving mode.
+     * Uses localized strings from BlockerPageUtils.HUAWEI_ULTRA_POWER_SAVING_TEXTS.
+     */
+    private fun isPowerMenu(className: String, packageName: String, text: String): Boolean {
+        val lower = text.lowercase(Locale.ROOT).replace(" ", "")
+        val lowerClass = className.lowercase(Locale.ROOT)
+
+        // Detect power menu
+        if (lowerClass.contains("powerdialog") ||
+            lowerClass.contains("shutdownactivity") ||
+            lowerClass.contains("globalactions") ||
+            lowerClass.contains("powermenu")
+        ) {
+            return true
+        }
+
+        // Detect ultra power saving (localized)
+        for (powerText in BlockerPageUtils.HUAWEI_ULTRA_POWER_SAVING_TEXTS) {
+            val normalized = powerText.lowercase(Locale.ROOT).replace(" ", "")
+            if (normalized.isNotBlank() && lower.contains(normalized)) {
+                return true
+            }
+        }
+
+        return false
     }
 
     private fun isBrowserPackage(packageName: String): Boolean {
@@ -399,6 +483,8 @@ class MyAccessibilityService : AccessibilityService() {
                 isBlockInAppBrowsersOn = switchValues.isBlockInAppBrowsersSwitchOn()
                 isBlockUnsupportedBrowsersOn = switchValues.isBlockUnsupportedBrowsersSwitchOn()
                 isBlockSettingsByTitleOn = switchValues.isBlockSettingPageByTitleSwitchOn()
+                isPreventUninstallOn = switchValues.isPreventUninstallSwitchOn()
+                isBlockPhoneRebootOn = switchValues.isBlockPhoneRebootSwitchOn()
                 // BLOCK_NOTIFICATION_DRAWER + BLOCK_RECENT_APPS removed from UI
 
                 // Load setting titles to block from keyword DB
