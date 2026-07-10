@@ -104,8 +104,15 @@ class BlockerPageViewModel(
                 item.copy(actionLabel = "${secs}s")
             }
             SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE -> {
-                val msg = switchValues.getVpnNotificationCustomMessage()
-                item.copy(actionLabel = if (msg.isNullOrBlank()) "Default" else "Custom")
+                val typeRaw = db.switchStatusDao().get("vpn_connection_type")?.asString()
+                val type = protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.fromString(typeRaw)
+                val label = when (type) {
+                    protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.NORMAL -> "Normal"
+                    protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.POWERFUL -> "Powerful"
+                    protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.CUSTOM -> "Custom"
+                    else -> "Normal"
+                }
+                item.copy(actionLabel = label)
             }
             SettingPageItemIdentifiers.BLOCKED_SCREEN_MESSAGE -> {
                 val msg = switchValues.getBlockScreenCustomMessage()
@@ -437,9 +444,35 @@ class BlockerPageViewModel(
                     )
                 }
 
+                // VPN connection type selection (cycles: Normal → Powerful → Custom → Normal)
+                SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE -> {
+                    val currentType = protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.fromString(
+                        db.switchStatusDao().get("vpn_connection_type")?.asString()
+                    )
+                    val nextType = when (currentType) {
+                        protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.NORMAL ->
+                            protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.POWERFUL
+                        protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.POWERFUL ->
+                            protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.CUSTOM
+                        else -> protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.NORMAL
+                    }
+                    db.switchStatusDao().upsert(protect.yourself.database.switchStatus.SwitchStatusItemModel(
+                        key = "vpn_connection_type", value = nextType.value.toString(), type = "long"
+                    ))
+                    val typeLabel = when (nextType) {
+                        protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.NORMAL -> "Normal (Cloudflare)"
+                        protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.POWERFUL -> "Powerful (AdGuard)"
+                        protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.CUSTOM -> "Custom"
+                        else -> "Normal"
+                    }
+                    _navigation.emit(BlockerPageNavigation.ShowToast("VPN type: $typeLabel"))
+                    loadSettingItems()
+                    null
+                }
+
                 // Edit text fields
                 // LONG_SENTENCE_CUSTOM_MESSAGE removed from UI — uses default message
-                SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE -> {
+                SettingPageItemIdentifiers.VPN_NOTIFICATION_HIDE -> {
                     val current = switchValues.getVpnNotificationCustomMessage() ?: ""
                     BlockerPageNavigation.EditTextField("VPN Notification Message", current, "Custom message for VPN notification", SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE)
                 }
@@ -520,6 +553,7 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS, "Package + Intent Blocking", info = "Block apps by package name (e.g. com.example.app) or intent/class name", switchKey = "block_package_intent_switch"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Add package/intent to block", info = "Enter a package name or class name to block", actionLabel = "Add"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN, "VPN (DNS blocking)", info = "Block adult content at network level", switchKey = SwitchIdentifier.VPN_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE, "VPN connection type", info = "Normal=Cloudflare, Powerful=AdGuard, Custom=user DNS", actionLabel = "Normal"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_VPN_APPS, "Whitelist VPN apps", info = "Apps that bypass VPN", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE, "VPN notification message", info = "Custom message for VPN notification", actionLabel = "Default"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_NOTIFICATION_HIDE, "Hide VPN notification content", switchKey = SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH))
