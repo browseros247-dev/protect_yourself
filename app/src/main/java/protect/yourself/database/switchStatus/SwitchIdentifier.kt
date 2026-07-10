@@ -33,6 +33,9 @@ object SwitchIdentifier {
     const val BLOCK_UNSUPPORTED_BROWSERS_SWITCH = "block_unsupported_browsers_switch"
     const val BLOCK_PACKAGE_INTENT_SWITCH = "block_package_intent_switch"
     const val VPN_SWITCH = "vpn_switch"
+    // VPN connection mode (NORMAL=1, POWERFUL=2, CUSTOM=3). Stored as long.
+    // See [protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers].
+    const val VPN_CONNECTION_TYPE = "vpn_connection_type"
     const val VPN_NOTIFICATION_HIDE_SWITCH = "vpn_notification_hide_switch"
     const val BLOCK_NEW_INSTALL_APPS_SWITCH = "block_new_install_apps_switch"
     const val BLOCK_IN_APP_BROWSERS_SWITCH = "block_in_app_browsers_switch"
@@ -96,6 +99,7 @@ object SwitchIdentifier {
         BLOCK_UNSUPPORTED_BROWSERS_SWITCH,
         BLOCK_PACKAGE_INTENT_SWITCH,
         VPN_SWITCH,
+        VPN_CONNECTION_TYPE,
         VPN_NOTIFICATION_HIDE_SWITCH,
         BLOCK_NEW_INSTALL_APPS_SWITCH,
         BLOCK_IN_APP_BROWSERS_SWITCH,

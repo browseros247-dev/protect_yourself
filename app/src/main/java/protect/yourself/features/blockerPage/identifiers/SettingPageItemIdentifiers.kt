@@ -66,6 +66,8 @@ enum class SettingPageItemIdentifiers {
     // Advanced features section
     SECTION_ADVANCE_FEATURE,
     VPN,
+    // Opens the dedicated VPN management page (mode picker + custom DNS manager).
+    VPN_MANAGE,
     WHITELIST_VPN_APPS,
     VPN_NOTIFICATION_MESSAGE,
     VPN_NOTIFICATION_HIDE,

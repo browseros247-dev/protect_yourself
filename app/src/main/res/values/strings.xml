@@ -171,6 +171,63 @@
     <string name="vpn_notification_text">DNS blocking is protecting you from adult content</string>
     <string name="vpn_notification_channel">VPN service</string>
     <string name="vpn_stop">Stop VPN</string>
+    <string name="vpn_restart">Restart</string>
+
+    <!-- VPN management page -->
+    <string name="vpn_page_title">VPN Management</string>
+    <string name="vpn_page_subtitle">DNS-level filtering that blocks adult content across every browser and app on your device.</string>
+
+    <!-- Status -->
+    <string name="vpn_status_connected">Connected</string>
+    <string name="vpn_status_disconnected">Disconnected</string>
+    <string name="vpn_status_connected_hint">Filtering active. Your internet connection is not affected.</string>
+    <string name="vpn_status_disconnected_hint">Tap the switch above to start filtering.</string>
+
+    <!-- Mode section -->
+    <string name="vpn_mode_section_title">Filtering Mode</string>
+    <string name="vpn_mode_section_subtitle">Choose how aggressively adult content, ads, and trackers are blocked at the DNS level.</string>
+
+    <!-- Mode labels (user-facing). Backed by VpnConnectionTypeIdentifiers enum values. -->
+    <string name="vpn_mode_balanced_label">Balanced</string>
+    <string name="vpn_mode_strict_label">Strict</string>
+    <string name="vpn_mode_custom_label">Custom DNS</string>
+
+    <!-- Mode descriptions -->
+    <string name="vpn_mode_balanced_description">Blocks adult content and malware using Cloudflare Family DNS. Recommended for most users — fast, reliable, and preserves SafeSearch on Google, Bing, YouTube and DuckDuckGo.</string>
+    <string name="vpn_mode_strict_description">Maximum protection using AdGuard Family DNS. Blocks adult content, ads, trackers, and known malicious domains. Some benign sites may be blocked — switch to Balanced if you experience issues.</string>
+    <string name="vpn_mode_custom_description">Pick a specific DNS provider from the list below. Use this if a built-in mode does not fit your needs, or if you want to use a family-safe DNS provider not covered by Balanced or Strict.</string>
+
+    <!-- Mode DNS detail (shown as a small chip under each mode card) -->
+    <string name="vpn_mode_balanced_dns">1.1.1.3 · Cloudflare Family</string>
+    <string name="vpn_mode_strict_dns">94.140.14.15 · AdGuard Family</string>
+    <string name="vpn_mode_custom_dns">User-selected DNS</string>
+
+    <!-- Mode recommendation tags -->
+    <string name="vpn_mode_balanced_tag">Recommended</string>
+    <string name="vpn_mode_strict_tag">Max protection</string>
+    <string name="vpn_mode_custom_tag">Advanced</string>
+
+    <!-- Custom DNS manager -->
+    <string name="vpn_custom_dns_section_title">Custom DNS Provider</string>
+    <string name="vpn_custom_dns_section_subtitle">Select which family-safe DNS provider to use when Custom mode is active.</string>
+    <string name="vpn_custom_dns_active">Active</string>
+    <string name="vpn_custom_dns_make_active">Make active</string>
+
+    <!-- Advanced settings -->
+    <string name="vpn_advanced_section_title">Advanced Settings</string>
+    <string name="vpn_whitelist_apps_title">Apps that bypass VPN</string>
+    <string name="vpn_whitelist_apps_subtitle">Selected apps will use your normal network connection and skip DNS filtering.</string>
+    <string name="vpn_notification_message_title">Notification message</string>
+    <string name="vpn_notification_message_subtitle">Customise the text shown in the persistent VPN notification.</string>
+    <string name="vpn_hide_notification_title">Hide notification content</string>
+    <string name="vpn_hide_notification_subtitle">Replace the detailed VPN status with just the app name to keep your filtering private.</string>
+
+    <!-- Action row label on the Blocker settings page -->
+    <string name="vpn_manage_action_label">Manage</string>
+
+    <!-- Mode change toast -->
+    <string name="vpn_mode_changed_toast">VPN mode changed to %1$s. Restarting VPN…</string>
+    <string name="vpn_custom_dns_changed_toast">Custom DNS provider updated. Restarting VPN…</string>
 
     <!-- Stop Me notification -->
     <string name="stop_me_notification_channel">Focus mode</string>

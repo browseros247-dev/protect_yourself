@@ -7,12 +7,12 @@ This directory contains the **latest** pre-built, signed APK of **Protect Yourse
 - **Only the latest version** is kept here. When a new version is built, the previous APKs are removed.
 - Each version has two files: `*-debug.apk` (debug build with logging) and `*-release.apk` (production build, recommended).
 
-## Current Version: 1.0.34 (versionCode 34)
+## Current Version: 1.0.35 (versionCode 35)
 
 | File | Size | Build Type | Description |
 |---|---|---|---|
-| `protect.yourself-v1.0.34-release.apk` | ~15 MB | Release | **Recommended for installation.** Removes Supported Browsers + Make Any Browser Supported; moves Block Unsupported Browsers + Whitelist to Content Blocking; moves Package+Intent to Uninstall Protection. |
-| `protect.yourself-v1.0.34-debug.apk` | ~22 MB | Debug | Debug build with logging enabled. Larger due to unstripped debug info. |
+| `protect.yourself-v1.0.35-release.apk` | ~15 MB | Release | **Recommended for installation.** Merges Future-Brand VPN improvements (VPN internet-disconnect fix, redesigned VPN management UI with Balanced/Strict/Custom mode picker, DB v9 with display_name column) + main branch cleanup (removed Supported Browsers, reorganized categories). |
+| `protect.yourself-v1.0.35-debug.apk` | ~22 MB | Debug | Debug build with logging enabled. Larger due to unstripped debug info. |
 
 ## Build Targets
 
