@@ -65,6 +65,10 @@ class MyAccessibilityService : AccessibilityService() {
     private var isBlockPhoneRebootOn = false
     // BLOCK_NOTIFICATION_DRAWER + BLOCK_RECENT_APPS removed from UI
     private var cachedSettingTitles: List<String> = emptyList()
+    // Package + intent name blocking
+    private var cachedBlockedPackageNames: Set<String> = emptySet()
+    private var cachedBlockedIntentNames: Set<String> = emptySet()
+    private var isBlockPackageIntentOn = false
     private var isStopMeRunning = false
 
     private var lastBlockedPackage: String? = null
@@ -142,10 +146,24 @@ class MyAccessibilityService : AccessibilityService() {
         val text = event.text?.joinToString(" ").orEmpty()
         Timber.v("WindowStateChange pkg=$packageName class=$className text=$text")
 
-        // Settings page title blocking
+        // Settings page title blocking (NopoX-style: checks settings pages)
         if (isBlockSettingsByTitleOn && isSettingsPage(packageName, text)) {
             launchBlockActivity(packageName, "block_page_default_system_keyword_message")
             return
+        }
+
+        // Title-based blocking on ANY app (NopoX-style: also checks all app titles)
+        if (isBlockSettingsByTitleOn && isAnyTitleBlocked(packageName, className, text)) {
+            launchBlockActivity(packageName, "block_page_default_system_keyword_message")
+            return
+        }
+
+        // Package + Intent name blocking (NEW feature)
+        if (isBlockPackageIntentOn) {
+            if (isPackageOrIntentBlocked(packageName, className)) {
+                launchBlockActivity(packageName, "block_page_default_block_apps_message")
+                return
+            }
         }
 
         // Prevent Uninstall: detect when user is on our app info page
@@ -356,6 +374,62 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * NopoX-style title-based blocking on ANY app/page.
+     * Checks if the event text or class name contains any blocked title keyword.
+     * This goes beyond settings — it blocks ANY window whose title matches.
+     */
+    private fun isAnyTitleBlocked(packageName: String, className: String, text: String): Boolean {
+        if (cachedSettingTitles.isEmpty()) return false
+        // Don't block our own app
+        if (packageName == this.packageName) return false
+        // Don't block system UI (would freeze the phone)
+        if (packageName == "com.android.systemui") return false
+
+        val lowerText = text.lowercase(Locale.ROOT)
+        val lowerClass = className.lowercase(Locale.ROOT)
+
+        for (title in cachedSettingTitles) {
+            val t = title.lowercase(Locale.ROOT).trim()
+            if (t.isBlank()) continue
+            // Check against event text
+            if (lowerText.contains(t)) return true
+            // Check against class name (some apps put title in class name)
+            if (lowerClass.contains(t)) return true
+        }
+        return false
+    }
+
+    /**
+     * NEW: Package + Intent name blocking.
+     * Blocks apps whose package name OR class/intent name matches user-defined entries.
+     *
+     * - cachedBlockedPackageNames: exact package name matches (e.g. "com.example.app")
+     * - cachedBlockedIntentNames: substring matches on class/intent name (e.g. "MainActivity")
+     */
+    private fun isPackageOrIntentBlocked(packageName: String, className: String): Boolean {
+        // Don't block our own app
+        if (packageName == this.packageName) return false
+        // Don't block system UI
+        if (packageName == "com.android.systemui") return false
+
+        // Check exact package name match
+        if (cachedBlockedPackageNames.contains(packageName)) {
+            return true
+        }
+
+        // Check intent/class name substring match
+        val lowerClass = className.lowercase(Locale.ROOT)
+        for (intentName in cachedBlockedIntentNames) {
+            val i = intentName.lowercase(Locale.ROOT).trim()
+            if (i.isNotBlank() && lowerClass.contains(i)) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /**
      * Detect if the user is on the app info page for our package.
      * This is the page where the Uninstall button lives.
      */
@@ -492,6 +566,16 @@ class MyAccessibilityService : AccessibilityService() {
                     .getSelectedByIdentifier(SelectedKeywordIdentifier.SETTING_KEYWORDS_LIST_WORDS.value)
                     .map { it.keyword }
                     .filter { it.isNotBlank() }
+
+                // Load package + intent name blocking data
+                val packageIntentSwitch = db.switchStatusDao().get("block_package_intent_switch")
+                isBlockPackageIntentOn = packageIntentSwitch?.asBoolean() ?: false
+                cachedBlockedPackageNames = db.selectedAppsListDao()
+                    .getSelectedByIdentifier("blocked_package_names")
+                    .map { it.packageName }.toSet()
+                cachedBlockedIntentNames = db.selectedKeywordDao()
+                    .getSelectedByIdentifier("blocked_intent_names")
+                    .map { it.keyword }.toSet()
 
                 // Keywords
                 cachedBlockKeywords = db.selectedKeywordDao()

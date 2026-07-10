@@ -335,6 +335,41 @@ class BlockerPageViewModel(
                 return@launch
             }
 
+            // NEW: Package + Intent name blocking input
+            if (switchKey == "block_package_intent_input") {
+                if (value.isNotBlank()) {
+                    val input = value.trim()
+                    // If it looks like a package name (contains dots), store as app entry
+                    if (input.contains(".") && !input.contains(" ")) {
+                        val item = protect.yourself.database.selectedApps.SelectedAppItemModel(
+                            key = "blocked_pkg_${System.currentTimeMillis()}",
+                            packageName = input,
+                            appName = input,
+                            identifier = "blocked_package_names",
+                            isSelected = true
+                        )
+                        db.selectedAppsListDao().upsert(item)
+                        _navigation.emit(BlockerPageNavigation.ShowToast("Package '$input' will be blocked"))
+                    } else {
+                        // Store as intent/class name keyword
+                        val item = protect.yourself.database.selectedKeywords.SelectedKeywordItemModel(
+                            key = "blocked_intent_${System.currentTimeMillis()}",
+                            keyword = input,
+                            identifier = "blocked_intent_names",
+                            isSelected = true
+                        )
+                        db.selectedKeywordDao().upsert(item)
+                        _navigation.emit(BlockerPageNavigation.ShowToast("Intent/class '$input' will be blocked"))
+                    }
+                    // Enable the package+intent switch
+                    switchValues.storeSwitchStatus("block_package_intent_switch", true)
+                    // Refresh accessibility service config
+                    MyAccessibilityService.instance?.refreshBlockingConfig()
+                }
+                loadSettingItems()
+                return@launch
+            }
+
             switchValues.storeSwitchStatus(switchKey, value)
             // Also set the "is set" flag for certain keys
             when (switchKey) {
@@ -390,8 +425,17 @@ class BlockerPageViewModel(
                         "block_setting_title_input"
                     )
                 }
-                SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS -> BlockerPageNavigation.OpenSelectAppPage("Setting Page Blocklist", SelectedAppListIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_APPS)
+                SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS -> BlockerPageNavigation.OpenSelectAppPage("Blocked Titles", SelectedAppListIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_APPS)
                 SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP -> BlockerPageNavigation.OpenSelectAppPage("Blocklist Whitelist Detected Apps", SelectedAppListIdentifier.BLOCK_WHITELIST_DETECTED_APPS)
+                // NEW: Package + Intent name blocking input
+                SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER -> {
+                    BlockerPageNavigation.EditTextField(
+                        "Add Package/Intent to Block",
+                        "",
+                        "Enter a package name (e.g. com.example.app) or class name (e.g. MainActivity)",
+                        "block_package_intent_input"
+                    )
+                }
 
                 // Edit text fields
                 // LONG_SENTENCE_CUSTOM_MESSAGE removed from UI — uses default message
@@ -468,12 +512,13 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_UNINSTALL_PROTECTION, "Uninstall Protection", isSection = true))
         add(SettingPageItemModel(SettingPageItemIdentifiers.PREVENT_UNINSTALL_SETTINGS, "Prevent uninstall", info = "Block attempts to uninstall (requires Device Admin)", switchKey = SwitchIdentifier.PREVENT_UNINSTALL_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_PHONE_REBOOT, "Block phone reboot", info = "Restart blocking automatically after reboot", switchKey = SwitchIdentifier.BLOCK_PHONE_REBOOT_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE, "Title-based block setting", info = "Enter a settings page title to block (e.g. 'battery')", actionLabel = "Edit"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS, "Setting page blocklist", info = "Manage blocked settings pages", actionLabel = "Manage"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE, "Title-based block setting", info = "Enter a title to block in any app (e.g. 'battery', 'settings')", actionLabel = "Add"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS, "Manage blocked titles", info = "View and remove blocked titles", actionLabel = "Manage"))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_ADVANCE_FEATURE, "Advanced feature", isSection = true))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS, "Block unsupported browsers", info = "Block all browsers except whitelisted", switchKey = SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Whitelist unsupported browsers", info = "Manage browser whitelist", actionLabel = "Manage"))
+        // NEW: Package + Intent name blocking
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS, "Package + Intent Blocking", info = "Block apps by package name (e.g. com.example.app) or intent/class name", switchKey = "block_package_intent_switch"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Add package/intent to block", info = "Enter a package name or class name to block", actionLabel = "Add"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN, "VPN (DNS blocking)", info = "Block adult content at network level", switchKey = SwitchIdentifier.VPN_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_VPN_APPS, "Whitelist VPN apps", info = "Apps that bypass VPN", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE, "VPN notification message", info = "Custom message for VPN notification", actionLabel = "Default"))
