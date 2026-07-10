@@ -551,7 +551,7 @@ private fun CustomDnsPresetRow(
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = preset.displayName.ifBlank { preset.key },
+                    text = preset.displayName?.ifBlank { null } ?: preset.key,
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.SemiBold
