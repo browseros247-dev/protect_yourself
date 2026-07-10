@@ -138,14 +138,55 @@ class BlockerPageUtils {
     }
 
     /**
-     * Validate IPv4 DNS address.
+     * Validate a DNS server IP address. Accepts both IPv4 and IPv6.
+     *
+     * VPN-09 fix: the original implementation only accepted IPv4. If a future
+     * custom-DNS editor allows the user to enter an IPv6 DNS (e.g.
+     * `2606:4700:4700::1113` for Cloudflare Family), the validation would
+     * reject it. We now accept both. Hostnames (e.g. `dns.cloudflare.com`)
+     * are still rejected — the VPN service uses `InetAddress.getByName()`
+     * which would resolve them, but allowing hostnames would let a user
+     * configure a DNS that depends on DNS to resolve (chicken-and-egg).
      */
     fun isValidDNS(dns: String): Boolean {
         if (dns.isBlank()) return false
+        val trimmed = dns.trim()
         val ipv4Pattern = Pattern.compile(
             "^((25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(25[0-5]|2[0-4]\\d|[01]?\\d\\d?)$"
         )
-        return ipv4Pattern.matcher(dns.trim()).matches()
+        if (ipv4Pattern.matcher(trimmed).matches()) return true
+        // IPv6 — accept full (8 groups of 1-4 hex digits separated by ':')
+        // and compressed forms (with '::'). Also accept bracketed forms like
+        // [::1] which some tools produce.
+        val unbracketed = trimmed.removePrefix("[").removeSuffix("]")
+        val ipv6Pattern = Pattern.compile(
+            "^(" +
+                // full form: 8 groups of 1-4 hex digits
+                "([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}" +
+                "|" +
+                // compressed form with '::' — various positions
+                "([0-9a-fA-F]{1,4}:){1,7}:" +
+                "|" +
+                ":([0-9a-fA-F]{1,4}:){1,6}[0-9a-fA-F]{1,4}" +
+                "|" +
+                "::([0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}" +
+                "|" +
+                "([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}" +
+                "|" +
+                "([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}" +
+                "|" +
+                "([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}" +
+                "|" +
+                "([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}" +
+                "|" +
+                "([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}" +
+                "|" +
+                "[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})" +
+                "|" +
+                "::" +  // unspecified address
+                ")$"
+        )
+        return ipv6Pattern.matcher(unbracketed).matches()
     }
 
     /**

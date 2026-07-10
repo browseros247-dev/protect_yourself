@@ -147,9 +147,19 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
     }
 
     private fun insertDnsPresets(db: SupportSQLiteDatabase) {
+        // Use INSERT OR IGNORE (not REPLACE) so that if a user has previously
+        // added a custom preset with a key that collides with a default preset
+        // key, we don't clobber their data. In practice this is unlikely
+        // (default keys are "preset_cloudflare_family" etc.), but it's the
+        // safe choice. On first launch the table is empty so all 4 defaults
+        // are inserted.
+        //
+        // NOTE: this only runs in onCreate() — i.e. only on first install.
+        // Upgrades from v8 to v9 use the MIGRATION_8_9 path which ALTERs
+        // the existing table and backfills display_name by key.
         for (preset in DefaultDnsPresets.ALL) {
             db.execSQL(
-                "INSERT OR REPLACE INTO vpn_custom_dns (`key`, display_name, first_dns, second_dns, is_selected) VALUES (?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO vpn_custom_dns (`key`, display_name, first_dns, second_dns, is_selected) VALUES (?, ?, ?, ?, ?)",
                 arrayOf(preset.key, preset.displayName, preset.firstDns, preset.secondDns, preset.isSelectedByDefault)
             )
         }
