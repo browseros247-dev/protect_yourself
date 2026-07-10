@@ -63,7 +63,7 @@ class BlockerPageViewModel(
         loadSettingItems()
     }
 
-    private fun loadSettingItems() {
+    fun loadSettingItems() {
         viewModelScope.launch {
             val items = buildSettingItems()
 
@@ -197,16 +197,82 @@ class BlockerPageViewModel(
                 return@launch
             }
 
+            // Protective mode switches — only one can be active at a time
+            // Enabling one disables the others + updates ACCOUNTABILITY_PARTNER_TYPE
+            when (switchKey) {
+                SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET -> {
+                    if (newValue) {
+                        // Enabling Long Sentence → disable Time Delay + Real Friend
+                        switchValues.storeSwitchStatus(SwitchIdentifier.TIME_DELAY_DURATION_SET, false)
+                        switchValues.storeSwitchStatus(SwitchIdentifier.REAL_FRIEND_VISIBLE, false)
+                        switchValues.storeSwitchStatus(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, 1L)
+                        _navigation.emit(BlockerPageNavigation.ShowToast("Long Sentence protective mode enabled"))
+                    } else {
+                        switchValues.storeSwitchStatus(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, 0L)
+                        _navigation.emit(BlockerPageNavigation.ShowToast("Long Sentence disabled"))
+                    }
+                }
+                SwitchIdentifier.TIME_DELAY_DURATION_SET -> {
+                    if (newValue) {
+                        switchValues.storeSwitchStatus(SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET, false)
+                        switchValues.storeSwitchStatus(SwitchIdentifier.REAL_FRIEND_VISIBLE, false)
+                        switchValues.storeSwitchStatus(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, 2L)
+                        _navigation.emit(BlockerPageNavigation.ShowToast("Time Delay protective mode enabled"))
+                    } else {
+                        switchValues.storeSwitchStatus(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, 0L)
+                        _navigation.emit(BlockerPageNavigation.ShowToast("Time Delay disabled"))
+                    }
+                }
+                SwitchIdentifier.REAL_FRIEND_VISIBLE -> {
+                    if (newValue) {
+                        switchValues.storeSwitchStatus(SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET, false)
+                        switchValues.storeSwitchStatus(SwitchIdentifier.TIME_DELAY_DURATION_SET, false)
+                        switchValues.storeSwitchStatus(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, 3L)
+                        // Prompt for friend's email
+                        val currentEmail = switchValues.getRealFriendEmail() ?: ""
+                        _navigation.emit(BlockerPageNavigation.EditTextField(
+                            "Real Friend Email",
+                            currentEmail,
+                            "Enter your accountability partner's email",
+                            SwitchIdentifier.REAL_FRIEND_EMAIL
+                        ))
+                        _navigation.emit(BlockerPageNavigation.ShowToast("Real Friend enabled — enter partner's email"))
+                    } else {
+                        switchValues.storeSwitchStatus(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE, 0L)
+                        _navigation.emit(BlockerPageNavigation.ShowToast("Real Friend disabled"))
+                    }
+                }
+            }
+
             // Normal toggle
             switchValues.storeSwitchStatus(switchKey, newValue)
 
             _state.update { state ->
                 state.copy(
                     settingItems = state.settingItems.map { itItem ->
-                        if (itItem.switchKey == switchKey) itItem.copy(switchValue = newValue)
-                        else itItem
+                        when (itItem.switchKey) {
+                            // Update the toggled switch
+                            switchKey -> itItem.copy(switchValue = newValue)
+                            // If a protective mode was enabled, reflect disabled state of others
+                            SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET,
+                            SwitchIdentifier.TIME_DELAY_DURATION_SET,
+                            SwitchIdentifier.REAL_FRIEND_VISIBLE -> {
+                                // These were already set above via storeSwitchStatus
+                                // Reload from the stored values to reflect changes
+                                itItem.copy(switchValue = false)
+                            }
+                            else -> itItem
+                        }
                     }
                 )
+            }
+
+            // For protective mode switches, reload all items to get correct switch states
+            if (switchKey == SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET ||
+                switchKey == SwitchIdentifier.TIME_DELAY_DURATION_SET ||
+                switchKey == SwitchIdentifier.REAL_FRIEND_VISIBLE
+            ) {
+                loadSettingItems()
             }
 
             // Refresh accessibility service blocking config
