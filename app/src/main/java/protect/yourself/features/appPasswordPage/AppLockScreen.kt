@@ -485,6 +485,9 @@ private fun PatternUI(
                             CircleShape
                         )
                         .clickable {
+                            // Don't add more dots after 9 (max grid) or after
+                            // an auto-unlock attempt has started.
+                            if (state.input.length >= 9 || state.isUnlocked) return@clickable
                             val newInput = state.input + dotNum.toString()
                             viewModel.onInputChange(newInput)
                             // Auto-unlock at 4+ dots — use tryUnlockWithInput

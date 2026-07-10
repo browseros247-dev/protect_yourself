@@ -126,6 +126,27 @@ class MainActivity : FragmentActivity() {
         checkAppState()
     }
 
+    /**
+     * Re-check lock state when the user returns to the app.
+     *
+     * CRITICAL: Without this, the app lock only appears on fresh launch (when
+     * onCreate is called). When the user backgrounds the app (home button,
+     * recent apps, etc.) and returns, onResume is called but onCreate is NOT.
+     * So the lock screen never appeared on app return — the user could bypass
+     * the lock by simply backgrounding + returning.
+     *
+     * NopoX behaviour: re-locks on every ON_RESUME if a lock is configured.
+     */
+    override fun onResume() {
+        super.onResume()
+        // Only re-lock if the app was previously in MAIN state (i.e. the user
+        // was inside the app). Don't re-lock during initial launch (LOADING)
+        // or during onboarding.
+        if (appState == AppState.MAIN) {
+            checkAppState()
+        }
+    }
+
     private fun checkAppState() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
