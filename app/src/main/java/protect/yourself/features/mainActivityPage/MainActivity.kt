@@ -60,7 +60,7 @@ import protect.yourself.database.switchStatus.SwitchStatusValues
 import protect.yourself.features.appPasswordPage.AppLockManager
 import protect.yourself.features.appPasswordPage.AppLockScreen
 import protect.yourself.features.blockerPage.components.BlockerPageHome
-import protect.yourself.features.mainActivityPage.components.AboutPage
+// About tab removed — About info is in Profile page
 import protect.yourself.features.mainActivityPage.repository.MainPageScreen
 import protect.yourself.features.profilePage.components.ProfilePage
 import protect.yourself.features.streakPage.components.StreakPage
@@ -338,7 +338,6 @@ private fun MainScreen() {
             when (selectedTab) {
                 MainPageScreen.Home -> BlockerPageHome()
                 MainPageScreen.Streak -> StreakPage()
-                MainPageScreen.About -> AboutPage()
                 MainPageScreen.Profile -> ProfilePage()
             }
         }
@@ -370,6 +369,5 @@ private fun AppBottomBar(
 private fun MainPageScreen.vectorIcon(): ImageVector = when (this) {
     MainPageScreen.Home -> Icons.Filled.Shield
     MainPageScreen.Streak -> Icons.Filled.LocalFireDepartment
-    MainPageScreen.About -> Icons.Filled.Info
     MainPageScreen.Profile -> Icons.Filled.Person
 }

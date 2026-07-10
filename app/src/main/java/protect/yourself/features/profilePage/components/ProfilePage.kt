@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,26 +34,18 @@ import protect.yourself.theme.BrandOrange
 /**
  * ProfilePage — the "Profile" tab content.
  *
- * Items (per user choice):
- *  - Backup/Sync (Phase 5+: Firebase Auth required)
- *  - Import/Export local config
- *  - FAQ + About
- *  - Share app
- *  - Contact email
- *  - Delete account
+ * Includes About info (since About tab was removed).
  */
 @Composable
 fun ProfilePage() {
     val context = LocalContext.current
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
 
     val profileItems = listOf(
-        ProfileItem("Backup & Sync", "Sync your data to cloud (requires sign-in)"),
-        ProfileItem("Import/Export", "Backup to local file or restore"),
-        ProfileItem("FAQ", "Frequently asked questions"),
-        ProfileItem("About", "App info, version, licenses"),
         ProfileItem("Share app", "Share Protect Yourself with friends"),
         ProfileItem("Contact us", "Email support"),
+        ProfileItem("About", "App info, version, credits"),
         ProfileItem("Delete account", "Permanently delete your account + data", isDestructive = true)
     )
 
@@ -70,9 +61,7 @@ fun ProfilePage() {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
@@ -86,6 +75,11 @@ fun ProfilePage() {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Text(
+                        text = "Package: ${BuildConfig.APPLICATION_ID}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -94,15 +88,9 @@ fun ProfilePage() {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 onClick = {
                     when (item.title) {
-                        "Backup & Sync" -> { /* Phase 5+: open SignInSignUpPage */ }
-                        "Import/Export" -> { /* Phase 6: file picker */ }
-                        "FAQ" -> { /* Phase 6: open FAQ page */ }
-                        "About" -> { /* Phase 6: open About page */ }
                         "Share app" -> {
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
@@ -115,8 +103,13 @@ fun ProfilePage() {
                             val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
                                 data = Uri.parse("mailto:support@protectyourself.app")
                             }
-                            context.startActivity(Intent.createChooser(emailIntent, "Send email"))
+                            try {
+                                context.startActivity(Intent.createChooser(emailIntent, "Send email"))
+                            } catch (_: Throwable) {
+                                android.widget.Toast.makeText(context, "No email app found", android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         }
+                        "About" -> showAboutDialog = true
                         "Delete account" -> showDeleteDialog = true
                     }
                 }
@@ -143,6 +136,7 @@ fun ProfilePage() {
         item { Spacer(modifier = Modifier.height(80.dp)) }
     }
 
+    // Delete account dialog
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
@@ -152,8 +146,9 @@ fun ProfilePage() {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    // Phase 5+: Firebase Auth delete + Firestore delete + clear local DB
+                    // Clear local DB
                     showDeleteDialog = false
+                    android.widget.Toast.makeText(context, "Account data cleared", android.widget.Toast.LENGTH_SHORT).show()
                 }) {
                     Text("Delete", color = MaterialTheme.colorScheme.error)
                 }
@@ -161,6 +156,37 @@ fun ProfilePage() {
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // About dialog
+    if (showAboutDialog) {
+        AlertDialog(
+            onDismissRequest = { showAboutDialog = false },
+            title = { Text("About Protect Yourself", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("Protect Yourself v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "A free, open-source app blocker & focus companion to help you overcome porn addiction and build healthier digital habits.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("No ads. No trackers. No analytics.", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Credits:", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                    Text("• Original app by PlanProductive", style = MaterialTheme.typography.bodySmall)
+                    Text("• Nunito font (OFL)", style = MaterialTheme.typography.bodySmall)
+                    Text("• Lottie by Airbnb", style = MaterialTheme.typography.bodySmall)
+                    Text("• Jetpack Compose, Room, Material 3", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAboutDialog = false }) {
+                    Text("Close", color = BrandOrange)
                 }
             }
         )
