@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -83,6 +85,21 @@ fun BlockerPageHome() {
             MyVpnService.start(context)
             viewModel.onVpnPermissionGranted()
         }
+    }
+
+    /**
+     * Device Admin activation launcher.
+     *
+     * The Device Admin screen doesn't return a result code we can rely on
+     * (some OEMs return RESULT_OK even when the user cancels). Instead, we
+     * check DeviceAdminManager.isActive() when the user returns to the app.
+     */
+    val deviceAdminLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        val adminManager = protect.yourself.features.protectedApps.DeviceAdminManager.getInstance(context)
+        val granted = adminManager.isActive()
+        viewModel.onDeviceAdminResult(granted)
     }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -165,6 +182,12 @@ fun BlockerPageHome() {
                 is BlockerPageNavigation.OpenKeywordManager -> {
                     currentPage = SubPage.KeywordManager
                 }
+                is BlockerPageNavigation.OpenKeywordManagerTab -> {
+                    currentPage = SubPage.KeywordManagerTab(nav.tab)
+                }
+                is BlockerPageNavigation.OpenPackageIntentManager -> {
+                    currentPage = SubPage.PackageIntentManager
+                }
                 is BlockerPageNavigation.OpenRequestHistory -> {
                     currentPage = SubPage.RequestHistory
                 }
@@ -180,9 +203,28 @@ fun BlockerPageHome() {
                 is BlockerPageNavigation.RequestDeviceAdmin -> {
                     try {
                         val adminManager = protect.yourself.features.protectedApps.DeviceAdminManager.getInstance(context)
-                        adminManager.requestActive()
+                        // If admin is already active, just persist the switch ON
+                        if (adminManager.isActive()) {
+                            viewModel.onDeviceAdminResult(true)
+                        } else {
+                            // Launch Device Admin activation screen via launcher
+                            // so we get a callback when the user returns
+                            val intent = android.content.Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                                putExtra(
+                                    android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN,
+                                    protect.yourself.features.blockerPage.utils.DeviceAdminUtils.getComponentName(context)
+                                )
+                                putExtra(
+                                    android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                                    "Device Admin prevents unauthorized uninstall of Protect Yourself."
+                                )
+                            }
+                            deviceAdminLauncher.launch(intent)
+                        }
                     } catch (t: Throwable) {
                         android.widget.Toast.makeText(context, "Could not open Device Admin settings", android.widget.Toast.LENGTH_SHORT).show()
+                        // Revert the switch since we couldn't even open the screen
+                        viewModel.onDeviceAdminResult(false)
                     }
                 }
             }
@@ -232,6 +274,13 @@ fun BlockerPageHome() {
             )
         }
         SubPage.KeywordManager -> protect.yourself.features.keywordManagerPage.KeywordManagerPage(
+            onBack = { currentPage = null }
+        )
+        is SubPage.KeywordManagerTab -> protect.yourself.features.keywordManagerPage.KeywordManagerPage(
+            initialTab = page.tab,
+            onBack = { currentPage = null }
+        )
+        SubPage.PackageIntentManager -> protect.yourself.features.packageIntentPage.PackageIntentPage(
             onBack = { currentPage = null }
         )
         SubPage.RequestHistory -> SimpleSubPage("Request History") { currentPage = null }
@@ -480,19 +529,95 @@ private fun EditTextDialog(
     onDismiss: () -> Unit, onSave: (String) -> Unit
 ) {
     var text by remember { mutableStateOf(currentValue) }
-    AlertDialog(
+
+    // Use a custom Dialog (not AlertDialog) so we can control the scrim
+    // colour + surface elevation for better contrast + accessibility.
+    androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        title = { Text(title, fontWeight = FontWeight.Bold) },
-        text = {
-            OutlinedTextField(
-                value = text, onValueChange = { text = it },
-                label = { Text(hint) }, singleLine = false,
-                modifier = Modifier.fillMaxWidth()
-            )
-        },
-        confirmButton = { TextButton(onClick = { onSave(text) }) { Text("Save", color = BrandOrange, fontWeight = FontWeight.Bold) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
+        properties = androidx.compose.ui.window.DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.85f))
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) { onDismiss() },
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    ) { /* swallow clicks inside the card so it doesn't dismiss */ },
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp)
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        label = { Text(hint) },
+                        singleLine = false,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = BrandOrange,
+                            focusedLabelColor = BrandOrange,
+                            cursorColor = BrandOrange
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = onDismiss,
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Text("Cancel", fontWeight = FontWeight.SemiBold)
+                        }
+                        Button(
+                            onClick = { onSave(text) },
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = BrandOrange,
+                                contentColor = androidx.compose.ui.graphics.Color.White
+                            ),
+                            enabled = text.isNotBlank()
+                        ) {
+                            Text("Save", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -503,26 +628,103 @@ private fun EditNumberDialog(
     var text by remember { mutableStateOf(currentValue.toString()) }
     val parsed = text.toIntOrNull()
     val isValid = parsed != null && parsed >= min && parsed <= max
-    AlertDialog(
+
+    androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        title = { Text(title, fontWeight = FontWeight.Bold) },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = text, onValueChange = { text = it.filter { c -> c.isDigit() } },
-                    label = { Text("Seconds ($min-$max)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true, isError = !isValid,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                if (!isValid && text.isNotBlank()) {
-                    Text("Must be between $min and $max", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        properties = androidx.compose.ui.window.DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.85f))
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                ) { onDismiss() },
+            contentAlignment = Alignment.Center
+        ) {
+            Card(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    ) { /* swallow clicks inside the card */ },
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp)
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it.filter { c -> c.isDigit() } },
+                        label = { Text("Seconds ($min-$max)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        isError = !isValid,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = BrandOrange,
+                            focusedLabelColor = BrandOrange,
+                            cursorColor = BrandOrange
+                        )
+                    )
+                    if (!isValid && text.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Must be between $min and $max",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = onDismiss,
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Text("Cancel", fontWeight = FontWeight.SemiBold)
+                        }
+                        Button(
+                            onClick = { onSave(parsed ?: min) },
+                            enabled = isValid,
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = BrandOrange,
+                                contentColor = androidx.compose.ui.graphics.Color.White
+                            )
+                        ) {
+                            Text("Save", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = { onSave(parsed ?: min) }, enabled = isValid) { Text("Save", color = BrandOrange, fontWeight = FontWeight.Bold) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
+        }
+    }
 }
 
 // ===== Accessibility banner =====
@@ -675,6 +877,8 @@ sealed class SubPage {
     data class SelectApp(val title: String, val identifier: SelectedAppListIdentifier) : SubPage()
     data class CategoryPage(val title: String, val identifiers: Set<protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers>) : SubPage()
     data object KeywordManager : SubPage()
+    data class KeywordManagerTab(val tab: protect.yourself.features.keywordManagerPage.KeywordTab) : SubPage()
+    data object PackageIntentManager : SubPage()
     data object AppLockSetup : SubPage()
     data object RequestHistory : SubPage()
     data object Faq : SubPage()

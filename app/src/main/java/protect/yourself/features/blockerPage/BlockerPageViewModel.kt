@@ -38,6 +38,8 @@ sealed class BlockerPageNavigation {
     data object OpenOverlaySettings : BlockerPageNavigation()
     data object OpenAppLockSetup : BlockerPageNavigation()
     data object OpenKeywordManager : BlockerPageNavigation()
+    data class OpenKeywordManagerTab(val tab: protect.yourself.features.keywordManagerPage.KeywordTab) : BlockerPageNavigation()
+    data object OpenPackageIntentManager : BlockerPageNavigation()
     data object OpenStopMe : BlockerPageNavigation()
     data object OpenFaq : BlockerPageNavigation()
     data object OpenRequestHistory : BlockerPageNavigation()
@@ -319,6 +321,46 @@ class BlockerPageViewModel(
     }
 
     /**
+     * Called after the user returns from the Device Admin activation screen.
+     *
+     * If admin was granted → persist the switch ON + refresh accessibility service.
+     * If admin was NOT granted (user cancelled) → ensure switch stays OFF + show toast.
+     */
+    fun onDeviceAdminResult(granted: Boolean) {
+        viewModelScope.launch {
+            if (granted) {
+                switchValues.storeSwitchStatus(SwitchIdentifier.PREVENT_UNINSTALL_SWITCH, true)
+                _state.update { state ->
+                    state.copy(
+                        settingItems = state.settingItems.map {
+                            if (it.switchKey == SwitchIdentifier.PREVENT_UNINSTALL_SWITCH)
+                                it.copy(switchValue = true)
+                            else it
+                        }
+                    )
+                }
+                MyAccessibilityService.instance?.refreshBlockingConfig()
+                _navigation.emit(BlockerPageNavigation.ShowToast("Prevent uninstall enabled — Device Admin active"))
+                Timber.i("Prevent uninstall enabled (Device Admin granted)")
+            } else {
+                // User cancelled — ensure switch stays OFF
+                switchValues.storeSwitchStatus(SwitchIdentifier.PREVENT_UNINSTALL_SWITCH, false)
+                _state.update { state ->
+                    state.copy(
+                        settingItems = state.settingItems.map {
+                            if (it.switchKey == SwitchIdentifier.PREVENT_UNINSTALL_SWITCH)
+                                it.copy(switchValue = false)
+                            else it
+                        }
+                    )
+                }
+                _navigation.emit(BlockerPageNavigation.ShowToast("Device Admin not granted — Prevent uninstall disabled"))
+                Timber.w("Prevent uninstall NOT enabled (Device Admin cancelled)")
+            }
+        }
+    }
+
+    /**
      * Save a text field value (from edit dialog).
      */
     fun saveTextField(switchKey: String, value: String) {
@@ -433,18 +475,13 @@ class BlockerPageViewModel(
                         "block_setting_title_input"
                     )
                 }
-                SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS -> BlockerPageNavigation.OpenSelectAppPage("Blocked Titles", SelectedAppListIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_APPS)
+                SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS ->
+                    BlockerPageNavigation.OpenKeywordManagerTab(protect.yourself.features.keywordManagerPage.KeywordTab.SETTING_TITLES)
                 SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP -> BlockerPageNavigation.OpenSelectAppPage("Blocklist Whitelist Detected Apps", SelectedAppListIdentifier.BLOCK_WHITELIST_DETECTED_APPS)
 
-                // Package + Intent name blocking input (NEW feature)
-                SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK -> {
-                    BlockerPageNavigation.EditTextField(
-                        "Add Package/Intent to Block",
-                        "",
-                        "Enter a package name (e.g. com.example.app) or class name (e.g. MainActivity)",
-                        "block_package_intent_input"
-                    )
-                }
+                // Package + Intent name blocking — open dedicated management page
+                SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK ->
+                    BlockerPageNavigation.OpenPackageIntentManager
 
                 // VPN connection type selection (cycles: Normal → Powerful → Custom → Normal)
                 SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE -> {
@@ -554,7 +591,7 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS, "Block unsupported browsers", info = "Block any browser that isn't in your supported list or whitelist", switchKey = SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Whitelist unsupported browsers", info = "Allow specific browsers to bypass the unsupported-browser block", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_PACKAGE_INTENT, "Package + Intent Blocking", info = "Block apps by package name (e.g. com.example.app) or intent/class name", switchKey = SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK, "Add package/intent to block", info = "Enter a package name or class name to block", actionLabel = "Add"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK, "Manage blocked packages/intents", info = "Add, view, and remove package + intent entries", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN, "VPN (DNS blocking)", info = "Block adult content at network level", switchKey = SwitchIdentifier.VPN_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE, "VPN connection type", info = "Normal=Cloudflare, Powerful=AdGuard, Custom=user DNS", actionLabel = "Normal"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_VPN_APPS, "Whitelist VPN apps", info = "Apps that bypass VPN", actionLabel = "Manage"))

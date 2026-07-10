@@ -71,7 +71,8 @@ import protect.yourself.theme.BrandOrange
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KeywordManagerPage(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    initialTab: KeywordTab = KeywordTab.BLOCKLIST
 ) {
     val context = LocalContext.current
     val viewModel: KeywordManagerViewModel = viewModel(
@@ -79,6 +80,11 @@ fun KeywordManagerPage(
     )
     val state by viewModel.state.collectAsState()
     val keyboard = LocalSoftwareKeyboardController.current
+
+    // Apply the initial tab on first composition
+    androidx.compose.runtime.LaunchedEffect(initialTab) {
+        viewModel.setActiveTab(initialTab)
+    }
 
     var newKeywordText by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }

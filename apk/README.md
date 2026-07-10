@@ -6,24 +6,22 @@ This directory contains pre-built, signed APKs of **Protect Yourself** for direc
 
 | File | Size | Package | Build Type | Description |
 |---|---|---|---|---|
-| `protect.yourself-v1.0.31-release.apk` | ~15 MB | `protect.yourself` | Release | Production-style build. **Recommended for installation.** Adds in-app Stop Me page + Keyword Manager page. |
-| `protect.yourself-v1.0.31-debug.apk` | ~22 MB | `protect.yourself` | Debug | Debug build with logging enabled. Larger due to unstripped debug info. |
+| `protect.yourself-v1.0.32-release.apk` | ~15 MB | `protect.yourself` | Release | Production-style build. **Recommended for installation.** Fixes Prevent Uninstall, block screen visibility, dialog contrast, bookmarked titles, adds Package+Intent manager page. |
+| `protect.yourself-v1.0.32-debug.apk` | ~22 MB | `protect.yourself` | Debug | Debug build with logging enabled. Larger due to unstripped debug info. |
+| `protect.yourself-v1.0.31-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (in-app Stop Me + Keyword Manager pages). |
+| `protect.yourself-v1.0.31-debug.apk` | ~22 MB | `protect.yourself` | Debug | Previous build debug. |
 | `protect.yourself-v1.0.30-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (local crash logging system). |
 | `protect.yourself-v1.0.30-debug.apk` | ~22 MB | `protect.yourself` | Debug | Previous build debug. |
 | `protect.yourself-v1.0.29-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (local JSON Backup/Restore). |
 | `protect.yourself-v1.0.29-debug.apk` | ~22 MB | `protect.yourself` | Debug | Previous build debug. |
 | `protect.yourself-v1.0.28-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (NopoX-style SafeSearch enforcement). |
 | `protect.yourself-v1.0.28-debug.apk` | ~22 MB | `protect.yourself` | Debug | Previous build debug. |
-| `protect.yourself-v1.0.27-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (supported/unsupported browser blocking). |
-| `protect.yourself-v1.0.27-debug.apk` | ~22 MB | `protect.yourself` | Debug | Previous build debug. |
-| `protect.yourself-v1.0.26-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (title-based + uninstall protection). |
-| `protect.yourself-v1.0.26-debug.apk` | ~22 MB | `protect.yourself` | Debug | Previous build debug. |
 
 Both APKs target:
 - **Min Android**: 8.0 (API 26)
 - **Target Android**: 15 (API 35)
 - **Compile SDK**: 35
-- **Version**: 1.0.31 (versionCode 31)
+- **Version**: 1.0.32 (versionCode 32)
 - **App label**: "Protect Yourself" (release) / "Protect Yourself DEBUG" (debug)
 
 ## Signing

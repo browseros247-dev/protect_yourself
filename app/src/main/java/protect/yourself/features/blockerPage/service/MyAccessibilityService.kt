@@ -167,6 +167,16 @@ class MyAccessibilityService : AccessibilityService() {
         val text = event.text?.joinToString(" ").orEmpty()
         Timber.v("WindowStateChange pkg=$packageName class=$className text=$text")
 
+        // Skip our own app — we never want to block our own block screen,
+        // app lock, or main activity. This also prevents infinite re-block loops
+        // where the block activity launch triggers a WINDOW_STATE_CHANGED event
+        // that re-triggers blocking.
+        if (packageName == this.packageName) return
+
+        // Skip SystemUI (status bar, notification shade, recents, etc.) —
+        // blocking these can freeze the device.
+        if (packageName == "com.android.systemui") return
+
         // Settings page title blocking (NopoX-style: checks settings pages)
         if (isBlockSettingsByTitleOn && isSettingsPage(packageName, text)) {
             launchBlockActivity(packageName, "block_page_default_system_keyword_message")
@@ -669,10 +679,23 @@ class MyAccessibilityService : AccessibilityService() {
         lastBlockedPackage = packageName
         lastBlockTimeMs = now
 
-        // Press HOME first to dismiss the offending app
-        performGlobalAction(GLOBAL_ACTION_HOME)
-
-        // Launch PornBlockActivity
+        // Launch PornBlockActivity on top of the offending app.
+        //
+        // IMPORTANT: Do NOT press GLOBAL_ACTION_HOME here. Pressing HOME before
+        // startActivity was causing the block screen to be immediately dismissed
+        // by the system's activity transition — the user never saw the explanation
+        // message, the content just "closed immediately". Pressing HOME after
+        // startActivity is also wrong because it would dismiss the block activity
+        // itself.
+        //
+        // The block activity launches with FLAG_ACTIVITY_NEW_TASK +
+        // FLAG_ACTIVITY_CLEAR_TOP so it appears on top. When the user taps Close,
+        // the block activity finishes and the system returns to the home screen
+        // (not back to the offending app, because CLEAR_TOP cleared that task).
+        //
+        // The offending app remains in the background but the user has to
+        // actively switch to it, at which point the accessibility service will
+        // re-block it.
         val intent = Intent(this, protect.yourself.features.blockerPage.ui.PornBlockActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -680,7 +703,15 @@ class MyAccessibilityService : AccessibilityService() {
             putExtra(EXTRA_BLOCK_PACKAGE, packageName)
             putExtra(EXTRA_BLOCK_MESSAGE_KEY, messageResKey)
         }
-        startActivity(intent)
+        try {
+            startActivity(intent)
+            Timber.i("Block screen launched for pkg=$packageName messageKey=$messageResKey")
+        } catch (t: Throwable) {
+            Timber.e(t, "Failed to launch PornBlockActivity")
+            // Fallback: if we can't launch the block activity, press HOME to
+            // at least dismiss the offending content
+            try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Throwable) {}
+        }
     }
 
     // ===== Config refresh =====
