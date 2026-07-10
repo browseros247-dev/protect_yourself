@@ -268,7 +268,11 @@ class MyAccessibilityService : AccessibilityService() {
     // ===== Content change handler =====
 
     private fun handleContentChange(packageName: String, event: AccessibilityEvent) {
-        if (!isPornBlockerOn) return
+        // URL scraping happens if EITHER porn blocker OR SafeSearch is on.
+        // Previously, this was gated behind isPornBlockerOn alone, which meant
+        // SafeSearch enforcement stopped working if the user turned off the
+        // Porn Blocker but left SafeSearch on.
+        if (!isPornBlockerOn && !isSafeSearchOn) return
 
         // Scrape URLs from any detected browser. The "supported browsers" concept
         // was removed — the accessibility service now scrapes from any app that
@@ -288,19 +292,24 @@ class MyAccessibilityService : AccessibilityService() {
         val utils = BlockerPageUtils.getInstance()
         val decoded = utils.decodeText(url)
 
-        // Whitelist check (overrides block)
-        if (utils.isSafeUrl(decoded, cachedWhitelistKeywords)) {
-            return
-        }
+        // Porn blocker checks (keyword matching + whitelist) — only if porn blocker is ON
+        if (isPornBlockerOn) {
+            // Whitelist check (overrides block)
+            if (utils.isSafeUrl(decoded, cachedWhitelistKeywords)) {
+                return
+            }
 
-        // Block keyword match — use isDetectWordInUrl (does NOT strip URLs)
-        val (found, _) = utils.isDetectWordInUrl(decoded, cachedBlockKeywords)
-        if (found) {
-            launchBlockActivity(packageName, "block_page_default_porn_blocker_message")
-            return
+            // Block keyword match — use isDetectWordInUrl (does NOT strip URLs)
+            val (found, _) = utils.isDetectWordInUrl(decoded, cachedBlockKeywords)
+            if (found) {
+                launchBlockActivity(packageName, "block_page_default_porn_blocker_message")
+                return
+            }
         }
 
         // SafeSearch enforcement: redirect to safe search if user tries unsafe Google
+        // This works independently of the porn blocker — the user can have porn
+        // blocker OFF but SafeSearch ON, and SafeSearch will still redirect.
         if (isSafeSearchOn) {
             enforceSafeSearch(packageName, decoded)
         }
@@ -351,14 +360,16 @@ class MyAccessibilityService : AccessibilityService() {
 
         Timber.i("SafeSearch redirect: $url → $safeUrl (pkg=$packageName)")
 
-        // 1. Press HOME to dismiss the unsafe search page
-        performGlobalAction(GLOBAL_ACTION_HOME)
-
-        // 2. Open the SafeSearch-enforced URL in the same browser
+        // Open the SafeSearch-enforced URL in the same browser.
+        //
+        // Do NOT press GLOBAL_ACTION_HOME before startActivity — that causes
+        // a race condition where HOME dismisses the browser before the safe
+        // URL intent fires, or the safe URL opens behind the home screen.
+        // The new URL loads in the same browser tab, replacing the unsafe
+        // search page. The user sees the SafeSearch results directly.
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(safeUrl)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 // Open in the same browser the user was using
                 setPackage(packageName)
             }

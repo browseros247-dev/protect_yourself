@@ -207,7 +207,9 @@ class BlockerPageUtils {
 
         try {
             val uri = Uri.parse(url)
-            val host = uri.host?.lowercase() ?: return null
+            // Strip trailing dot from host (DNS allows trailing dots, e.g.
+            // "www.google.com." is equivalent to "www.google.com")
+            val host = uri.host?.lowercase()?.trimEnd('.') ?: return null
             val safeHost = SAFE_SEARCH_HOST_MAP[host] ?: return null
 
             // Build safe URL preserving path + query + fragment
@@ -282,16 +284,57 @@ class BlockerPageUtils {
          * at the DNS level too — providing a second independent layer.
          */
         val SAFE_SEARCH_HOST_MAP: Map<String, String> = mapOf(
-            // Google
+            // Google — forcesafesearch.google.com works for all Google TLDs
             "www.google.com" to "forcesafesearch.google.com",
             "google.com" to "forcesafesearch.google.com",
             "m.google.com" to "forcesafesearch.google.com",
+            // Google country TLDs (top 20 by internet population)
             "www.google.co.in" to "forcesafesearch.google.com",
+            "google.co.in" to "forcesafesearch.google.com",
             "www.google.co.uk" to "forcesafesearch.google.com",
+            "google.co.uk" to "forcesafesearch.google.com",
             "www.google.de" to "forcesafesearch.google.com",
+            "google.de" to "forcesafesearch.google.com",
             "www.google.fr" to "forcesafesearch.google.com",
-            "www.google.jp" to "forcesafesearch.google.com",
+            "google.fr" to "forcesafesearch.google.com",
+            "www.google.co.jp" to "forcesafesearch.google.com",
+            "google.co.jp" to "forcesafesearch.google.com",
             "www.google.com.br" to "forcesafesearch.google.com",
+            "google.com.br" to "forcesafesearch.google.com",
+            "www.google.it" to "forcesafesearch.google.com",
+            "google.it" to "forcesafesearch.google.com",
+            "www.google.es" to "forcesafesearch.google.com",
+            "google.es" to "forcesafesearch.google.com",
+            "www.google.ca" to "forcesafesearch.google.com",
+            "google.ca" to "forcesafesearch.google.com",
+            "www.google.com.au" to "forcesafesearch.google.com",
+            "google.com.au" to "forcesafesearch.google.com",
+            "www.google.ru" to "forcesafesearch.google.com",
+            "google.ru" to "forcesafesearch.google.com",
+            "www.google.nl" to "forcesafesearch.google.com",
+            "google.nl" to "forcesafesearch.google.com",
+            "www.google.pl" to "forcesafesearch.google.com",
+            "google.pl" to "forcesafesearch.google.com",
+            "www.google.com.mx" to "forcesafesearch.google.com",
+            "google.com.mx" to "forcesafesearch.google.com",
+            "www.google.com.tr" to "forcesafesearch.google.com",
+            "google.com.tr" to "forcesafesearch.google.com",
+            "www.google.com.hk" to "forcesafesearch.google.com",
+            "google.com.hk" to "forcesafesearch.google.com",
+            "www.google.co.kr" to "forcesafesearch.google.com",
+            "google.co.kr" to "forcesafesearch.google.com",
+            "www.google.com.sg" to "forcesafesearch.google.com",
+            "google.com.sg" to "forcesafesearch.google.com",
+            "www.google.co.id" to "forcesafesearch.google.com",
+            "google.co.id" to "forcesafesearch.google.com",
+            "www.google.com.sa" to "forcesafesearch.google.com",
+            "google.com.sa" to "forcesafesearch.google.com",
+            "www.google.com.eg" to "forcesafesearch.google.com",
+            "google.com.eg" to "forcesafesearch.google.com",
+            "www.google.com.ar" to "forcesafesearch.google.com",
+            "google.com.ar" to "forcesafesearch.google.com",
+            "www.google.com.ng" to "forcesafesearch.google.com",
+            "google.com.ng" to "forcesafesearch.google.com",
             // Bing
             "www.bing.com" to "strict.bing.com",
             "bing.com" to "strict.bing.com",
