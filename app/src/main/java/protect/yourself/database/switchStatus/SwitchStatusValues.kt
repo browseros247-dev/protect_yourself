@@ -43,9 +43,6 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
     suspend fun isSafeSearchSwitchOn(): Boolean =
         dao.get(SwitchIdentifier.SAFE_SEARCH_SWITCH)?.asBoolean() ?: false
 
-    suspend fun isMakeAnyBrowserSupportedSwitchOn(): Boolean =
-        dao.get(SwitchIdentifier.MAKE_ANY_BROWSER_SUPPORTED_SWITCH)?.asBoolean() ?: false
-
     suspend fun isBlockSnapchatStoriesSwitchOn(): Boolean =
         dao.get(SwitchIdentifier.BLOCK_SNAPCHAT_STORIES_SWITCH)?.asBoolean() ?: false
 
@@ -141,9 +138,6 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
 
     suspend fun isStopMeWhitelistAppsSet(): Boolean =
         dao.get(SwitchIdentifier.STOP_ME_WHITELIST_APPS_SET)?.asBoolean() ?: false
-
-    suspend fun isSupportedBrowserDefaultAppSet(): Boolean =
-        dao.get(SwitchIdentifier.SUPPORTED_BROWSER_DEFAULT_APP_SET)?.asBoolean() ?: false
 
     suspend fun isTermsApproved(): Boolean =
         dao.get(SwitchIdentifier.TERMS_APPROVE_STATUS)?.asBoolean() ?: false

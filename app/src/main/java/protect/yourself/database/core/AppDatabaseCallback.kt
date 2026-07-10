@@ -13,7 +13,6 @@ import protect.yourself.database.switchStatus.SwitchIdentifier
 import protect.yourself.features.blockerPage.utils.DefaultDnsPresets
 import protect.yourself.features.blockerPage.utils.DefaultKeywordData
 import protect.yourself.features.blockerPage.utils.DefaultStopMeDurations
-import protect.yourself.features.blockerPage.utils.DefaultSupportedBrowsers
 import protect.yourself.features.blockerPage.utils.DefaultWhitelistApps
 import timber.log.Timber
 
@@ -57,10 +56,7 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
             // === 5. Default Stop Me durations (instant type: days=0) ===
             insertStopMeDurations(db)
 
-            // === 6. Default supported browsers ===
-            insertSupportedBrowsers(db)
-
-            // === 7. Default whitelist apps ===
+            // === 6. Default whitelist apps ===
             insertWhitelistApps(db)
 
             Timber.i("Core default data inserted via execSQL")
@@ -85,7 +81,6 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
         val switches = listOf(
             Triple(SwitchIdentifier.PORN_BLOCKER_SWITCH, "true", "boolean"),
             Triple(SwitchIdentifier.SAFE_SEARCH_SWITCH, "false", "boolean"),
-            Triple(SwitchIdentifier.MAKE_ANY_BROWSER_SUPPORTED_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.BLOCK_SNAPCHAT_STORIES_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.BLOCK_SNAPCHAT_SPOTLIGHT_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.BLOCK_INSTA_REELS_SWITCH, "false", "boolean"),
@@ -127,7 +122,6 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
             Triple(SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE, "", "string"),
             Triple(SwitchIdentifier.VPN_DNS_CUSTOM_LIST_SET, "false", "boolean"),
             Triple(SwitchIdentifier.STOP_ME_WHITELIST_APPS_SET, "false", "boolean"),
-            Triple(SwitchIdentifier.SUPPORTED_BROWSER_DEFAULT_APP_SET, "false", "boolean"),
             Triple(SwitchIdentifier.TERMS_APPROVE_STATUS, "false", "boolean"),
             Triple(SwitchIdentifier.RATING_GIVEN_STATUS, "false", "boolean"),
             Triple(SwitchIdentifier.FIREBASE_TOKEN, "", "string"),
@@ -162,17 +156,6 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
             )
         }
         Timber.i("Inserted ${DefaultStopMeDurations.ALL.size} Stop Me durations")
-    }
-
-    private fun insertSupportedBrowsers(db: SupportSQLiteDatabase) {
-        for (app in DefaultSupportedBrowsers.ALL) {
-            db.execSQL(
-                "INSERT OR REPLACE INTO selected_apps_table (`key`, package_name, app_name, identifier, is_selected) VALUES (?, ?, ?, ?, ?)",
-                arrayOf("preset_browser_${app.packageName}", app.packageName, app.displayName,
-                    SelectedAppListIdentifier.SUPPORTED_BROWSER_APPS.value, true)
-            )
-        }
-        Timber.i("Inserted ${DefaultSupportedBrowsers.ALL.size} supported browsers")
     }
 
     private fun insertWhitelistApps(db: SupportSQLiteDatabase) {

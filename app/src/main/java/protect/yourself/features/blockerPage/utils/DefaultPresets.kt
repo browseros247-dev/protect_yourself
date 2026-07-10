@@ -117,32 +117,6 @@ object DefaultStopMeDurations {
 }
 
 /**
- * Default supported browsers — packages accessibility service will scrape for URLs.
- */
-object DefaultSupportedBrowsers {
-
-    data class BrowserApp(
-        val packageName: String,
-        val displayName: String,
-        val viewIdForUrl: String? = null
-    )
-
-    val ALL: List<BrowserApp> = listOf(
-        BrowserApp("com.android.chrome", "Google Chrome"),
-        BrowserApp("org.mozilla.firefox", "Firefox"),
-        BrowserApp("com.brave.browser", "Brave"),
-        BrowserApp("com.microsoft.emmx", "Microsoft Edge"),
-        BrowserApp("com.opera.browser", "Opera"),
-        BrowserApp("com.sec.android.app.sbrowser", "Samsung Internet"),
-        BrowserApp("com.vivaldi.browser", "Vivaldi"),
-        BrowserApp("com.duckduckgo.mobile.android", "DuckDuckGo"),
-        BrowserApp("com.mi.globalbrowser", "Mi Browser"),
-        BrowserApp("org.mozilla.fennec_fdroid", "Fennec F-Droid"),
-        BrowserApp("org.bromite.bromite", "Bromite")
-    )
-}
-
-/**
  * Default whitelist apps — apps that bypass blocking (the blocker app itself + system UI).
  */
 object DefaultWhitelistApps {

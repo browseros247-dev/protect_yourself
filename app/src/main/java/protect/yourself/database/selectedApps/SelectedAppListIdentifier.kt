@@ -7,10 +7,8 @@ package protect.yourself.database.selectedApps
  */
 enum class SelectedAppListIdentifier(val value: String) {
     ALL_APPS("all_apps"),
-    SUPPORTED_BROWSER_APPS("supported_browser_apps"),
     BLOCK_APPS("block_apps"),
     BLOCK_SETTING_PAGE_BY_TITLE_APPS("block_setting_page_by_title_apps"),
-    MAKE_ANY_BROWSER_SUPPORTED_APPS("make_any_browser_supported_apps"),
     VPN_WHITELIST_APPS("vpn_whitelist_apps"),
     BLOCK_IN_APP_BROWSER_APPS("block_in_app_browser_apps"),
     BLOCK_NEW_INSTALL_APPS("block_new_install_apps_item"),

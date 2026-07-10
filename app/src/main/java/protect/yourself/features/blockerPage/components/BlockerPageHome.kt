@@ -338,16 +338,16 @@ private fun HomeWithCategories(
         item {
             CategoryCard(
                 title = "Content Blocking",
-                subtitle = "Porn blocker, keywords, apps, SafeSearch, browsers",
+                subtitle = "Porn blocker, keywords, apps, SafeSearch, browser blocking",
                 icon = Icons.Filled.Block,
                 onClick = {
                     onNavigate(SubPage.CategoryPage("Content Blocking", setOf(
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.SUPPORTED_BROWSERS,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.PORN_BLOCKER,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCKER_CUSTOM_KEYWORD_WEBSITE,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCKLIST_APPS,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.SAFE_SEARCH,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.MAKE_ANY_BROWSER_SUPPORTED
+                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS,
+                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER
                     )))
                 }
             )
@@ -356,7 +356,7 @@ private fun HomeWithCategories(
         item {
             CategoryCard(
                 title = "Uninstall Protection",
-                subtitle = "Prevent uninstall, block reboot, title-based blocking",
+                subtitle = "Prevent uninstall, block reboot, title-based + package/intent blocking",
                 icon = Icons.Filled.Security,
                 onClick = {
                     onNavigate(SubPage.CategoryPage("Uninstall Protection", setOf(
@@ -365,7 +365,9 @@ private fun HomeWithCategories(
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_PHONE_REBOOT,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_RECENT_APPS,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS
+                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS,
+                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_PACKAGE_INTENT,
+                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK
                     )))
                 }
             )
@@ -389,14 +391,10 @@ private fun HomeWithCategories(
         item {
             CategoryCard(
                 title = "Advanced Features",
-                subtitle = "VPN, block screen customization, package+intent, in-app browsers",
+                subtitle = "VPN, block screen customization, in-app browsers",
                 icon = Icons.Filled.Settings,
                 onClick = {
                     onNavigate(SubPage.CategoryPage("Advanced Features", setOf(
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_PACKAGE_INTENT,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.VPN,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.WHITELIST_VPN_APPS,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE,

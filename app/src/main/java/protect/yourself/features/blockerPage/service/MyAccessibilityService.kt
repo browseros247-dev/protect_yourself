@@ -50,7 +50,6 @@ class MyAccessibilityService : AccessibilityService() {
     private var cachedVpnWhitelist: Set<String> = emptySet()
     private var cachedNewInstallBlockApps: Set<String> = emptySet()
     private var cachedInAppBrowserBlockApps: Set<String> = emptySet()
-    private var cachedSupportedBrowsers: Set<String> = emptySet()
     private var cachedUnsupportedBrowserWhitelist: Set<String> = emptySet()
 
     private var isPornBlockerOn = true
@@ -58,7 +57,6 @@ class MyAccessibilityService : AccessibilityService() {
     private var isBlockNewInstallOn = false
     private var isBlockInAppBrowsersOn = false
     private var isBlockUnsupportedBrowsersOn = false
-    private var isMakeAnyBrowserSupportedOn = false
     private var isBlockSettingsByTitleOn = false
     private var isPreventUninstallOn = false
     private var isBlockPhoneRebootOn = false
@@ -222,14 +220,13 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         // Block unsupported browsers
-        // NopoX behavior: when this switch is ON, any browser NOT in the supported
-        // list AND NOT in the unsupported-browser whitelist gets blocked on launch.
-        // A "browser" is defined as an app that handles http/https URLs (via intent filter)
-        // OR matches known browser package signatures.
+        // When this switch is ON, any browser NOT in the unsupported-browser
+        // whitelist gets blocked on launch. A "browser" is defined as an app
+        // that handles http/https URLs (via intent filter) OR matches known
+        // browser package signatures.
         if (isBlockUnsupportedBrowsersOn && isBrowserPackageDetected(packageName)) {
-            val isSupported = cachedSupportedBrowsers.contains(packageName)
             val isWhitelisted = cachedUnsupportedBrowserWhitelist.contains(packageName)
-            if (!isSupported && !isWhitelisted) {
+            if (!isWhitelisted) {
                 launchBlockActivity(packageName, "block_page_default_unsupported_browser_message")
                 return
             }
@@ -256,16 +253,11 @@ class MyAccessibilityService : AccessibilityService() {
     private fun handleContentChange(packageName: String, event: AccessibilityEvent) {
         if (!isPornBlockerOn) return
 
-        // Decide whether to attempt URL scraping on this package.
-        // NopoX behavior:
-        //  - Always scrape supported browsers (the default 11 + user-added entries)
-        //  - When MAKE_ANY_BROWSER_SUPPORTED is ON, also scrape any other browser
-        //    the user opens (in case the user added it but we don't have view IDs)
-        val isSupportedBrowser = cachedSupportedBrowsers.contains(packageName)
-        val shouldScrapeUrl = isSupportedBrowser ||
-            (isMakeAnyBrowserSupportedOn && isBrowserPackageDetected(packageName))
-
-        if (shouldScrapeUrl) {
+        // Scrape URLs from any detected browser. The "supported browsers" concept
+        // was removed — the accessibility service now scrapes from any app that
+        // declares a browser intent filter (or matches known browser signatures).
+        // This is simpler and more effective: no need for users to manage a list.
+        if (isBrowserPackageDetected(packageName)) {
             val url = extractUrlFromEvent(event, packageName)
             if (url != null && url.isNotBlank()) {
                 handleUrlDetected(packageName, url)
@@ -718,7 +710,6 @@ class MyAccessibilityService : AccessibilityService() {
                 isBlockNewInstallOn = switchValues.isBlockNewInstallAppsSwitchOn()
                 isBlockInAppBrowsersOn = switchValues.isBlockInAppBrowsersSwitchOn()
                 isBlockUnsupportedBrowsersOn = switchValues.isBlockUnsupportedBrowsersSwitchOn()
-                isMakeAnyBrowserSupportedOn = switchValues.isMakeAnyBrowserSupportedSwitchOn()
                 isBlockSettingsByTitleOn = switchValues.isBlockSettingPageByTitleSwitchOn()
                 isPreventUninstallOn = switchValues.isPreventUninstallSwitchOn()
                 isBlockPhoneRebootOn = switchValues.isBlockPhoneRebootSwitchOn()
@@ -763,9 +754,6 @@ class MyAccessibilityService : AccessibilityService() {
                 cachedInAppBrowserBlockApps = db.selectedAppsListDao()
                     .getSelectedByIdentifier(SelectedAppListIdentifier.BLOCK_IN_APP_BROWSER_APPS.value)
                     .map { it.packageName }.toSet()
-                cachedSupportedBrowsers = db.selectedAppsListDao()
-                    .getSelectedByIdentifier(SelectedAppListIdentifier.SUPPORTED_BROWSER_APPS.value)
-                    .map { it.packageName }.toSet()
                 cachedUnsupportedBrowserWhitelist = db.selectedAppsListDao()
                     .getSelectedByIdentifier(SelectedAppListIdentifier.WHITELIST_UNSUPPORTED_BROWSER.value)
                     .map { it.packageName }.toSet()
@@ -773,9 +761,8 @@ class MyAccessibilityService : AccessibilityService() {
                 Timber.i("Blocking config refreshed: ${cachedBlockKeywords.size} block keywords, " +
                     "${cachedWhitelistKeywords.size} whitelist keywords, " +
                     "${cachedBlockApps.size} block apps, " +
-                    "${cachedSupportedBrowsers.size} supported browsers, " +
+                    "${cachedUnsupportedBrowserWhitelist.size} whitelisted browsers, " +
                     "unsupportedBrowsersOn=$isBlockUnsupportedBrowsersOn, " +
-                    "makeAnyBrowserSupportedOn=$isMakeAnyBrowserSupportedOn, " +
                     "packageIntentOn=$isBlockPackageIntentOn")
             } catch (t: Throwable) {
                 Timber.e(t, "Failed to refresh blocking config")

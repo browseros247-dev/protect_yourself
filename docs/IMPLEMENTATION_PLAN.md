@@ -423,10 +423,10 @@ The blocker page renders as a single scrolling column with sections (per `Settin
 |---|---|---|
 | `SECTION_ALERT` | `BLOCK_SCREEN_COUNT` (counter), `PREMIUM_OFFER` (REMOVED), `LOGIN_NOW` (optional) | Counter shown; Login prompt only if signed-out + user enables backup |
 | `SECTION_ACCOUNTABILITY_PARTNER` | `LONG_SENTENCE`, `LONG_SENTENCE_CUSTOM_MESSAGE`, `TIME_DELAY`, `TIME_DELAY_CUSTOM_DURATION`, `REAL_FRIEND`, `DAILY_REPORT`, `SUGGEST_PROTECTIVE_MODE`, `REQUEST_HISTORY` | All kept |
-| `SECTION_CONTENT_BLOCKING` | `SUPPORTED_BROWSERS`, `PORN_BLOCKER`, `BLOCKER_CUSTOM_KEYWORD_WEBSITE`, `BLOCKLIST_APPS`, `SAFE_SEARCH`, `MAKE_ANY_BROWSER_SUPPORTED` | `SUPPORTED_SOCIAL_MEDIA`, `BLOCK_ALL_WEBSITE`, `BLOCK_IMAGE_VIDEO_SEARCH` removed in v1.0.33 |
+| `SECTION_CONTENT_BLOCKING` | `PORN_BLOCKER`, `BLOCKER_CUSTOM_KEYWORD_WEBSITE`, `BLOCKLIST_APPS`, `SAFE_SEARCH`, `BLOCK_UNSUPPORTED_BROWSERS`, `WHITELIST_UNSUPPORTED_BROWSER` | `SUPPORTED_BROWSERS`, `MAKE_ANY_BROWSER_SUPPORTED` removed in v1.0.34; `BLOCK_UNSUPPORTED_BROWSERS` + `WHITELIST_UNSUPPORTED_BROWSER` moved from Advanced Features |
 | `SECTION_INSTA_YT_BLOCKING` | `BLOCK_SNAPCHAT_STORIES`, `BLOCK_SNAPCHAT_SPOTLIGHT`, `BLOCK_INSTA_REELS`, `BLOCK_INSTA_SEARCH`, `BLOCK_WHATSAPP_STATUS`, `BLOCK_YT_SHORTS`, `BLOCK_YT_SEARCH`, `BLOCK_TELEGRAM_SEARCH` | All kept (per "block target as is") |
-| `SECTION_UNINSTALL_PROTECTION` | `PREVENT_UNINSTALL_SETTINGS`, `BLOCK_NOTIFICATION_DRAWER`, `BLOCK_PHONE_REBOOT`, `BLOCK_RECENT_APPS`, `BLOCK_SETTING_PAGE_BY_TITLE`, `BLOCK_SETTING_PAGE_BY_TITLE_APPS` | All kept |
-| `SECTION_ADVANCE_FEATURE` | `BLOCK_UNSUPPORTED_BROWSERS`, `WHITELIST_UNSUPPORTED_BROWSER`, `VPN`, `WHITELIST_VPN_APPS`, `VPN_NOTIFICATION_MESSAGE`, `VPN_NOTIFICATION_HIDE`, `BLOCK_NEW_INSTALL_APPS`, `BLOCK_IN_APP_BROWSERS`, `BLOCKED_SCREEN_IMAGE`, `BLOCKED_SCREEN_MESSAGE`, `BLOCKED_SCREEN_COUNTDOWN`, `CUSTOM_REDIRECT_URL_APP`, `BLOCK_WHITELIST_DETECTED_APP` | `SET_APP_LOCK`, `TOUCH_ID`, `DISABLE_FORGOT_PASSWORD` moved to new `SECTION_APP_LOCK` in v1.0.33 |
+| `SECTION_UNINSTALL_PROTECTION` | `PREVENT_UNINSTALL_SETTINGS`, `BLOCK_NOTIFICATION_DRAWER`, `BLOCK_PHONE_REBOOT`, `BLOCK_RECENT_APPS`, `BLOCK_SETTING_PAGE_BY_TITLE`, `BLOCK_SETTING_PAGE_BY_TITLE_APPS`, `BLOCK_PACKAGE_INTENT`, `ADD_PACKAGE_INTENT_TO_BLOCK` | `BLOCK_PACKAGE_INTENT` + `ADD_PACKAGE_INTENT_TO_BLOCK` moved from Advanced Features in v1.0.34 |
+| `SECTION_ADVANCE_FEATURE` | `VPN`, `WHITELIST_VPN_APPS`, `VPN_NOTIFICATION_MESSAGE`, `VPN_NOTIFICATION_HIDE`, `BLOCK_NEW_INSTALL_APPS`, `BLOCK_IN_APP_BROWSERS`, `BLOCKED_SCREEN_IMAGE`, `BLOCKED_SCREEN_MESSAGE`, `BLOCKED_SCREEN_COUNTDOWN`, `CUSTOM_REDIRECT_URL_APP`, `BLOCK_WHITELIST_DETECTED_APP` | `BLOCK_UNSUPPORTED_BROWSERS`, `WHITELIST_UNSUPPORTED_BROWSER`, `BLOCK_PACKAGE_INTENT`, `ADD_PACKAGE_INTENT_TO_BLOCK` moved out in v1.0.34 |
 | `SECTION_APP_LOCK` (new in v1.0.33) | `SET_APP_LOCK`, `TOUCH_ID`, `DISABLE_FORGOT_PASSWORD` | Migrated from Advanced Features for better accessibility |
 | `SECTION_FAQ` | `KEEP_NOPOX_LIVE` (battery/performance tips) | Kept |
 
@@ -503,8 +503,7 @@ Per user remark: "block target as is so implement all as is org" — implement a
 | **Telegram Search** | Block Telegram search. |
 | **Block image/video search** | Block URLs containing `/images`, `/videos`, `tbm=isch`, `tbm=vid` etc. |
 | **SafeSearch enforcement** | Two layers: (1) Accessibility-level — when user navigates to an unsafe search engine URL (Google/Bing/YouTube/DuckDuckGo), press HOME + open the SafeSearch variant (`forcesafesearch.google.com`, `strict.bing.com`, `restrict.youtube.com`, `safe.duckduckgo.com`) in the same browser, preserving path + query. 2-second throttle per package+URL to prevent loops. (2) DNS-level — when VPN is ON, Cloudflare Family (1.1.1.3) and AdGuard Family (94.140.14.15) enforce SafeSearch at the resolver level. |
-| **Block unsupported browsers** | When ON, ANY browser NOT in `SUPPORTED_BROWSER_APPS` AND not in `WHITELIST_UNSUPPORTED_BROWSER` gets blocked on launch. Browser detection uses `PackageManager.queryIntentActivities()` for apps handling `ACTION_VIEW` + `http/https` + `BROWSABLE` category, with package-name signature fallback. |
-| **Make any browser supported** | When ON, the accessibility service attempts URL scraping on ANY browser (not just supported ones). Useful for browsers the user added but for which we have no known view IDs — uses fallback node-tree traversal to find URL-like text. |
+| **Block unsupported browsers** | When ON, ANY browser NOT in `WHITELIST_UNSUPPORTED_BROWSER` gets blocked on launch. Browser detection uses `PackageManager.queryIntentActivities()` for apps handling `ACTION_VIEW` + `http/https` + `BROWSABLE` category, with package-name signature fallback. The "supported browsers" concept was removed in v1.0.34 — the accessibility service now scrapes URLs from ALL detected browsers for keyword matching, and "Block unsupported browsers" blocks all browsers except those in the whitelist. |
 | **Package + Intent Blocking** | When ON, blocks apps whose package name matches an entry in `BLOCKED_PACKAGE_NAMES` (exact match) OR whose class/intent name contains any entry in `BLOCKED_INTENT_NAMES` (substring match). Separated from the unsupported-browser feature in v1.0.27. |
 | **Block settings page by title** | Accessibility detects settings activity title; if matches `setting_keywords_list`, block. |
 | **Block notification drawer** | Accessibility detects `StatusBar` window → block. |
@@ -685,11 +684,8 @@ Used by multiple features (block list, VPN whitelist, Stop Me whitelist, support
 
 **App categories** (from `SelectedAppListIdentifier`):
 - `ALL_APPS` — every installed app
-- `SUPPORTED_SOCIAL_MEDIA_APPS` — Instagram, WhatsApp, Snapchat, Telegram, YouTube (hardcoded list in `BlockerPageUtils.supportedSocialMediaApps`)
-- `SUPPORTED_BROWSER_APPS` — Chrome, Firefox, Brave, Edge, Opera, Samsung Internet, etc.
 - `BLOCK_APPS` — user's blocklist
 - `BLOCK_SETTING_PAGE_BY_TITLE_APPS` — settings apps
-- `MAKE_ANY_BROWSER_SUPPORTED_APPS` — user-added browsers
 - `VPN_WHITELIST_APPS` — apps that bypass VPN
 - `BLOCK_IN_APP_BROWSER_APPS` — apps where in-app browser is blocked
 - `BLOCK_NEW_INSTALL_APPS` — newly installed apps auto-added

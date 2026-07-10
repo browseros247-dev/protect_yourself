@@ -66,24 +66,6 @@ class PresetDataTest {
     }
 
     @Test
-    fun `default supported browsers include Chrome`() {
-        val chrome = DefaultSupportedBrowsers.ALL.find { it.packageName == "com.android.chrome" }
-        assertThat(chrome).isNotNull()
-        assertThat(chrome!!.displayName).isEqualTo("Google Chrome")
-    }
-
-    @Test
-    fun `default supported browsers include Firefox`() {
-        val firefox = DefaultSupportedBrowsers.ALL.find { it.packageName == "org.mozilla.firefox" }
-        assertThat(firefox).isNotNull()
-    }
-
-    @Test
-    fun `default supported browsers has at least 8 entries`() {
-        assertThat(DefaultSupportedBrowsers.ALL.size).isAtLeast(8)
-    }
-
-    @Test
     fun `default whitelist apps includes self package`() {
         assertThat(DefaultWhitelistApps.ALL).contains("protect.yourself")
     }
