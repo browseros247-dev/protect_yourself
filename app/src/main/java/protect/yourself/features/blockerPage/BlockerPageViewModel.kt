@@ -319,6 +319,9 @@ class BlockerPageViewModel(
                     }
                 )
             }
+            // Refresh VPN management state so the toggle on VpnManagementPage
+            // reflects the new ON state immediately.
+            loadVpnManagementState()
             _navigation.emit(BlockerPageNavigation.ShowToast("VPN enabled"))
         }
     }
@@ -663,19 +666,26 @@ class BlockerPageViewModel(
             loadVpnManagementState()
             loadSettingItems()
 
+            val isVpnOn = switchValues.isVpnSwitchOn()
+
             // Restart the VPN service if it is currently running so the new
             // DNS server takes effect immediately. The actual restart is done
             // by the UI layer (which has the Context) — see RestartVpn handler
             // in BlockerPageHome.kt.
-            if (switchValues.isVpnSwitchOn()) {
+            if (isVpnOn) {
                 _navigation.emit(BlockerPageNavigation.RestartVpn)
-            }
-
-            _navigation.emit(
-                BlockerPageNavigation.ShowToast(
-                    "VPN mode changed to ${vpnModeLabel(mode)}. Restarting VPN…"
+                _navigation.emit(
+                    BlockerPageNavigation.ShowToast(
+                        "VPN mode changed to ${vpnModeLabel(mode)}. Restarting VPN…"
+                    )
                 )
-            )
+            } else {
+                _navigation.emit(
+                    BlockerPageNavigation.ShowToast(
+                        "VPN mode changed to ${vpnModeLabel(mode)}."
+                    )
+                )
+            }
         }
     }
 
@@ -690,15 +700,19 @@ class BlockerPageViewModel(
 
             loadVpnManagementState()
 
-            if (switchValues.isVpnSwitchOn() &&
-                switchValues.getVpnConnectionType() == VpnConnectionTypeIdentifiers.CUSTOM
-            ) {
-                _navigation.emit(BlockerPageNavigation.RestartVpn)
-            }
+            val isVpnOn = switchValues.isVpnSwitchOn()
+            val isCustomMode = switchValues.getVpnConnectionType() == VpnConnectionTypeIdentifiers.CUSTOM
 
-            _navigation.emit(
-                BlockerPageNavigation.ShowToast("Custom DNS provider updated. Restarting VPN…")
-            )
+            if (isVpnOn && isCustomMode) {
+                _navigation.emit(BlockerPageNavigation.RestartVpn)
+                _navigation.emit(
+                    BlockerPageNavigation.ShowToast("Custom DNS provider updated. Restarting VPN…")
+                )
+            } else {
+                _navigation.emit(
+                    BlockerPageNavigation.ShowToast("Custom DNS provider updated.")
+                )
+            }
         }
     }
 

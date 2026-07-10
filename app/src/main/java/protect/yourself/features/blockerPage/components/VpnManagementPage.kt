@@ -105,18 +105,10 @@ fun VpnManagementPage(
     // Load the VPN management state when the page opens.
     LaunchedEffect(Unit) { viewModel.loadVpnManagementState() }
 
-    // Collect navigation events (RestartVpn + ShowToast) while this page is on top.
-    LaunchedEffect(Unit) {
-        viewModel.navigation.collect { nav ->
-            when (nav) {
-                is BlockerPageNavigation.RestartVpn -> MyVpnService.restart(context)
-                is BlockerPageNavigation.ShowToast -> {
-                    android.widget.Toast.makeText(context, nav.message, android.widget.Toast.LENGTH_SHORT).show()
-                }
-                else -> Unit // Other navigation events are handled by the parent.
-            }
-        }
-    }
+    // NOTE: Navigation events (RestartVpn, ShowToast, etc.) are handled by the
+    // parent BlockerPageHome's LaunchedEffect collector. We do NOT collect
+    // navigation here — collecting in both places would cause double execution
+    // (e.g. MyVpnService.restart() called twice, Toast shown twice).
 
     // VPN permission launcher — required to turn the VPN on.
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
