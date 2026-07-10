@@ -90,8 +90,15 @@ class MyVpnService : VpnService() {
                 stopSelf()
             }
             ACTION_RESTART -> {
+                // Restart: stop VPN, wait for forwarder to fully cancel,
+                // then start again. Without the delay, the old forwarder
+                // coroutine may still be reading from the old vpnInterface
+                // when the new one is established — causing a race condition.
                 stopVpn()
-                startVpn()
+                serviceScope.launch {
+                    kotlinx.coroutines.delay(300)  // let old forwarder cancel
+                    startVpn()
+                }
             }
             else -> startVpn()
         }
@@ -99,11 +106,18 @@ class MyVpnService : VpnService() {
         return START_STICKY
     }
 
+    private var isStarting = false  // guards against concurrent startVpn() calls
+
     private fun startVpn() {
         if (isRunning) {
             Timber.w("VPN already running — ignoring start request")
             return
         }
+        if (isStarting) {
+            Timber.w("VPN start already in progress — ignoring duplicate start request")
+            return
+        }
+        isStarting = true
 
         protect.yourself.core.ProtectYourselfApp.getCrashLogger()
             ?.logBreadcrumb("VpnService", "startVpn requested")
@@ -160,6 +174,7 @@ class MyVpnService : VpnService() {
                 val utils = BlockerPageUtils.getInstance()
                 if (!utils.isValidDNS(firstDns) || !utils.isValidDNS(secondDns)) {
                     Timber.e("Invalid DNS addresses: $firstDns, $secondDns")
+                    isStarting = false
                     stopSelf()
                     return@launch
                 }
@@ -230,12 +245,14 @@ class MyVpnService : VpnService() {
                 vpnInterface = builder.establish()
                 if (vpnInterface == null) {
                     Timber.e("Failed to establish VPN interface — user may have revoked permission")
+                    isStarting = false
                     switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
                     stopSelf()
                     return@launch
                 }
 
                 isRunning = true
+                isStarting = false
 
                 // 8. Start the DNS forwarding loop (THE actual filtering work).
                 //    Without this loop the TUN would just buffer DNS queries
@@ -264,6 +281,7 @@ class MyVpnService : VpnService() {
                 Timber.i("VPN started: type=$currentConnectionType DNS=$firstDns,$secondDns (DNS-only mode)")
             } catch (t: Throwable) {
                 Timber.e(t, "Failed to start VPN")
+                isStarting = false
                 protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
                     throwable = t,
                     tag = "VpnService",
@@ -493,6 +511,7 @@ class MyVpnService : VpnService() {
             vpnInterface?.close()
             vpnInterface = null
             isRunning = false
+            isStarting = false
             currentConnectionType = VpnConnectionTypeIdentifiers.OFF
             Timber.i("VPN stopped")
         } catch (t: Throwable) {
@@ -570,29 +589,34 @@ class MyVpnService : VpnService() {
 
     override fun onRevoke() {
         super.onRevoke()
-        // System revoked VPN (user toggled VPN off in system settings)
+        // System revoked VPN (user toggled VPN off in system settings, or
+        // always-on VPN was turned off, or another VPN app was started).
+        //
+        // CRITICAL FIX: The previous implementation had TWO coroutines:
+        //   1. Set VPN_SWITCH = false in DB
+        //   2. After 2s delay, check if VPN_SWITCH is ON — but coroutine 1
+        //      already set it to OFF, so this check ALWAYS saw OFF.
+        // The self-restart was dead code — it never fired.
+        //
+        // NopoX behavior: if the user explicitly revoked the VPN (via system
+        // settings), we should respect that and turn the switch OFF. We do NOT
+        // attempt self-restart because:
+        //   1. Android 14+ blocks starting a VPN service from background after
+        //      onRevoke() — the call would silently fail.
+        //   2. The user made an explicit decision to revoke; auto-restarting
+        //      would be hostile UX.
+        //   3. The boot receiver will restart the VPN on next reboot if the
+        //      switch is still ON.
+        //
+        // We DO set the switch to OFF so the UI reflects reality.
         stopVpn()
 
-        // Update the switch in DB
         serviceScope.launch {
             try {
                 val db = AppDatabase.getInstance(this@MyVpnService)
                 SwitchStatusValues(db.switchStatusDao())
                     .storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
-            } catch (_: Throwable) {}
-        }
-
-        // NopoX-style: attempt self-restart if VPN switch is still ON
-        serviceScope.launch {
-            try {
-                val db = AppDatabase.getInstance(this@MyVpnService)
-                val switchValues = SwitchStatusValues(db.switchStatusDao())
-                // Wait a moment before checking
-                kotlinx.coroutines.delay(2000)
-                if (switchValues.isVpnSwitchOn()) {
-                    Timber.i("VPN was revoked but switch is still ON — attempting restart")
-                    startVpn()
-                }
+                Timber.i("VPN revoked by system — switch set to OFF")
             } catch (_: Throwable) {}
         }
 
