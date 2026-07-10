@@ -24,9 +24,18 @@ interface StopMeDurationDao {
     @Query("SELECT * FROM stop_me_duration_table WHERE days = 0 AND endTime > :now LIMIT 1")
     suspend fun getActiveInstantSession(now: Long): StopMeDurationItemModel?
 
+    @Query("SELECT * FROM stop_me_duration_table")
+    suspend fun getAll(): List<StopMeDurationItemModel>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(item: StopMeDurationItemModel)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(items: List<StopMeDurationItemModel>)
+
     @Query("DELETE FROM stop_me_duration_table WHERE `key` = :key")
     suspend fun deleteByKey(key: String)
+
+    @Query("DELETE FROM stop_me_duration_table")
+    suspend fun deleteAll()
 }

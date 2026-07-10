@@ -12,6 +12,9 @@ interface SwitchStatusDao {
     @Query("SELECT * FROM switch_status ORDER BY `key`")
     fun observeAll(): Flow<List<SwitchStatusItemModel>>
 
+    @Query("SELECT * FROM switch_status")
+    suspend fun getAll(): List<SwitchStatusItemModel>
+
     @Query("SELECT * FROM switch_status WHERE `key` = :key")
     suspend fun get(key: String): SwitchStatusItemModel?
 

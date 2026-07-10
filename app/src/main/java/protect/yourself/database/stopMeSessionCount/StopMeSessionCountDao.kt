@@ -12,12 +12,21 @@ interface StopMeSessionCountDao {
     @Query("SELECT * FROM stop_me_session_count_table WHERE `key` = 0")
     fun observe(): Flow<StopMeSessionCountItemModel?>
 
+    @Query("SELECT * FROM stop_me_session_count_table")
+    suspend fun getAll(): List<StopMeSessionCountItemModel>
+
     @Query("SELECT * FROM stop_me_session_count_table WHERE `key` = 0")
     suspend fun get(): StopMeSessionCountItemModel?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(item: StopMeSessionCountItemModel)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(items: List<StopMeSessionCountItemModel>)
+
     @Query("UPDATE stop_me_session_count_table SET duration = duration + 1 WHERE `key` = 0")
     suspend fun increment()
+
+    @Query("DELETE FROM stop_me_session_count_table")
+    suspend fun deleteAll()
 }

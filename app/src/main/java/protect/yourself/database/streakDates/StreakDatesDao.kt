@@ -24,8 +24,14 @@ interface StreakDatesDao {
     @Query("SELECT COUNT(*) FROM streak_dates_table WHERE type = ''")
     suspend fun countActiveStreakDays(): Int
 
+    @Query("SELECT * FROM streak_dates_table")
+    suspend fun getAll(): List<StreakDatesItemModel>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(item: StreakDatesItemModel)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(items: List<StreakDatesItemModel>)
 
     @Query("DELETE FROM streak_dates_table")
     suspend fun deleteAll()

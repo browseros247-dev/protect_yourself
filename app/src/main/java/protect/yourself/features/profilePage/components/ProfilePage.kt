@@ -2,6 +2,7 @@ package protect.yourself.features.profilePage.components
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -41,8 +42,19 @@ fun ProfilePage() {
     val context = LocalContext.current
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showBackupRestore by remember { mutableStateOf(false) }
+
+    // If backup/restore page is open, show it instead of the profile list
+    if (showBackupRestore) {
+        BackHandler { showBackupRestore = false }
+        protect.yourself.features.backupRestore.BackupRestorePage(
+            onBack = { showBackupRestore = false }
+        )
+        return
+    }
 
     val profileItems = listOf(
+        ProfileItem("Backup & Restore", "Export or import your data as JSON"),
         ProfileItem("Share app", "Share Protect Yourself with friends"),
         ProfileItem("Contact us", "Email support"),
         ProfileItem("About", "App info, version, credits"),
@@ -91,6 +103,7 @@ fun ProfilePage() {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 onClick = {
                     when (item.title) {
+                        "Backup & Restore" -> showBackupRestore = true
                         "Share app" -> {
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"

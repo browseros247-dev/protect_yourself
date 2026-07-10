@@ -18,6 +18,9 @@ interface SelectedKeywordDao {
     @Query("SELECT COUNT(*) FROM selected_keyword_table WHERE identifier = :identifier AND isSelected = 1")
     suspend fun countByIdentifier(identifier: String): Int
 
+    @Query("SELECT * FROM selected_keyword_table")
+    suspend fun getAll(): List<SelectedKeywordItemModel>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(item: SelectedKeywordItemModel)
 
@@ -29,4 +32,7 @@ interface SelectedKeywordDao {
 
     @Query("DELETE FROM selected_keyword_table WHERE identifier = :identifier")
     suspend fun deleteByIdentifier(identifier: String)
+
+    @Query("DELETE FROM selected_keyword_table")
+    suspend fun deleteAll()
 }

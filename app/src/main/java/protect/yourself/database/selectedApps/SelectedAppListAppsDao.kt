@@ -18,6 +18,9 @@ interface SelectedAppListAppsDao {
     @Query("SELECT * FROM selected_apps_table WHERE identifier = :identifier AND isSelected = 1")
     fun observeSelectedByIdentifier(identifier: String): Flow<List<SelectedAppItemModel>>
 
+    @Query("SELECT * FROM selected_apps_table")
+    suspend fun getAll(): List<SelectedAppItemModel>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(item: SelectedAppItemModel)
 
@@ -32,4 +35,7 @@ interface SelectedAppListAppsDao {
 
     @Query("DELETE FROM selected_apps_table WHERE identifier = :identifier AND packageName = :packageName")
     suspend fun deleteByIdentifierAndPackage(identifier: String, packageName: String)
+
+    @Query("DELETE FROM selected_apps_table")
+    suspend fun deleteAll()
 }
