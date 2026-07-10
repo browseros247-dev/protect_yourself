@@ -377,7 +377,7 @@ class BlockerPageViewModel(
     fun saveTextField(switchKey: String, value: String) {
         viewModelScope.launch {
             // Special handling: setting page title input → insert as keyword
-            if (switchKey == "block_setting_title_input") {
+            if (switchKey == SwitchIdentifier.BLOCK_SETTING_TITLE_INPUT) {
                 if (value.isNotBlank()) {
                     val item = protect.yourself.database.selectedKeywords.SelectedKeywordItemModel(
                         key = "setting_title_${System.currentTimeMillis()}",
@@ -397,7 +397,7 @@ class BlockerPageViewModel(
             }
 
             // NEW: Package + Intent name blocking input
-            if (switchKey == "block_package_intent_input") {
+            if (switchKey == SwitchIdentifier.BLOCK_PACKAGE_INTENT_INPUT) {
                 if (value.isNotBlank()) {
                     val input = value.trim()
                     // If it looks like a package name (contains dots), store as app entry
@@ -498,7 +498,7 @@ class BlockerPageViewModel(
                         "Title to Block in Settings",
                         "",
                         "Enter a settings page title (e.g. 'battery', 'apps')",
-                        "block_setting_title_input"
+                        SwitchIdentifier.BLOCK_SETTING_TITLE_INPUT
                     )
                 }
                 SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS ->

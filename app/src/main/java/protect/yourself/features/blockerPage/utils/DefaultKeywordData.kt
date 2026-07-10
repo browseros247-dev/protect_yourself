@@ -82,10 +82,30 @@ class DefaultKeywordData(
             context.assets.open(assetName).use { stream ->
                 val text = stream.bufferedReader().readText()
                 val type = object : TypeToken<Map<String, String>>() {}.type
-                gson.fromJson(text, type) ?: emptyMap()
+                val parsed: Map<String, String>? = gson.fromJson(text, type)
+                if (parsed == null) {
+                    // KB-13 fix: log loudly + show a user-visible toast when the
+                    // preset JSON is malformed. Previously this failed silently
+                    // and the user got zero block keywords with no indication why.
+                    Timber.e("KB-13: $assetName parsed to null — JSON is malformed or empty")
+                    android.widget.Toast.makeText(
+                        context,
+                        "Protect Yourself: Failed to load $assetName — keyword presets unavailable",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                    emptyMap()
+                } else {
+                    parsed
+                }
             }
         } catch (t: Throwable) {
-            Timber.e(t, "Failed to load $assetName")
+            // KB-13 fix: log loudly + show a user-visible toast on asset read failure.
+            Timber.e(t, "KB-13: Failed to load $assetName — ${t.message}")
+            android.widget.Toast.makeText(
+                context,
+                "Protect Yourself: Failed to load $assetName — keyword presets unavailable",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
             emptyMap()
         }
     }

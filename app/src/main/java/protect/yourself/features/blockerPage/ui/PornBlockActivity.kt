@@ -88,20 +88,30 @@ class PornBlockActivity : AppCompatActivity() {
         val blockPackage = intent.getStringExtra(MyAccessibilityService.EXTRA_BLOCK_PACKAGE)
         val messageKey = intent.getStringExtra(MyAccessibilityService.EXTRA_BLOCK_MESSAGE_KEY)
             ?: "block_page_default_message"
+        // KB-19 fix: read the matched keyword extra (if present) so we can show
+        // the user WHY they were blocked. Helps them understand false positives
+        // and adjust their keyword list.
+        val matchedKeyword = intent.getStringExtra(MyAccessibilityService.EXTRA_MATCHED_KEYWORD)
 
-        Timber.i("Block screen shown for pkg=$blockPackage messageKey=$messageKey")
+        Timber.i("Block screen shown for pkg=$blockPackage messageKey=$messageKey keyword=$matchedKeyword")
 
         // 1. Set message
         val messageResId = resources.getIdentifier(messageKey, "string", packageName)
         txtPageMessage.text = if (messageResId != 0) getString(messageResId) else getString(R.string.block_page_default_message)
 
         // 2. Configure Why text (initially hidden, tap to expand)
+        // KB-19: if we have a matched keyword, show it in the "why" expansion
+        // instead of the generic default message.
         txtWhy.text = getString(R.string.why)
         txtWhy.setOnClickListener {
             if (txtWhyContainer.visibility == View.VISIBLE) {
                 txtWhyContainer.visibility = View.GONE
             } else {
-                txtWhyContainer.text = getString(R.string.block_page_default_porn_blocker_message)
+                txtWhyContainer.text = if (!matchedKeyword.isNullOrBlank()) {
+                    "Blocked because the URL or content matched keyword: \"$matchedKeyword\""
+                } else {
+                    getString(R.string.block_page_default_porn_blocker_message)
+                }
                 txtWhyContainer.visibility = View.VISIBLE
             }
         }

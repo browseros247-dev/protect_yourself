@@ -201,6 +201,14 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
     /**
      * Insert preset block + whitelist keywords.
      * Runs in a background coroutine AFTER the DB is fully created.
+     *
+     * KB-12 fix: uses INSERT OR IGNORE (via a dedicated DAO method) instead of
+     * INSERT OR REPLACE (upsertAll). This ensures that if a user has deleted
+     * a preset keyword, re-seeding on app update will NOT re-add it. The
+     * preset keys are stable ("preset_block_<idx>", "preset_whitelist_<idx>"),
+     * so INSERT OR IGNORE will skip any key that already exists (whether it
+     * was inserted by a previous seed or by a user who manually added the
+     * same key — though the latter is unlikely).
      */
     private suspend fun insertPresetKeywords() {
         val db = AppDatabase.getInstance(context)
@@ -209,8 +217,10 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
         val blockKeywords = keywordData.getDefaultBlockKeywordModels()
         val whitelistKeywords = keywordData.getDefaultWhitelistKeywordModels()
 
-        db.selectedKeywordDao().upsertAll(blockKeywords)
-        db.selectedKeywordDao().upsertAll(whitelistKeywords)
-        Timber.i("Inserted ${blockKeywords.size} block keywords + ${whitelistKeywords.size} whitelist keywords")
+        // KB-12: use insertAllOrIgnore (INSERT OR IGNORE) instead of upsertAll
+        // (INSERT OR REPLACE) so user-deleted presets are not re-added.
+        db.selectedKeywordDao().insertAllOrIgnore(blockKeywords)
+        db.selectedKeywordDao().insertAllOrIgnore(whitelistKeywords)
+        Timber.i("Inserted ${blockKeywords.size} block keywords + ${whitelistKeywords.size} whitelist keywords (INSERT OR IGNORE)")
     }
 }

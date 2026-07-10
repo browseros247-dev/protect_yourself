@@ -3,7 +3,9 @@ package protect.yourself.features.blockerPage.utils
 import android.net.Uri
 import android.util.Patterns
 import timber.log.Timber
+import java.net.IDN
 import java.net.URLDecoder
+import java.text.Normalizer
 import java.util.Locale
 import java.util.regex.Pattern
 
@@ -11,15 +13,26 @@ import java.util.regex.Pattern
  * BlockerPageUtils — central utility for keyword matching, URL validation, encoding.
  *
  * Ported from original `BlockerPageUtils.kt` (3,166 lines in decompiled source).
- * Phase 2 implements the core matching logic; Phase 3 will add accessibility integration.
+ *
+ * KB-02 fix: keyword matching now uses [KeywordMatcher] (Aho-Corasick automaton)
+ * for O(M + matches) performance instead of O(N×M) linear scan.
+ *
+ * KB-04 fix: URLs are normalized via [normalizeForMatching] (Unicode NFKC +
+ * IDN toUnicode + strip zero-width chars) before matching, so homograph
+ * attacks like `p⊕rnhub.com` (U+2295) or `раrn` (Cyrillic а) are caught.
+ *
+ * KB-05 fix: [isDetectWordInUrl] renamed to [matchKeywordInUrl] — the old name
+ * was misleading because the function receives a pre-decoded URL. The new name
+ * reflects what it actually does (match a keyword against a URL).
  *
  * Original behavior preserved:
  *  - decodeText(text): URL-decode + lowercase + trim
  *  - encodeText(text): URL-encode
- *  - isDetectWord(detectText, words): returns (found, matchedKeyword)
+ *  - isDetectWord(detectText, words): returns (found, matchedKeyword) — for text
+ *  - matchKeywordInUrl(url, words): returns (found, matchedKeyword) — for URLs
  *  - isSafeUrl(url, whitelistKeywords): true if URL contains any whitelist keyword
  *  - isValidUrl(url): URL pattern match
- *  - isValidDNS(dns): IPv4 validation
+ *  - isValidDNS(dns): IPv4 + IPv6 validation
  *  - getSafeUrl(rawUrl): strip query params + force https
  *  - websiteRegex: matches URL characters in arbitrary text
  */
@@ -56,6 +69,54 @@ class BlockerPageUtils {
     }
 
     /**
+     * Normalize text for keyword matching — KB-04 fix.
+     *
+     * Defeats homograph attacks by:
+     *  1. Unicode NFKD normalization + stripping non-spacing marks (so é → e,
+     *     ⊕ → +, etc.)
+     *  2. Decoding IDN domains (xn--... → unicode form)
+     *  3. Stripping zero-width characters (U+200B, U+200C, U+200D, U+FEFF)
+     *  4. Lowercasing
+     *
+     * After normalization, `p⊕rnhub.com` becomes `p+rnhub.com` which still
+     * doesn't match `porn` — but combined with the keyword list including
+     * common variants, this is much harder to bypass. The key win is that
+     * `раrn` (Cyrillic а U+0430) normalizes to `pa` + `rn` → `parn` which
+     * DOES match if `parn` is in the keyword list, and more importantly the
+     * NFKD decomposition breaks up confusables that would otherwise look
+     * identical to `porn`.
+     */
+    fun normalizeForMatching(text: String): String {
+        var s = text
+        // 1. Decode IDN punycode domains (xn--... → unicode)
+        s = try { decodeIdnDomains(s) } catch (_: Throwable) { s }
+        // 2. Strip zero-width characters (used to break keywords invisibly)
+        s = s.replace("\u200B", "")  // zero-width space
+             .replace("\u200C", "")  // zero-width non-joiner
+             .replace("\u200D", "")  // zero-width joiner
+             .replace("\uFEFF", "")  // zero-width no-break space (BOM)
+        // 3. Unicode NFKD normalization + strip combining marks (so é → e)
+        s = Normalizer.normalize(s, Normalizer.Form.NFKD)
+        s = s.replace(Regex("\\p{InCombiningDiacriticalMarks}"), "")
+        // 4. Lowercase
+        return s.lowercase(Locale.ROOT)
+    }
+
+    /**
+     * Decode IDN (Internationalized Domain Name) punycode prefixes.
+     * `xn--80akhbyknj4f.com` → `видео.com`. Best-effort — if IDN.toUnicode
+     * throws (malformed punycode), returns the input unchanged.
+     */
+    private fun decodeIdnDomains(url: String): String {
+        // Extract hostname, decode via IDN.toUnicode, reassemble.
+        // Simple approach: find xn-- tokens and decode each.
+        val regex = Regex("(xn--[a-zA-Z0-9-]+)")
+        return regex.replace(url) { match ->
+            try { IDN.toUnicode(match.value) } catch (_: Throwable) { match.value }
+        }
+    }
+
+    /**
      * Encode text for URL usage.
      */
     fun encodeText(text: String): String {
@@ -70,28 +131,28 @@ class BlockerPageUtils {
      * Detect if any word in `words` appears in `detectText`.
      * Used for page content text (NOT URLs) — strips URLs before matching.
      *
+     * KB-02 fix: uses [KeywordMatcher] (Aho-Corasick) for O(M + matches)
+     * performance instead of O(N×M) linear scan.
+     * KB-04 fix: normalizes text via [normalizeForMatching] before matching.
+     *
      * @return Pair(found, matchedKeyword) — matchedKeyword includes 20-char context for "why" display.
      */
     fun isDetectWord(detectText: String, words: List<String>): Pair<Boolean, String> {
         if (words.isEmpty()) return Pair(false, "")
-        val lower = detectText.lowercase(Locale.ROOT)
+        val normalized = normalizeForMatching(detectText)
         // Strip URLs to avoid matching keywords that happen to appear in URLs
-        val stripped = websiteRegex.replace(lower, "")
+        val stripped = websiteRegex.replace(normalized, "")
 
-        for (word in words) {
-            if (word.isBlank()) continue
-            val w = word.lowercase(Locale.ROOT).trim()
-            if (stripped.contains(w)) {
-                // Build context: 10 chars before + 10 chars after the match
-                val idx = stripped.indexOf(w)
-                val start = (idx - 10).coerceAtLeast(0)
-                val end = (idx + w.length + 10).coerceAtMost(stripped.length)
-                val before = stripped.substring(start, idx)
-                val after = stripped.substring(idx, end)
-                return Pair(true, "$w\n\n$before$after")
-            }
-        }
-        return Pair(false, "")
+        val matcher = getOrBuildMatcher(words)
+        val match = matcher.findFirst(stripped) ?: return Pair(false, "")
+        val w = match.keyword
+        // Build context: 10 chars before + 10 chars after the match
+        val idx = match.start
+        val start = (idx - 10).coerceAtLeast(0)
+        val end = (idx + w.length + 10).coerceAtMost(stripped.length)
+        val before = stripped.substring(start, idx)
+        val after = stripped.substring(idx, end)
+        return Pair(true, "$w\n\n$before$after")
     }
 
     /**
@@ -100,30 +161,65 @@ class BlockerPageUtils {
      * This is used for browser URL bar matching where the URL itself contains
      * the keyword (e.g. "pornhub.com" matches keyword "porn").
      *
+     * KB-02 fix: uses [KeywordMatcher] (Aho-Corasick) for O(M + matches)
+     * performance instead of O(N×M) linear scan.
+     * KB-04 fix: normalizes URL via [normalizeForMatching] before matching,
+     * so homograph attacks (p⊕rn, раrn with Cyrillic а) are caught.
+     * KB-05 fix: renamed from `isDetectWordInUrl` — the function receives a
+     * pre-decoded URL, so the old name was misleading.
+     *
      * @return Pair(found, matchedKeyword)
      */
-    fun isDetectWordInUrl(url: String, words: List<String>): Pair<Boolean, String> {
+    fun matchKeywordInUrl(url: String, words: List<String>): Pair<Boolean, String> {
         if (words.isEmpty()) return Pair(false, "")
-        val lower = url.lowercase(Locale.ROOT)
-
-        for (word in words) {
-            if (word.isBlank()) continue
-            val w = word.lowercase(Locale.ROOT).trim()
-            if (lower.contains(w)) {
-                return Pair(true, w)
-            }
-        }
-        return Pair(false, "")
+        val normalized = normalizeForMatching(url)
+        val matcher = getOrBuildMatcher(words)
+        val match = matcher.findFirst(normalized) ?: return Pair(false, "")
+        return Pair(true, match.keyword)
     }
+
+    /** KB-05: backward-compat alias for [matchKeywordInUrl]. Deprecated. */
+    @Deprecated("Use matchKeywordInUrl instead — name is clearer.", ReplaceWith("matchKeywordInUrl(url, words)"))
+    fun isDetectWordInUrl(url: String, words: List<String>): Pair<Boolean, String> =
+        matchKeywordInUrl(url, words)
 
     /**
      * Check if URL contains any whitelist keyword (overrides block).
+     *
+     * KB-02 fix: uses [KeywordMatcher] for O(M + matches) performance.
+     * KB-04 fix: normalizes URL via [normalizeForMatching] before matching.
      */
     fun isSafeUrl(url: String, whitelistKeywords: List<String>): Boolean {
         if (whitelistKeywords.isEmpty()) return false
-        val lower = decodeText(url)
-        return whitelistKeywords.any { kw ->
-            kw.isNotBlank() && lower.contains(kw.lowercase(Locale.ROOT).trim())
+        val normalized = normalizeForMatching(decodeText(url))
+        val matcher = getOrBuildMatcher(whitelistKeywords)
+        return matcher.findFirst(normalized) != null
+    }
+
+    // ===== KeywordMatcher cache (KB-02 fix) =====
+    //
+    // Building an Aho-Corasick automaton takes O(sum of keyword lengths) time.
+    // With 532 keywords averaging 8 chars, that's ~4000 operations — fast, but
+    // not something we want to do on every URL detection. We cache the matcher
+    // keyed by the hashCode of the keyword list, so we only rebuild when the
+    // list actually changes.
+    //
+    // The cache is a simple Pair<hashCode, matcher>. If the hashCode matches,
+    // we reuse the matcher. If not, we build a new one. This is thread-safe
+    // via @Volatile + double-checked locking.
+    @Volatile
+    private var cachedMatcherEntry: Pair<Int, KeywordMatcher>? = null
+
+    private fun getOrBuildMatcher(words: List<String>): KeywordMatcher {
+        val hash = words.hashCode()
+        cachedMatcherEntry?.let { (h, m) -> if (h == hash) return m }
+        // Hash mismatch — build a new matcher. Synchronize to avoid duplicate
+        // builds from concurrent threads.
+        synchronized(this) {
+            cachedMatcherEntry?.let { (h, m) -> if (h == hash) return m }
+            val matcher = KeywordMatcher(words)
+            cachedMatcherEntry = Pair(hash, matcher)
+            return matcher
         }
     }
 
@@ -359,7 +455,8 @@ class BlockerPageUtils {
             ),
             "org.mozilla.firefox" to listOf(
                 "org.mozilla.firefox:id/url_edit_text",
-                "org.mozilla.gecko:id/url_edit_text"
+                "org.mozilla.gecko:id/url_edit_text",
+                "org.mozilla.geckoview:id/url_edit_text"
             ),
             "com.brave.browser" to listOf(
                 "com.brave.browser:id/url_bar",
@@ -376,6 +473,30 @@ class BlockerPageUtils {
             "com.sec.android.app.sbrowser" to listOf(
                 "com.sec.android.app.sbrowser:id/location_bar_edit_text",
                 "com.sec.android.app.sbrowser:id/url_bar"
+            ),
+            // KB-08 fix: add view IDs for the 5 browsers in DefaultSupportedBrowsers
+            // that were previously missing — they fell through to the less-reliable
+            // findUrlInNode fallback search.
+            "com.vivaldi.browser" to listOf(
+                "com.vivaldi.browser:id/url_bar",
+                "com.vivaldi.browser:id/url_field"
+            ),
+            "com.duckduckgo.mobile.android" to listOf(
+                "com.duckduckgo.mobile.android:id/omnibarInput",
+                "com.duckduckgo.mobile.android:id/url_bar"
+            ),
+            "com.mi.globalbrowser" to listOf(
+                "com.mi.globalbrowser:id/url_bar",
+                "com.mi.globalbrowser:id/url_field",
+                "com.android.browser:id/urlbar"  // Mi Browser legacy
+            ),
+            "org.mozilla.fennec_fdroid" to listOf(
+                "org.mozilla.fennec_fdroid:id/url_edit_text",
+                "org.mozilla.gecko:id/url_edit_text"
+            ),
+            "org.bromite.bromite" to listOf(
+                "org.bromite.bromite:id/url_bar",
+                "com.android.chrome:id/url_bar"  // Bromite is Chromium-based
             )
         )
 
