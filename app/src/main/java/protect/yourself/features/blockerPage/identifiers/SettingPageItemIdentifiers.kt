@@ -68,6 +68,8 @@ enum class SettingPageItemIdentifiers {
     BLOCK_PACKAGE_INTENT,
     ADD_PACKAGE_INTENT_TO_BLOCK,
     VPN,
+    // Opens the dedicated VPN management page (mode picker + custom DNS manager).
+    VPN_MANAGE,
     WHITELIST_VPN_APPS,
     VPN_NOTIFICATION_MESSAGE,
     VPN_NOTIFICATION_HIDE,

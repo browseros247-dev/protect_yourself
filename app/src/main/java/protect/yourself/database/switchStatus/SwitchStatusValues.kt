@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import protect.yourself.features.blockerPage.identifiers.AccountabilityPartnerTypeIdentifiers
 import protect.yourself.features.blockerPage.identifiers.AppLockTypeIdentifiers
+import protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers
 
 /**
  * SwitchStatusValues — central accessor for all switch/setting states.
@@ -93,6 +94,28 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
 
     suspend fun isVpnSwitchOn(): Boolean =
         dao.get(SwitchIdentifier.VPN_SWITCH)?.asBoolean() ?: false
+
+    /**
+     * Returns the persisted VPN connection mode (NORMAL / POWERFUL / CUSTOM).
+     * Defaults to NORMAL when nothing has been set yet.
+     */
+    suspend fun getVpnConnectionType(): VpnConnectionTypeIdentifiers {
+        val raw = dao.get(SwitchIdentifier.VPN_CONNECTION_TYPE)?.asString()
+        return VpnConnectionTypeIdentifiers.fromString(raw).let {
+            if (it == VpnConnectionTypeIdentifiers.OFF) VpnConnectionTypeIdentifiers.NORMAL else it
+        }
+    }
+
+    /** Persists the VPN connection mode. */
+    suspend fun storeVpnConnectionType(type: VpnConnectionTypeIdentifiers) {
+        dao.upsert(
+            SwitchStatusItemModel(
+                key = SwitchIdentifier.VPN_CONNECTION_TYPE,
+                value = type.value.toString(),
+                type = "long"
+            )
+        )
+    }
 
     suspend fun isVpnNotificationHideSwitchOn(): Boolean =
         dao.get(SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH)?.asBoolean() ?: false

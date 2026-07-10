@@ -18,8 +18,10 @@ import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
 import protect.yourself.database.switchStatus.SwitchIdentifier
 import protect.yourself.database.switchStatus.SwitchStatusValues
+import protect.yourself.database.vpnCustomDns.VpnCustomDnsItemModel
 import protect.yourself.features.blockerPage.data.SettingPageItemModel
 import protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers
+import protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers
 import protect.yourself.features.blockerPage.service.MyAccessibilityService
 import timber.log.Timber
 
@@ -34,6 +36,8 @@ sealed class BlockerPageNavigation {
     data class EditNumberField(val title: String, val currentValue: Int, val min: Int, val max: Int, val switchKey: String) : BlockerPageNavigation()
     data object RequestVpnPermission : BlockerPageNavigation()
     data object StopVpn : BlockerPageNavigation()
+    data object RestartVpn : BlockerPageNavigation()
+    data object OpenVpnManagement : BlockerPageNavigation()
     data object OpenAccessibilitySettings : BlockerPageNavigation()
     data object OpenOverlaySettings : BlockerPageNavigation()
     data object OpenAppLockSetup : BlockerPageNavigation()
@@ -58,6 +62,10 @@ class BlockerPageViewModel(
 
     private val _state = MutableStateFlow(BlockerPageState())
     val state: StateFlow<BlockerPageState> = _state.asStateFlow()
+
+    /** Dedicated state for the VPN Management page. */
+    private val _vpnManagementState = MutableStateFlow(VpnManagementState())
+    val vpnManagementState: StateFlow<VpnManagementState> = _vpnManagementState.asStateFlow()
 
     private val _navigation = MutableSharedFlow<BlockerPageNavigation>(extraBufferCapacity = 5)
     val navigation: SharedFlow<BlockerPageNavigation> = _navigation.asSharedFlow()
@@ -105,16 +113,14 @@ class BlockerPageViewModel(
                 val secs = switchValues.getTimeDelayCustomDurationSeconds()
                 item.copy(actionLabel = "${secs}s")
             }
+            SettingPageItemIdentifiers.VPN_MANAGE -> {
+                // Show the current VPN mode label + a "Manage" affordance.
+                val type = switchValues.getVpnConnectionType()
+                item.copy(actionLabel = vpnModeLabel(type))
+            }
             SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE -> {
-                val typeRaw = db.switchStatusDao().get("vpn_connection_type")?.asString()
-                val type = protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.fromString(typeRaw)
-                val label = when (type) {
-                    protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.NORMAL -> "Normal"
-                    protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.POWERFUL -> "Powerful"
-                    protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.CUSTOM -> "Custom"
-                    else -> "Normal"
-                }
-                item.copy(actionLabel = label)
+                val msg = switchValues.getVpnNotificationCustomMessage()
+                item.copy(actionLabel = if (msg.isNullOrBlank()) "Default" else "Custom")
             }
             SettingPageItemIdentifiers.BLOCKED_SCREEN_MESSAGE -> {
                 val msg = switchValues.getBlockScreenCustomMessage()
@@ -433,6 +439,11 @@ class BlockerPageViewModel(
             }
             // Reload items to update action labels
             loadSettingItems()
+            // Also refresh VPN management state if a VPN-related field changed,
+            // so the VPN management page reflects the new value live.
+            if (switchKey == SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE) {
+                loadVpnManagementState()
+            }
             _navigation.emit(BlockerPageNavigation.ShowToast("Saved"))
         }
     }
@@ -480,35 +491,13 @@ class BlockerPageViewModel(
                 SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK ->
                     BlockerPageNavigation.OpenPackageIntentManager
 
-                // VPN connection type selection (cycles: Normal → Powerful → Custom → Normal)
-                SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE -> {
-                    val currentType = protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.fromString(
-                        db.switchStatusDao().get("vpn_connection_type")?.asString()
-                    )
-                    val nextType = when (currentType) {
-                        protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.NORMAL ->
-                            protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.POWERFUL
-                        protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.POWERFUL ->
-                            protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.CUSTOM
-                        else -> protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.NORMAL
-                    }
-                    db.switchStatusDao().upsert(protect.yourself.database.switchStatus.SwitchStatusItemModel(
-                        key = "vpn_connection_type", value = nextType.value.toString(), type = "long"
-                    ))
-                    val typeLabel = when (nextType) {
-                        protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.NORMAL -> "Normal (Cloudflare)"
-                        protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.POWERFUL -> "Powerful (AdGuard)"
-                        protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers.CUSTOM -> "Custom"
-                        else -> "Normal"
-                    }
-                    _navigation.emit(BlockerPageNavigation.ShowToast("VPN type: $typeLabel"))
-                    loadSettingItems()
-                    null
-                }
+                // VPN management page (mode picker + custom DNS manager + advanced settings)
+                SettingPageItemIdentifiers.VPN_MANAGE ->
+                    BlockerPageNavigation.OpenVpnManagement
 
                 // Edit text fields
                 // LONG_SENTENCE_CUSTOM_MESSAGE removed from UI — uses default message
-                SettingPageItemIdentifiers.VPN_NOTIFICATION_HIDE -> {
+                SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE -> {
                     val current = switchValues.getVpnNotificationCustomMessage() ?: ""
                     BlockerPageNavigation.EditTextField("VPN Notification Message", current, "Custom message for VPN notification", SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE)
                 }
@@ -586,8 +575,8 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Whitelist unsupported browsers", info = "Allow specific browsers to bypass the unsupported-browser block", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_PACKAGE_INTENT, "Package + Intent Blocking", info = "Block apps by package name (e.g. com.example.app) or intent/class name", switchKey = SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK, "Manage blocked packages/intents", info = "Add, view, and remove package + intent entries", actionLabel = "Manage"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.VPN, "VPN (DNS blocking)", info = "Block adult content at network level", switchKey = SwitchIdentifier.VPN_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE, "VPN connection type", info = "Normal=Cloudflare, Powerful=AdGuard, Custom=user DNS", actionLabel = "Normal"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.VPN, "VPN (DNS blocking)", info = "Block adult content at network level. Tap Manage to choose a filtering mode.", switchKey = SwitchIdentifier.VPN_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_MANAGE, "VPN mode", info = "Choose Balanced, Strict, or Custom DNS provider.", actionLabel = "Balanced"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_VPN_APPS, "Whitelist VPN apps", info = "Apps that bypass VPN", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE, "VPN notification message", info = "Custom message for VPN notification", actionLabel = "Default"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_NOTIFICATION_HIDE, "Hide VPN notification content", switchKey = SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH))
@@ -608,6 +597,126 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.KEEP_NOPOX_LIVE, "How to keep app running", info = "Battery + performance tips", actionLabel = "View"))
     }
 
+    // ===== VPN Management Page =====
+
+    /**
+     * Turns the VPN off from the VPN management page. Persists the switch
+     * state and refreshes both the VPN management state and the main settings
+     * list so the UI reflects the change. The actual `MyVpnService.stop()`
+     * call is performed by the UI layer (which has the Context).
+     */
+    fun toggleVpnOff() {
+        viewModelScope.launch {
+            switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
+            loadVpnManagementState()
+            loadSettingItems()
+        }
+    }
+
+    /**
+     * Toggles the "hide VPN notification content" switch from the VPN
+     * management page. The change takes effect on the next VPN restart.
+     */
+    fun setVpnNotificationHidden(hidden: Boolean) {
+        viewModelScope.launch {
+            switchValues.storeSwitchStatus(SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH, hidden)
+            loadVpnManagementState()
+            loadSettingItems()
+        }
+    }
+
+    /**
+     * Loads the dedicated VPN management page state: current VPN on/off flag,
+     * current filtering mode, list of available custom DNS presets, and which
+     * preset is currently selected.
+     */
+    fun loadVpnManagementState() {
+        viewModelScope.launch {
+            val vpnOn = switchValues.isVpnSwitchOn()
+            val mode = switchValues.getVpnConnectionType()
+            val presets = db.vpnCustomDnsDao().getAll()
+            val selectedPresetKey = db.vpnCustomDnsDao().getSelected()?.key
+            val hideNotification = switchValues.isVpnNotificationHideSwitchOn()
+            val notificationMessage = switchValues.getVpnNotificationCustomMessage() ?: ""
+
+            _vpnManagementState.update {
+                VpnManagementState(
+                    isVpnEnabled = vpnOn,
+                    currentMode = mode,
+                    customDnsPresets = presets,
+                    selectedCustomDnsKey = selectedPresetKey,
+                    isNotificationHidden = hideNotification,
+                    notificationMessage = notificationMessage,
+                    isLoading = false
+                )
+            }
+        }
+    }
+
+    /**
+     * Switches the VPN filtering mode. Persists the new mode, then if the VPN
+     * is currently running, asks the UI to restart the service so the new DNS
+     * takes effect immediately.
+     */
+    fun setVpnMode(mode: VpnConnectionTypeIdentifiers) {
+        viewModelScope.launch {
+            switchValues.storeVpnConnectionType(mode)
+
+            // Refresh the VPN management state + the main settings list so the
+            // UI reflects the new mode immediately.
+            loadVpnManagementState()
+            loadSettingItems()
+
+            // Restart the VPN service if it is currently running so the new
+            // DNS server takes effect immediately. The actual restart is done
+            // by the UI layer (which has the Context) — see RestartVpn handler
+            // in BlockerPageHome.kt.
+            if (switchValues.isVpnSwitchOn()) {
+                _navigation.emit(BlockerPageNavigation.RestartVpn)
+            }
+
+            _navigation.emit(
+                BlockerPageNavigation.ShowToast(
+                    "VPN mode changed to ${vpnModeLabel(mode)}. Restarting VPN…"
+                )
+            )
+        }
+    }
+
+    /**
+     * Selects a custom DNS preset (used when the VPN is in CUSTOM mode).
+     * Persists the selection and asks the UI to restart the VPN if it is
+     * currently running.
+     */
+    fun selectCustomDnsPreset(presetKey: String) {
+        viewModelScope.launch {
+            db.vpnCustomDnsDao().setSelected(presetKey)
+
+            loadVpnManagementState()
+
+            if (switchValues.isVpnSwitchOn() &&
+                switchValues.getVpnConnectionType() == VpnConnectionTypeIdentifiers.CUSTOM
+            ) {
+                _navigation.emit(BlockerPageNavigation.RestartVpn)
+            }
+
+            _navigation.emit(
+                BlockerPageNavigation.ShowToast("Custom DNS provider updated. Restarting VPN…")
+            )
+        }
+    }
+
+    /**
+     * Returns the user-facing label for a VPN mode.
+     * Mirrors the labels used by [MyVpnService] in the foreground notification.
+     */
+    private fun vpnModeLabel(mode: VpnConnectionTypeIdentifiers): String = when (mode) {
+        VpnConnectionTypeIdentifiers.NORMAL -> "Balanced"
+        VpnConnectionTypeIdentifiers.POWERFUL -> "Strict"
+        VpnConnectionTypeIdentifiers.CUSTOM -> "Custom DNS"
+        VpnConnectionTypeIdentifiers.OFF -> "Balanced"
+    }
+
     companion object {
         fun factory(db: AppDatabase): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
@@ -623,4 +732,17 @@ data class BlockerPageState(
     val settingItems: List<SettingPageItemModel> = emptyList(),
     val isLoading: Boolean = true,
     val toastMessage: String? = null
+)
+
+/**
+ * State for the dedicated VPN Management page.
+ */
+data class VpnManagementState(
+    val isVpnEnabled: Boolean = false,
+    val currentMode: VpnConnectionTypeIdentifiers = VpnConnectionTypeIdentifiers.NORMAL,
+    val customDnsPresets: List<VpnCustomDnsItemModel> = emptyList(),
+    val selectedCustomDnsKey: String? = null,
+    val isNotificationHidden: Boolean = false,
+    val notificationMessage: String = "",
+    val isLoading: Boolean = true
 )

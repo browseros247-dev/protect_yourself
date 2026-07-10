@@ -102,6 +102,8 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
             Triple(SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.VPN_SWITCH, "false", "boolean"),
+            // Default VPN mode = NORMAL (Balanced / Cloudflare Family)
+            Triple(SwitchIdentifier.VPN_CONNECTION_TYPE, "1", "long"),
             Triple(SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.BLOCK_NEW_INSTALL_APPS_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.BLOCK_IN_APP_BROWSERS_SWITCH, "false", "boolean"),
@@ -147,8 +149,8 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
     private fun insertDnsPresets(db: SupportSQLiteDatabase) {
         for (preset in DefaultDnsPresets.ALL) {
             db.execSQL(
-                "INSERT OR REPLACE INTO vpn_custom_dns (`key`, first_dns, second_dns, is_selected) VALUES (?, ?, ?, ?)",
-                arrayOf(preset.key, preset.firstDns, preset.secondDns, preset.isSelectedByDefault)
+                "INSERT OR REPLACE INTO vpn_custom_dns (`key`, display_name, first_dns, second_dns, is_selected) VALUES (?, ?, ?, ?, ?)",
+                arrayOf(preset.key, preset.displayName, preset.firstDns, preset.secondDns, preset.isSelectedByDefault)
             )
         }
         Timber.i("Inserted ${DefaultDnsPresets.ALL.size} DNS presets")

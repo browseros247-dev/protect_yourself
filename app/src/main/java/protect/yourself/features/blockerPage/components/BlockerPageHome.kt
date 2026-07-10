@@ -177,6 +177,12 @@ fun BlockerPageHome() {
                 is BlockerPageNavigation.StopVpn -> {
                     MyVpnService.stop(context)
                 }
+                is BlockerPageNavigation.RestartVpn -> {
+                    MyVpnService.restart(context)
+                }
+                is BlockerPageNavigation.OpenVpnManagement -> {
+                    currentPage = SubPage.VpnManagement
+                }
                 is BlockerPageNavigation.OpenAppLockSetup -> {
                     currentPage = SubPage.AppLockSetup
                 }
@@ -289,6 +295,27 @@ fun BlockerPageHome() {
         SubPage.StopMe -> protect.yourself.features.stopMePage.StopMePage(
             onBack = { currentPage = null }
         )
+        SubPage.VpnManagement -> VpnManagementPage(
+            onBack = { currentPage = null },
+            onOpenVpnWhitelistApps = {
+                currentPage = SubPage.SelectApp(
+                    "VPN Whitelist Apps",
+                    SelectedAppListIdentifier.VPN_WHITELIST_APPS
+                )
+            },
+            onEditNotificationMessage = {
+                // Open the existing edit-text dialog flow for the VPN
+                // notification message. We re-use the ViewModel's action
+                // handler so the dialog logic stays in one place.
+                viewModel.onActionClick(
+                    protect.yourself.features.blockerPage.data.SettingPageItemModel(
+                        identifier = protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE,
+                        title = "VPN Notification Message",
+                        info = null
+                    )
+                )
+            }
+        )
         SubPage.ImagePicker -> SimpleSubPage("Choose Image") { currentPage = null }
     }
 }
@@ -398,6 +425,7 @@ private fun HomeWithCategories(
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_PACKAGE_INTENT,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.VPN,
+                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.VPN_MANAGE,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.WHITELIST_VPN_APPS,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.VPN_NOTIFICATION_HIDE,
@@ -893,5 +921,6 @@ sealed class SubPage {
     data object RequestHistory : SubPage()
     data object Faq : SubPage()
     data object StopMe : SubPage()
+    data object VpnManagement : SubPage()
     data object ImagePicker : SubPage()
 }

@@ -33,6 +33,10 @@ import protect.yourself.database.vpnCustomDns.VpnCustomDnsItemModel
  *
  * Original schema version: 7
  * Rebuild starts fresh at version 8 to signal "new lineage".
+ *
+ * v9 (Future-Brand): added `display_name` column to `vpn_custom_dns` so the
+ * VPN management UI can show provider names (Cloudflare Family, OpenDNS
+ * FamilyShield, …) without re-deriving them from DefaultDnsPresets.
  */
 @Database(
     entities = [
@@ -46,7 +50,7 @@ import protect.yourself.database.vpnCustomDns.VpnCustomDnsItemModel
         SwitchStatusItemModel::class,
         VpnCustomDnsItemModel::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
