@@ -14,14 +14,6 @@
     <string name="block_page_default_porn_blocker_message">Your porn blocker switch is on.</string>
     <string name="block_page_default_block_all_websites_message">You have turned on the block all websites switch.</string>
     <string name="block_page_default_block_apps_message">Your porn blocker switch is on, and this app is in your block apps list.</string>
-    <string name="block_page_default_block_insta_reel_message">You have enabled instagram reels blocking.</string>
-    <string name="block_page_default_block_insta_search_message">You have enabled instagram search blocking.</string>
-    <string name="block_page_default_block_snapchat_spotlights_message">You have enabled Snapchat spotlight blocking.</string>
-    <string name="block_page_default_block_snapchat_stories_message">You have enabled Snapchat stories blocking.</string>
-    <string name="block_page_default_block_telegram_search_message">You have enabled telegram search blocking.</string>
-    <string name="block_page_default_block_whatsapp_status_message">You have enabled Whatsapp status blocking.</string>
-    <string name="block_page_default_block_yt_search_message">You have enabled youtube search blocking.</string>
-    <string name="block_page_default_block_yt_short_message">You have enabled youtube shorts blocking.</string>
     <string name="block_page_default_img_vid_message">You have enabled image and video search blocking.</string>
     <string name="block_page_default_in_app_browser_message">You have enabled in-app browser blocking for this app.</string>
     <string name="block_page_default_make_any_browser_supported_message">You have enabled make any browser supported blocking.</string>

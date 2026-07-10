@@ -51,21 +51,12 @@ class MyAccessibilityService : AccessibilityService() {
     private var cachedNewInstallBlockApps: Set<String> = emptySet()
     private var cachedInAppBrowserBlockApps: Set<String> = emptySet()
     private var cachedSupportedBrowsers: Set<String> = emptySet()
-    private var cachedSupportedSocialMedia: Set<String> = emptySet()
     private var cachedUnsupportedBrowserWhitelist: Set<String> = emptySet()
 
     private var isPornBlockerOn = true
     private var isBlockAllWebsiteOn = false
     private var isSafeSearchOn = false
     private var isBlockImageVideoOn = false
-    private var isBlockYtShortsOn = false
-    private var isBlockYtSearchOn = false
-    private var isBlockInstaReelsOn = false
-    private var isBlockInstaSearchOn = false
-    private var isBlockWhatsappStatusOn = false
-    private var isBlockSnapchatStoriesOn = false
-    private var isBlockSnapchatSpotlightOn = false
-    private var isBlockTelegramSearchOn = false
     private var isBlockNewInstallOn = false
     private var isBlockInAppBrowsersOn = false
     private var isBlockUnsupportedBrowsersOn = false
@@ -195,9 +186,6 @@ class MyAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Social media feature blocking
-        handleSocialMediaBlocking(packageName, className, text)
-
         // Stop Me: block apps not in whitelist
         if (isStopMeRunning && !cachedStopMeWhitelist.contains(packageName)) {
             launchBlockActivity(packageName, "block_page_default_stop_me_message")
@@ -215,14 +203,6 @@ class MyAccessibilityService : AccessibilityService() {
             val url = extractUrlFromEvent(event, packageName)
             if (url != null && url.isNotBlank()) {
                 handleUrlDetected(packageName, url)
-            }
-        }
-
-        // Try to extract text from social media search bars
-        if (cachedSupportedSocialMedia.contains(packageName)) {
-            val text = extractTextFromEvent(event, packageName)
-            if (text.isNotBlank()) {
-                handleSocialMediaSearch(packageName, text)
             }
         }
     }
@@ -260,74 +240,6 @@ class MyAccessibilityService : AccessibilityService() {
         // SafeSearch enforcement: redirect to safe search if user tries unsafe Google
         if (isSafeSearchOn) {
             enforceSafeSearch(packageName, decoded)
-        }
-    }
-
-    // ===== Social media feature blocking =====
-
-    private fun handleSocialMediaBlocking(packageName: String, className: String, text: String) {
-        // YouTube Shorts
-        if (isBlockYtShortsOn && packageName == "com.google.android.youtube") {
-            if (className.contains("Shorts", ignoreCase = true) ||
-                text.contains("/shorts/", ignoreCase = true)
-            ) {
-                launchBlockActivity(packageName, "block_page_default_block_yt_short_message")
-                return
-            }
-        }
-        // Instagram Reels
-        if (isBlockInstaReelsOn && packageName == "com.instagram.android") {
-            if (className.contains("Reel", ignoreCase = true) ||
-                text.contains("reel", ignoreCase = true)
-            ) {
-                launchBlockActivity(packageName, "block_page_default_block_insta_reel_message")
-                return
-            }
-        }
-        // Snapchat Stories / Spotlight
-        if (packageName == "com.snapchat.android") {
-            if (isBlockSnapchatStoriesOn && className.contains("Story", ignoreCase = true)) {
-                launchBlockActivity(packageName, "block_page_default_block_snapchat_stories_message")
-                return
-            }
-            if (isBlockSnapchatSpotlightOn && className.contains("Spotlight", ignoreCase = true)) {
-                launchBlockActivity(packageName, "block_page_default_block_snapchat_spotlights_message")
-                return
-            }
-        }
-        // WhatsApp Status
-        if (isBlockWhatsappStatusOn && packageName == "com.whatsapp") {
-            if (className.contains("Status", ignoreCase = true)) {
-                launchBlockActivity(packageName, "block_page_default_block_whatsapp_status_message")
-                return
-            }
-        }
-    }
-
-    private fun handleSocialMediaSearch(packageName: String, text: String) {
-        val utils = BlockerPageUtils.getInstance()
-        val decoded = utils.decodeText(text)
-
-        if (packageName == "com.google.android.youtube" && isBlockYtSearchOn) {
-            val (found, _) = utils.isDetectWord(decoded, cachedBlockKeywords)
-            if (found) {
-                launchBlockActivity(packageName, "block_page_default_block_yt_search_message")
-                return
-            }
-        }
-        if (packageName == "com.instagram.android" && isBlockInstaSearchOn) {
-            val (found, _) = utils.isDetectWord(decoded, cachedBlockKeywords)
-            if (found) {
-                launchBlockActivity(packageName, "block_page_default_block_insta_search_message")
-                return
-            }
-        }
-        if (packageName == "org.telegram.messenger" && isBlockTelegramSearchOn) {
-            val (found, _) = utils.isDetectWord(decoded, cachedBlockKeywords)
-            if (found) {
-                launchBlockActivity(packageName, "block_page_default_block_telegram_search_message")
-                return
-            }
         }
     }
 
@@ -490,14 +402,6 @@ class MyAccessibilityService : AccessibilityService() {
                 isBlockAllWebsiteOn = switchValues.isBlockAllWebsiteSwitchOn()
                 isSafeSearchOn = switchValues.isSafeSearchSwitchOn()
                 isBlockImageVideoOn = switchValues.isBlockImageVideoSwitchOn()
-                isBlockYtShortsOn = switchValues.isBlockYtShortsSwitchOn()
-                isBlockYtSearchOn = switchValues.isBlockYtSearchSwitchOn()
-                isBlockInstaReelsOn = switchValues.isBlockInstaReelsSwitchOn()
-                isBlockInstaSearchOn = switchValues.isBlockInstaSearchSwitchOn()
-                isBlockWhatsappStatusOn = switchValues.isBlockWhatsappStatusSwitchOn()
-                isBlockSnapchatStoriesOn = switchValues.isBlockSnapchatStoriesSwitchOn()
-                isBlockSnapchatSpotlightOn = switchValues.isBlockSnapchatSpotlightSwitchOn()
-                isBlockTelegramSearchOn = switchValues.isBlockTelegramSearchSwitchOn()
                 isBlockNewInstallOn = switchValues.isBlockNewInstallAppsSwitchOn()
                 isBlockInAppBrowsersOn = switchValues.isBlockInAppBrowsersSwitchOn()
                 isBlockUnsupportedBrowsersOn = switchValues.isBlockUnsupportedBrowsersSwitchOn()
@@ -531,9 +435,6 @@ class MyAccessibilityService : AccessibilityService() {
                     .map { it.packageName }.toSet()
                 cachedSupportedBrowsers = db.selectedAppsListDao()
                     .getSelectedByIdentifier(SelectedAppListIdentifier.SUPPORTED_BROWSER_APPS.value)
-                    .map { it.packageName }.toSet()
-                cachedSupportedSocialMedia = db.selectedAppsListDao()
-                    .getSelectedByIdentifier(SelectedAppListIdentifier.SUPPORTED_SOCIAL_MEDIA_APPS.value)
                     .map { it.packageName }.toSet()
                 cachedUnsupportedBrowserWhitelist = db.selectedAppsListDao()
                     .getSelectedByIdentifier(SelectedAppListIdentifier.WHITELIST_UNSUPPORTED_BROWSER.value)

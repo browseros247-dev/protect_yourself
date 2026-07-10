@@ -108,34 +108,6 @@ Every user action must produce **immediate, visible feedback**:
 
 ---
 
-## Phase 4: Social Media Blocking
-
-**Scope**: YT Shorts, IG Reels, WhatsApp Status, Snapchat, Telegram blocking works.
-
-### Test Cases
-| # | Action | Expected Result | Status |
-|---|---|---|---|
-| 4.1 | Toggle "Block YouTube Shorts" ON, open YT Shorts | Block screen appears | ⏳ |
-| 4.2 | Toggle "Block Instagram Reels" ON, open IG Reels | Block screen appears | ⏳ |
-| 4.3 | Toggle "Block WhatsApp Status" ON, open WA Status tab | Block screen appears | ⏳ |
-| 4.4 | Toggle "Block Snapchat Stories" ON, open SC Stories | Block screen appears | ⏳ |
-| 4.5 | Toggle "Block Snapchat Spotlight" ON, open SC Spotlight | Block screen appears | ⏳ |
-| 4.6 | Toggle "Block Telegram Search" ON, search in Telegram | Block screen appears | ⏳ |
-| 4.7 | Toggle "Block YouTube Search" ON, search in YT | Block screen appears | ⏳ |
-| 4.8 | Toggle "Block Instagram Search" ON, search in IG | Block screen appears | ⏳ |
-| 4.9 | Toggle all OFF | None of the above trigger block | ⏳ |
-
-### Validation UI
-- Same switch feedback as Phase 3
-- Block screen message changes per feature (e.g. "You have enabled youtube shorts blocking")
-
-### Files to Audit
-- `MyAccessibilityService.kt` — `handleSocialMediaBlocking()`, `handleSocialMediaSearch()`
-- `BlockerPageUtils.kt` — `BROWSER_URL_VIEW_IDS`, `IN_APP_BROWSER_CLASS_NAMES`
-
----
-
-## Phase 5: VPN & DNS Blocking
 
 **Scope**: VPN starts/stops, DNS filtering works, per-app whitelist functions.
 
