@@ -197,6 +197,11 @@ class BlockerPageViewModel(
             // Refresh accessibility service blocking config
             MyAccessibilityService.instance?.refreshBlockingConfig()
 
+            // Show toast feedback
+            val switchName = item.title
+            val action = if (newValue) "enabled" else "disabled"
+            _navigation.emit(BlockerPageNavigation.ShowToast("$switchName $action"))
+
             Timber.i("Switch $switchKey toggled to $newValue")
         }
     }

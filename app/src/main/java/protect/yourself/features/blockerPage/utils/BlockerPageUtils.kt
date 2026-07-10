@@ -69,13 +69,14 @@ class BlockerPageUtils {
 
     /**
      * Detect if any word in `words` appears in `detectText`.
+     * Used for page content text (NOT URLs) — strips URLs before matching.
      *
      * @return Pair(found, matchedKeyword) — matchedKeyword includes 20-char context for "why" display.
      */
     fun isDetectWord(detectText: String, words: List<String>): Pair<Boolean, String> {
         if (words.isEmpty()) return Pair(false, "")
         val lower = detectText.lowercase(Locale.ROOT)
-        // Strip URLs to avoid matching keywords that happen to appear in URLs (we match URLs separately)
+        // Strip URLs to avoid matching keywords that happen to appear in URLs
         val stripped = websiteRegex.replace(lower, "")
 
         for (word in words) {
@@ -89,6 +90,28 @@ class BlockerPageUtils {
                 val before = stripped.substring(start, idx)
                 val after = stripped.substring(idx, end)
                 return Pair(true, "$w\n\n$before$after")
+            }
+        }
+        return Pair(false, "")
+    }
+
+    /**
+     * Detect if any word in `words` appears in a URL.
+     * Does NOT strip URLs — matches keywords directly against the full URL text.
+     * This is used for browser URL bar matching where the URL itself contains
+     * the keyword (e.g. "pornhub.com" matches keyword "porn").
+     *
+     * @return Pair(found, matchedKeyword)
+     */
+    fun isDetectWordInUrl(url: String, words: List<String>): Pair<Boolean, String> {
+        if (words.isEmpty()) return Pair(false, "")
+        val lower = url.lowercase(Locale.ROOT)
+
+        for (word in words) {
+            if (word.isBlank()) continue
+            val w = word.lowercase(Locale.ROOT).trim()
+            if (lower.contains(w)) {
+                return Pair(true, w)
             }
         }
         return Pair(false, "")

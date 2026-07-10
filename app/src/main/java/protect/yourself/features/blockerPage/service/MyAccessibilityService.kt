@@ -230,8 +230,8 @@ class MyAccessibilityService : AccessibilityService() {
             return
         }
 
-        // Block keyword match
-        val (found, _) = utils.isDetectWord(decoded, cachedBlockKeywords)
+        // Block keyword match — use isDetectWordInUrl (does NOT strip URLs)
+        val (found, _) = utils.isDetectWordInUrl(decoded, cachedBlockKeywords)
         if (found) {
             launchBlockActivity(packageName, "block_page_default_porn_blocker_message")
             return
