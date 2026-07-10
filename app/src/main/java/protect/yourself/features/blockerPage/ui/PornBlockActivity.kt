@@ -125,7 +125,6 @@ class PornBlockActivity : AppCompatActivity() {
                 val db = AppDatabase.getInstance(this@PornBlockActivity)
                 val switchValues = SwitchStatusValues(db.switchStatusDao())
 
-                val isImageSet = switchValues.isBlockScreenCustomMessageSet() // not actually message — use a different key
                 val imagePath = switchValues.getBlockScreenStoreImagePath()
 
                 if (!imagePath.isNullOrBlank()) {

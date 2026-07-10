@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -328,7 +329,22 @@ private fun EditNumberDialog(
 
 @Composable
 private fun AccessibilityWarningCard(context: android.content.Context) {
-    if (!MyAccessibilityService.isEnabled(context)) {
+    // Reactive state — re-checks when lifecycle resumes (user returns from settings)
+    var isAccessibilityEnabled by remember { mutableStateOf(MyAccessibilityService.isEnabled(context)) }
+
+    // Re-check accessibility status when the app resumes (user returns from settings)
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                isAccessibilityEnabled = MyAccessibilityService.isEnabled(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    if (!isAccessibilityEnabled) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -353,6 +369,36 @@ private fun AccessibilityWarningCard(context: android.content.Context) {
                     text = "Blocking features are disabled. Tap here to enable accessibility permission.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Steps: Settings → Accessibility → Protect Yourself → ON",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    } else {
+        // Show success card when accessibility IS enabled
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp, bottom = 8.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF1B5E20))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "✅ Accessibility enabled",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = androidx.compose.ui.graphics.Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Content blocking is active.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.8f)
                 )
             }
         }

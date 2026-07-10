@@ -83,6 +83,8 @@ class MyAccessibilityService : AccessibilityService() {
         instance = this
         configureService()
         refreshBlockingConfig()
+        // Show toast to confirm service is active
+        android.widget.Toast.makeText(this, "Protect Yourself: Accessibility connected", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     private fun configureService() {
@@ -136,6 +138,8 @@ class MyAccessibilityService : AccessibilityService() {
         super.onDestroy()
         Timber.w("Accessibility service destroyed")
         instance = null
+        // Show toast to warn user
+        android.widget.Toast.makeText(this, "Protect Yourself: Accessibility disconnected — blocking disabled", android.widget.Toast.LENGTH_LONG).show()
     }
 
     // ===== Window state change handler =====
