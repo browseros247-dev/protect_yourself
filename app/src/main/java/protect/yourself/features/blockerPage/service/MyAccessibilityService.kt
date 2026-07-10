@@ -710,12 +710,22 @@ class MyAccessibilityService : AccessibilityService() {
 
         val isBrowser = try {
             val pm = packageManager
-            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            // NopoX uses http://www.google.com for browser detection.
+            // Some older browsers only declare intent filters for http://
+            // (not https://), so using http:// catches more browsers.
+            // We check both http and https to be thorough.
+            val httpIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                data = android.net.Uri.parse("http://www.google.com")
+                addCategory(android.content.Intent.CATEGORY_BROWSABLE)
+            }
+            val httpsIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
                 data = android.net.Uri.parse("https://example.com")
                 addCategory(android.content.Intent.CATEGORY_BROWSABLE)
             }
-            val resolved = pm.queryIntentActivities(intent, 0)
-            val isBrowserByIntentFilter = resolved.any { it.activityInfo.packageName == packageName }
+            val httpResolved = pm.queryIntentActivities(httpIntent, 0)
+            val httpsResolved = pm.queryIntentActivities(httpsIntent, 0)
+            val isBrowserByIntentFilter = httpResolved.any { it.activityInfo.packageName == packageName } ||
+                httpsResolved.any { it.activityInfo.packageName == packageName }
             isBrowserByIntentFilter || isBrowserByPackageSignature(packageName)
         } catch (t: Throwable) {
             Timber.v(t, "Browser detection failed for $packageName")

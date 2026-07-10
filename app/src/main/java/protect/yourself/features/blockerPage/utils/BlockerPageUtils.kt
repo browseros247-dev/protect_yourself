@@ -351,46 +351,100 @@ class BlockerPageUtils {
          * Text IDs in browser address bars across supported browsers.
          * Used by accessibility service to find the URL field.
          *
-         * Ported from original viewIdSupportedBrowserApps.
-         * Phase 3: accessibility service uses this to scrape URLs.
+         * Ported from NopoX's viewIdSupportedBrowserApps() — decoded from
+         * the base64-encoded JSON list in the original APK.
+         *
+         * NopoX uses a flat list; we use a Map<packageName, List<viewId>>
+         * for O(1) lookup by package.
+         *
+         * Key differences from the original rebuild (which only had 6 browsers
+         * with incorrect Firefox view IDs):
+         *  - Firefox: mozac_browser_toolbar_url_view (not url_edit_text)
+         *  - Added: Firefox Rocket, SpinBrowser, Opera GX, Opera Mini,
+         *    Tor Browser, Google Search Lite, Cast Web Video, FreeAdblockerBrowser
+         *  - Chrome: added title_bar as a fallback view ID
+         *  - Samsung Internet: kept from rebuild (not in NopoX's list but
+         *    common on Samsung devices)
          */
         val BROWSER_URL_VIEW_IDS: Map<String, List<String>> = mapOf(
+            // Chrome
             "com.android.chrome" to listOf(
                 "com.android.chrome:id/url_bar",
-                "com.android.chrome:id/url_field"
+                "com.android.chrome:id/title_bar"
             ),
+            // Firefox (modern Fenix/IceCatCat — uses mozac_browser_toolbar_url_view)
             "org.mozilla.firefox" to listOf(
-                "org.mozilla.firefox:id/url_edit_text",
-                "org.mozilla.gecko:id/url_edit_text"
+                "org.mozilla.firefox:id/mozac_browser_toolbar_url_view",
+                "org.mozilla.firefox:id/url_edit_text"  // legacy fallback
             ),
+            // Firefox Rocket (Firefox Lite)
+            "org.mozilla.rocket" to listOf(
+                "org.mozilla.rocket:id/display_url"
+            ),
+            // Brave
             "com.brave.browser" to listOf(
-                "com.brave.browser:id/url_bar",
-                "com.brave.browser:id/url_field"
+                "com.brave.browser:id/url_bar"
             ),
-            "com.microsoft.emmx" to listOf(
-                "com.microsoft.emmx:id/url_bar",
-                "com.microsoft.emmx:id/url_field"
+            // Samsung Internet (not in NopoX but common)
+            "com.sec.android.app.sbrowser" to listOf(
+                "com.sec.android.app.sbrowser:id/location_bar_edit_text",
+                "com.sec.android.app.sbrowser:id/url_bar"
             ),
+            // Spin Browser
+            "com.nationaledtech.spinbrowser" to listOf(
+                "com.nationaledtech.spinbrowser:id/url_bar_title"
+            ),
+            // Opera GX
+            "com.opera.gx" to listOf(
+                "com.opera.gx:id/addressbarEdit"
+            ),
+            // Opera
             "com.opera.browser" to listOf(
                 "com.opera.browser:id/url_field",
                 "com.opera.browser:id/url_bar"
             ),
-            "com.sec.android.app.sbrowser" to listOf(
-                "com.sec.android.app.sbrowser:id/location_bar_edit_text",
-                "com.sec.android.app.sbrowser:id/url_bar"
+            // Opera Mini
+            "com.opera.mini.native" to listOf(
+                "com.opera.mini.native:id/url_field"
+            ),
+            // Tor Browser
+            "org.torproject.torbrowser" to listOf(
+                "org.torproject.torbrowser:id/url_bar_title"
+            ),
+            // Vivaldi
+            "com.vivaldi.browser" to listOf(
+                "com.vivaldi.browser:id/url_bar"
+            ),
+            // Microsoft Edge
+            "com.microsoft.emmx" to listOf(
+                "com.microsoft.emmx:id/url_bar"
+            ),
+            // Google Search Lite
+            "com.google.android.apps.searchlite" to listOf(
+                "com.google.android.apps.searchlite:id/weby_url_bar"
+            ),
+            // Cast Web Video (has built-in browser)
+            "com.instantbits.cast.webvideo" to listOf(
+                "com.instantbits.cast.webvideo:id/addressBar"
+            ),
+            // FreeAdblockerBrowser
+            "com.hsv.freeadblockerbrowser" to listOf(
+                "com.hsv.freeadblockerbrowser:id/url_bar"
             )
         )
 
         /**
          * Class names of known in-app browsers (to detect inside other apps).
+         *
+         * Ported from NopoX's inAppBrowsersClassName() — NopoX uses only
+         * 2 entries: WebView + Facebook browser. The original rebuild had
+         * 6 entries including Chromium internal classes that caused false
+         * positives (e.g. WebContentDelegateImpl appears in many non-browser
+         * apps that use Chromium for rendering).
          */
         val IN_APP_BROWSER_CLASS_NAMES: List<String> = listOf(
-            "org.chromium.content.browser.WebContentDelegateImpl",
             "android.webkit.WebView",
-            "com.google.android.webview",
-            "com.android.webview",
-            "org.chromium.chrome.browser.ChromeActivity",
-            "com.google.android.gms.security.safetysample.SafeBrowsingWebViewActivity"
+            "com.facebook.browser"
         )
 
         /**
