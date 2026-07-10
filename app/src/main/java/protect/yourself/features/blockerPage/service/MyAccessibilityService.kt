@@ -61,8 +61,8 @@ class MyAccessibilityService : AccessibilityService() {
     private var isBlockInAppBrowsersOn = false
     private var isBlockUnsupportedBrowsersOn = false
     private var isBlockSettingsByTitleOn = false
-    private var isBlockNotificationDrawerOn = false
-    private var isBlockRecentAppsOn = false
+    // BLOCK_NOTIFICATION_DRAWER + BLOCK_RECENT_APPS removed from UI
+    private var cachedSettingTitles: List<String> = emptyList()
     private var isStopMeRunning = false
 
     private var lastBlockedPackage: String? = null
@@ -140,17 +140,7 @@ class MyAccessibilityService : AccessibilityService() {
         val text = event.text?.joinToString(" ").orEmpty()
         Timber.v("WindowStateChange pkg=$packageName class=$className text=$text")
 
-        // Anti-circumvention: block notification drawer / recent apps / settings pages
-        if (isBlockNotificationDrawerOn && isNotificationDrawer(className, packageName)) {
-            performGlobalAction(GLOBAL_ACTION_HOME)
-            launchBlockActivity(packageName, "block_page_default_notification_drawer_message")
-            return
-        }
-        if (isBlockRecentAppsOn && isRecentApps(className, packageName)) {
-            performGlobalAction(GLOBAL_ACTION_HOME)
-            launchBlockActivity(packageName, "block_recent_apps_bw_message")
-            return
-        }
+        // Settings page title blocking
         if (isBlockSettingsByTitleOn && isSettingsPage(packageName, text)) {
             launchBlockActivity(packageName, "block_page_default_system_keyword_message")
             return
@@ -341,10 +331,13 @@ class MyAccessibilityService : AccessibilityService() {
 
     private fun isSettingsPage(packageName: String, text: String): Boolean {
         if (packageName != "com.android.settings" && !packageName.contains(".settings")) return false
-        // Check if any setting keyword matches the page title
+        if (cachedSettingTitles.isEmpty()) return false
         val lower = text.lowercase(Locale.ROOT)
-        // Phase 3 stub: real implementation reads from setting_keywords_list in DB
-        return false  // TODO: query setting_keywords_list and match
+        // Check if any user-entered title matches the settings page text
+        return cachedSettingTitles.any { title ->
+            val t = title.lowercase(Locale.ROOT).trim()
+            t.isNotBlank() && lower.contains(t)
+        }
     }
 
     private fun isBrowserPackage(packageName: String): Boolean {
@@ -406,8 +399,13 @@ class MyAccessibilityService : AccessibilityService() {
                 isBlockInAppBrowsersOn = switchValues.isBlockInAppBrowsersSwitchOn()
                 isBlockUnsupportedBrowsersOn = switchValues.isBlockUnsupportedBrowsersSwitchOn()
                 isBlockSettingsByTitleOn = switchValues.isBlockSettingPageByTitleSwitchOn()
-                isBlockNotificationDrawerOn = switchValues.isBlockNotificationDrawerSwitchOn()
-                isBlockRecentAppsOn = switchValues.isBlockRecentAppsSwitchOn()
+                // BLOCK_NOTIFICATION_DRAWER + BLOCK_RECENT_APPS removed from UI
+
+                // Load setting titles to block from keyword DB
+                cachedSettingTitles = db.selectedKeywordDao()
+                    .getSelectedByIdentifier(SelectedKeywordIdentifier.SETTING_KEYWORDS_LIST_WORDS.value)
+                    .map { it.keyword }
+                    .filter { it.isNotBlank() }
 
                 // Keywords
                 cachedBlockKeywords = db.selectedKeywordDao()

@@ -90,6 +90,11 @@ class BlockerPageViewModel(
                 val count = db.blockScreenCountDao().getCount()?.count ?: 0
                 item.copy(actionLabel = count.toString())
             }
+            SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE -> {
+                val count = db.selectedKeywordDao()
+                    .countByIdentifier(protect.yourself.database.selectedKeywords.SelectedKeywordIdentifier.SETTING_KEYWORDS_LIST_WORDS.value)
+                item.copy(actionLabel = if (count > 0) "$count titles" else "Add")
+            }
             SettingPageItemIdentifiers.BLOCKED_SCREEN_COUNTDOWN -> {
                 val secs = switchValues.getBlockScreenCountDownSeconds()
                 item.copy(actionLabel = if (secs > 0) "${secs}s" else "Off")
@@ -125,10 +130,8 @@ class BlockerPageViewModel(
         SwitchIdentifier.BLOCK_IMAGE_VIDEO_SWITCH -> switchValues.isBlockImageVideoSwitchOn()
         SwitchIdentifier.MAKE_ANY_BROWSER_SUPPORTED_SWITCH -> switchValues.isMakeAnyBrowserSupportedSwitchOn()
         SwitchIdentifier.PREVENT_UNINSTALL_SWITCH -> switchValues.isPreventUninstallSwitchOn()
-        SwitchIdentifier.BLOCK_NOTIFICATION_DRAWER_SWITCH -> switchValues.isBlockNotificationDrawerSwitchOn()
+        // BLOCK_NOTIFICATION_DRAWER + BLOCK_RECENT_APPS removed from UI
         SwitchIdentifier.BLOCK_PHONE_REBOOT_SWITCH -> switchValues.isBlockPhoneRebootSwitchOn()
-        SwitchIdentifier.BLOCK_RECENT_APPS_SWITCH -> switchValues.isBlockRecentAppsSwitchOn()
-        SwitchIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_SWITCH -> switchValues.isBlockSettingPageByTitleSwitchOn()
         SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH -> switchValues.isBlockUnsupportedBrowsersSwitchOn()
         SwitchIdentifier.VPN_SWITCH -> switchValues.isVpnSwitchOn()
         SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH -> switchValues.isVpnNotificationHideSwitchOn()
@@ -312,6 +315,26 @@ class BlockerPageViewModel(
      */
     fun saveTextField(switchKey: String, value: String) {
         viewModelScope.launch {
+            // Special handling: setting page title input → insert as keyword
+            if (switchKey == "block_setting_title_input") {
+                if (value.isNotBlank()) {
+                    val item = protect.yourself.database.selectedKeywords.SelectedKeywordItemModel(
+                        key = "setting_title_${System.currentTimeMillis()}",
+                        keyword = value.trim(),
+                        identifier = protect.yourself.database.selectedKeywords.SelectedKeywordIdentifier.SETTING_KEYWORDS_LIST_WORDS.value,
+                        isSelected = true
+                    )
+                    db.selectedKeywordDao().upsert(item)
+                    // Enable the setting page block switch
+                    switchValues.storeSwitchStatus(SwitchIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_SWITCH, true)
+                    // Refresh accessibility service config
+                    MyAccessibilityService.instance?.refreshBlockingConfig()
+                    _navigation.emit(BlockerPageNavigation.ShowToast("Title '$value' will be blocked in Settings"))
+                }
+                loadSettingItems()
+                return@launch
+            }
+
             switchValues.storeSwitchStatus(switchKey, value)
             // Also set the "is set" flag for certain keys
             when (switchKey) {
@@ -358,6 +381,15 @@ class BlockerPageViewModel(
                 SettingPageItemIdentifiers.WHITELIST_VPN_APPS -> BlockerPageNavigation.OpenSelectAppPage("VPN Whitelist Apps", SelectedAppListIdentifier.VPN_WHITELIST_APPS)
                 SettingPageItemIdentifiers.BLOCK_IN_APP_BROWSERS -> BlockerPageNavigation.OpenSelectAppPage("Block In-App Browsers", SelectedAppListIdentifier.BLOCK_IN_APP_BROWSER_APPS)
                 SettingPageItemIdentifiers.BLOCK_NEW_INSTALL_APPS -> BlockerPageNavigation.OpenSelectAppPage("Block New Install Apps", SelectedAppListIdentifier.BLOCK_NEW_INSTALL_APPS)
+                SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE -> {
+                    // Text input for settings page title to block
+                    BlockerPageNavigation.EditTextField(
+                        "Title to Block in Settings",
+                        "",
+                        "Enter a settings page title (e.g. 'battery', 'apps')",
+                        "block_setting_title_input"
+                    )
+                }
                 SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS -> BlockerPageNavigation.OpenSelectAppPage("Setting Page Blocklist", SelectedAppListIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_APPS)
                 SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP -> BlockerPageNavigation.OpenSelectAppPage("Blocklist Whitelist Detected Apps", SelectedAppListIdentifier.BLOCK_WHITELIST_DETECTED_APPS)
 
@@ -434,11 +466,9 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.MAKE_ANY_BROWSER_SUPPORTED, "Make any browser supported", info = "Add any browser to supported list", switchKey = SwitchIdentifier.MAKE_ANY_BROWSER_SUPPORTED_SWITCH))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_UNINSTALL_PROTECTION, "Uninstall Protection", isSection = true))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.PREVENT_UNINSTALL_SETTINGS, "Prevent uninstall", info = "Block attempts to uninstall", switchKey = SwitchIdentifier.PREVENT_UNINSTALL_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_NOTIFICATION_DRAWER, "Block notification drawer", switchKey = SwitchIdentifier.BLOCK_NOTIFICATION_DRAWER_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_PHONE_REBOOT, "Block phone reboot", switchKey = SwitchIdentifier.BLOCK_PHONE_REBOOT_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_RECENT_APPS, "Block Recent Apps screen", switchKey = SwitchIdentifier.BLOCK_RECENT_APPS_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE, "Title-based block setting", info = "Block specific settings pages by title", switchKey = SwitchIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.PREVENT_UNINSTALL_SETTINGS, "Prevent uninstall", info = "Block attempts to uninstall (requires Device Admin)", switchKey = SwitchIdentifier.PREVENT_UNINSTALL_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_PHONE_REBOOT, "Block phone reboot", info = "Restart blocking automatically after reboot", switchKey = SwitchIdentifier.BLOCK_PHONE_REBOOT_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE, "Title-based block setting", info = "Enter a settings page title to block (e.g. 'battery')", actionLabel = "Edit"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS, "Setting page blocklist", info = "Manage blocked settings pages", actionLabel = "Manage"))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_ADVANCE_FEATURE, "Advanced feature", isSection = true))
