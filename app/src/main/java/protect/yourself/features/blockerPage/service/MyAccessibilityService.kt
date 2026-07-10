@@ -87,6 +87,8 @@ class MyAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         Timber.i("Accessibility service connected")
         instance = this
+        protect.yourself.core.ProtectYourselfApp.getCrashLogger()
+            ?.logBreadcrumb("AccessibilityService", "onServiceConnected")
         configureService()
         refreshBlockingConfig()
         // Show toast to confirm service is active
@@ -133,6 +135,16 @@ class MyAccessibilityService : AccessibilityService() {
             }
         } catch (t: Throwable) {
             Timber.e(t, "Error handling accessibility event from $packageName")
+            protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                throwable = t,
+                tag = "AccessibilityService",
+                message = "Error handling event from $packageName (type=$eventType)",
+                extraContext = mapOf(
+                    "packageName" to packageName,
+                    "eventType" to eventType.toString(),
+                    "eventClass" to (event.className?.toString() ?: "")
+                )
+            )
         }
     }
 

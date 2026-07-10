@@ -87,6 +87,8 @@ class MyVpnService : VpnService() {
             return
         }
 
+        protect.yourself.core.ProtectYourselfApp.getCrashLogger()
+            ?.logBreadcrumb("VpnService", "startVpn requested")
         serviceScope.launch {
             try {
                 val db = AppDatabase.getInstance(this@MyVpnService)
@@ -211,6 +213,16 @@ class MyVpnService : VpnService() {
                 Timber.i("VPN started: type=$currentConnectionType DNS=$firstDns,$secondDns")
             } catch (t: Throwable) {
                 Timber.e(t, "Failed to start VPN")
+                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                    throwable = t,
+                    tag = "VpnService",
+                    message = "Failed to start VPN",
+                    extraContext = mapOf(
+                        "connectionType" to currentConnectionType.name,
+                        "firstDns" to currentFirstDns,
+                        "secondDns" to currentSecondDns
+                    )
+                )
                 stopSelf()
             }
         }

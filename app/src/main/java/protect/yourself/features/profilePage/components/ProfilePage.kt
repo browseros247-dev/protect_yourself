@@ -43,6 +43,16 @@ fun ProfilePage() {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showBackupRestore by remember { mutableStateOf(false) }
+    var showCrashLogs by remember { mutableStateOf(false) }
+
+    // If crash log page is open, show it instead of the profile list
+    if (showCrashLogs) {
+        BackHandler { showCrashLogs = false }
+        protect.yourself.features.crashLog.CrashLogPage(
+            onBack = { showCrashLogs = false }
+        )
+        return
+    }
 
     // If backup/restore page is open, show it instead of the profile list
     if (showBackupRestore) {
@@ -55,6 +65,7 @@ fun ProfilePage() {
 
     val profileItems = listOf(
         ProfileItem("Backup & Restore", "Export or import your data as JSON"),
+        ProfileItem("Crash Logs", "View, export, or clear diagnostic crash logs"),
         ProfileItem("Share app", "Share Protect Yourself with friends"),
         ProfileItem("Contact us", "Email support"),
         ProfileItem("About", "App info, version, credits"),
@@ -104,6 +115,7 @@ fun ProfilePage() {
                 onClick = {
                     when (item.title) {
                         "Backup & Restore" -> showBackupRestore = true
+                        "Crash Logs" -> showCrashLogs = true
                         "Share app" -> {
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"

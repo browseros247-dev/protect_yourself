@@ -93,6 +93,8 @@ class BackupManager(private val context: Context) {
     suspend fun exportToUri(outputUri: Uri): BackupResult {
         _progress.value = BackupProgress.Exporting(0, "Reading database…")
         Timber.i("BackupManager: starting export to $outputUri")
+        protect.yourself.core.ProtectYourselfApp.getCrashLogger()
+            ?.logBreadcrumb("BackupManager", "export started", mapOf("uri" to outputUri.toString()))
 
         return try {
             // 1. Read all tables (in parallel via withContext IO)
@@ -159,6 +161,8 @@ class BackupManager(private val context: Context) {
     suspend fun importFromUri(inputUri: Uri): BackupResult {
         _progress.value = BackupProgress.Importing(0, "Reading backup file…")
         Timber.i("BackupManager: starting import from $inputUri")
+        protect.yourself.core.ProtectYourselfApp.getCrashLogger()
+            ?.logBreadcrumb("BackupManager", "import started", mapOf("uri" to inputUri.toString()))
 
         return try {
             // 1. Read + parse JSON
