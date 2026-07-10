@@ -173,16 +173,30 @@ class MyAccessibilityService : AccessibilityService() {
         // blocking these can freeze the device.
         if (packageName == "com.android.systemui") return
 
-        // Settings page title blocking (NopoX-style: checks settings pages)
+        // Settings page title blocking (NopoX-style: checks settings pages only)
+        // This matches the NopoX reference implementation which filters by
+        // com.android.settings or packages containing ".settings" to prevent
+        // false positives from non-settings apps.
         if (isBlockSettingsByTitleOn && isSettingsPage(packageName, text)) {
             launchBlockActivity(packageName, "block_page_default_system_keyword_message")
             return
         }
 
-        // Title-based blocking on ANY app (NopoX-style: also checks all app titles)
-        if (isBlockSettingsByTitleOn && isAnyTitleBlocked(packageName, className, text)) {
-            launchBlockActivity(packageName, "block_page_default_system_keyword_message")
-            return
+        // Title-based blocking on ANY app — DISABLED by default to prevent false positives.
+        // The previous implementation checked ALL apps' text against the keyword list,
+        // which caused massive false positives (e.g. keyword "battery" would block
+        // any web page about batteries in Chrome). NopoX only blocks settings pages.
+        //
+        // This check is kept as a separate, more targeted feature: it only fires
+        // if the package is NOT com.android.settings (already handled above) and
+        // the className matches a blocked title — NOT the event text. Class names
+        // are much more specific than arbitrary text, so the false positive risk
+        // is much lower.
+        if (isBlockSettingsByTitleOn && packageName != "com.android.settings" && !packageName.contains(".settings")) {
+            if (isClassNameBlocked(packageName, className)) {
+                launchBlockActivity(packageName, "block_page_default_system_keyword_message")
+                return
+            }
         }
 
         // Package + Intent name blocking (NEW feature)
@@ -459,15 +473,48 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * NopoX-style title-based blocking on ANY app/page.
-     * Checks if the event text or class name contains any blocked title keyword.
-     * This goes beyond settings — it blocks ANY window whose title matches.
+     * Checks if an app's class name matches any blocked title keyword.
+     *
+     * This is a more targeted version of the old isAnyTitleBlocked() — it
+     * only matches against the class name (e.g. "BatteryInfoActivity"),
+     * not arbitrary event text. This dramatically reduces false positives
+     * while still catching apps whose activity names contain blocked keywords.
+     *
+     * Example: keyword "battery" matches "BatteryInfoActivity" but does NOT
+     * match a web page about batteries (whose class name would be something
+     * like "org.mozilla.gecko.BrowserApp").
      */
-    private fun isAnyTitleBlocked(packageName: String, className: String, text: String): Boolean {
+    private fun isClassNameBlocked(packageName: String, className: String): Boolean {
         if (cachedSettingTitles.isEmpty()) return false
         // Don't block our own app
         if (packageName == this.packageName) return false
         // Don't block system UI (would freeze the phone)
+        if (packageName == "com.android.systemui") return false
+
+        val lowerClass = className.lowercase(Locale.ROOT)
+
+        for (title in cachedSettingTitles) {
+            val t = title.lowercase(Locale.ROOT).trim()
+            if (t.isBlank()) continue
+            // Only check against class name — NOT event text.
+            // Class names are specific (e.g. "BatteryInfoActivity") and
+            // don't cause the false positive problems that event text does.
+            if (lowerClass.contains(t)) return true
+        }
+        return false
+    }
+
+    /**
+     * NopoX-style title-based blocking on ANY app/page.
+     *
+     * @deprecated Use [isClassNameBlocked] instead — this method checks event
+     * text which causes false positives (e.g. keyword "battery" blocks any
+     * web page about batteries). Kept for reference only.
+     */
+    @Deprecated("Use isClassNameBlocked instead — event text matching causes false positives", ReplaceWith("isClassNameBlocked(packageName, className)"))
+    private fun isAnyTitleBlocked(packageName: String, className: String, text: String): Boolean {
+        if (cachedSettingTitles.isEmpty()) return false
+        if (packageName == this.packageName) return false
         if (packageName == "com.android.systemui") return false
 
         val lowerText = text.lowercase(Locale.ROOT)
@@ -476,9 +523,7 @@ class MyAccessibilityService : AccessibilityService() {
         for (title in cachedSettingTitles) {
             val t = title.lowercase(Locale.ROOT).trim()
             if (t.isBlank()) continue
-            // Check against event text
             if (lowerText.contains(t)) return true
-            // Check against class name (some apps put title in class name)
             if (lowerClass.contains(t)) return true
         }
         return false

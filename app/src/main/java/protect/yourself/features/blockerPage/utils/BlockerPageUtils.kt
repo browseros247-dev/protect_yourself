@@ -353,9 +353,19 @@ class BlockerPageUtils {
         /**
          * Texts to match in settings to detect device admin / accessibility pages.
          * Used by anti-uninstall watchdog.
+         *
+         * NOTE: "admin" alone is too broad — it matches any settings page that
+         * mentions "admin" (e.g. "Administrator settings"). We use more specific
+         * phrases that appear only on the Device Admin deactivation page.
          */
         val DEVICE_ADMIN_TEXTS_TO_MATCH: List<String> = listOf(
-            "admin", "extended_title", "applabel_title", "header_title", "alertTitle", "detail_title"
+            "device admin",           // "Device administrators" page title
+            "deactivate",             // "Deactivate" button text
+            "extended_title",         // internal view ID
+            "applabel_title",         // internal view ID
+            "header_title",           // internal view ID
+            "alertTitle",             // internal view ID (dialog title)
+            "detail_title"            // internal view ID
         )
 
         /**
