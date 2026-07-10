@@ -208,15 +208,18 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         // Prevent Uninstall: detect when user is on our app info page
+        // Launch the block screen FIRST, then press HOME. This prevents
+        // the race condition where HOME dismisses both the settings page
+        // AND the block activity if HOME is processed after startActivity.
         if (isPreventUninstallOn && isAppInfoPage(packageName, className, text)) {
-            performGlobalAction(GLOBAL_ACTION_HOME)
             launchBlockActivity(packageName, "block_page_default_pu_message")
             return
         }
 
         // Block phone reboot: detect power menu / ultra power saving
+        // Same pattern — launch block screen first, no HOME action needed
+        // (the block screen covers the power menu dialog).
         if (isBlockPhoneRebootOn && isPowerMenu(className, packageName, text)) {
-            performGlobalAction(GLOBAL_ACTION_HOME)
             launchBlockActivity(packageName, "block_phone_reboot_bw_message")
             return
         }
@@ -562,6 +565,17 @@ class MyAccessibilityService : AccessibilityService() {
     /**
      * Detect if the user is on the app info page for our package.
      * This is the page where the Uninstall button lives.
+     *
+     * CRITICAL: The app name check must ONLY fire when the class name
+     * indicates an app info / installed app details page. Without this
+     * guard, the method would match ANY settings page that mentions
+     * "Protect Yourself" — including Accessibility settings, Notification
+     * settings, Device Admin settings, etc. This would lock the user out
+     * of managing the app's own permissions + settings, a self-lockout bug.
+     *
+     * The device admin text patterns (device admin, deactivate) are kept as
+     * standalone triggers because they only appear on the Device Admin
+     * deactivation page, which is specifically what we want to block.
      */
     private fun isAppInfoPage(packageName: String, className: String, text: String): Boolean {
         // Must be a settings app
@@ -572,24 +586,39 @@ class MyAccessibilityService : AccessibilityService() {
         val lower = text.lowercase(Locale.ROOT)
         val lowerClass = className.lowercase(Locale.ROOT)
 
-        // Check if class name indicates an app info / installed app details page
-        if (lowerClass.contains("appinfodashboard") ||
+        // Check if class name indicates an app info / installed app details page.
+        // These class names only appear on the App Info page — not on accessibility
+        // settings, notification settings, or other settings pages.
+        val isAppInfoClass = lowerClass.contains("appinfodashboard") ||
             lowerClass.contains("installedappdetails") ||
             lowerClass.contains("appinfoactivity") ||
-            lowerClass.contains("appinfopage")
-        ) {
+            lowerClass.contains("appinfopage") ||
+            lowerClass.contains("installedappdetailsbase") ||
+            lowerClass.contains("appinfodashboardfragment")
+
+        if (isAppInfoClass) {
             return true
         }
 
-        // Check if text contains our app name
-        try {
-            val appName = getString(protect.yourself.R.string.app_name).lowercase(Locale.ROOT)
-            if (appName.isNotBlank() && lower.contains(appName)) {
-                return true
-            }
-        } catch (_: Throwable) {}
+        // Check if text contains our app name — BUT ONLY if the class name
+        // indicates an app info page. Without this guard, the method would
+        // match ANY settings page that mentions "Protect Yourself" (accessibility
+        // settings, notification settings, etc.), locking the user out.
+        //
+        // We also check for "app info" or "app details" in the class name as
+        // a broader pattern, since some OEMs use custom class names.
+        if (isAppInfoClass || lowerClass.contains("appinfo") || lowerClass.contains("appdetails")) {
+            try {
+                val appName = getString(protect.yourself.R.string.app_name).lowercase(Locale.ROOT)
+                if (appName.isNotBlank() && lower.contains(appName)) {
+                    return true
+                }
+            } catch (_: Throwable) {}
+        }
 
-        // Check against device admin text patterns (localized)
+        // Check against device admin text patterns (localized).
+        // These are standalone triggers — they only appear on the Device Admin
+        // deactivation page, which is specifically what we want to block.
         val deviceAdminTexts = BlockerPageUtils.DEVICE_ADMIN_TEXTS_TO_MATCH
         for (matchText in deviceAdminTexts) {
             if (lower.contains(matchText.lowercase(Locale.ROOT))) {
@@ -602,17 +631,37 @@ class MyAccessibilityService : AccessibilityService() {
 
     /**
      * Detect power menu / ultra power saving mode.
-     * Uses localized strings from BlockerPageUtils.HUAWEI_ULTRA_POWER_SAVING_TEXTS.
+     *
+     * Checks:
+     *  1. Class name patterns (powerdialog, shutdownactivity, globalactions, powermenu)
+     *  2. Package name patterns (some OEMs use dedicated packages for power dialogs)
+     *  3. Localized ultra power saving text (20 languages)
+     *
+     * Spaces are stripped from both the event text and the power saving strings
+     * so that "Ultra battery saver" matches "Ultra battery  saver" (double space
+     * from rendering) and "UltraBatterySaver" (no spaces from class name).
      */
     private fun isPowerMenu(className: String, packageName: String, text: String): Boolean {
         val lower = text.lowercase(Locale.ROOT).replace(" ", "")
         val lowerClass = className.lowercase(Locale.ROOT)
+        val lowerPkg = packageName.lowercase(Locale.ROOT)
 
-        // Detect power menu
+        // Detect power menu by class name
         if (lowerClass.contains("powerdialog") ||
             lowerClass.contains("shutdownactivity") ||
             lowerClass.contains("globalactions") ||
-            lowerClass.contains("powermenu")
+            lowerClass.contains("powermenu") ||
+            lowerClass.contains("shutdownthread") ||
+            lowerClass.contains("globalactionsdialog") ||
+            lowerClass.contains("globalactionsimpl")
+        ) {
+            return true
+        }
+
+        // Detect power menu by package name (OEM-specific power dialog packages)
+        if (lowerPkg.contains("shutdown") ||
+            lowerPkg.contains("powermenu") ||
+            lowerPkg.contains("globalactions")
         ) {
             return true
         }
