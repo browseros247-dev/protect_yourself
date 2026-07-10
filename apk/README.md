@@ -6,14 +6,16 @@ This directory contains pre-built, signed APKs of **Protect Yourself** for direc
 
 | File | Size | Package | Build Type | Description |
 |---|---|---|---|---|
-| `protect.yourself-v1.0.1-release.apk` | ~20 MB | `protect.yourself` | Release | Production-style build. **Recommended for installation.** |
-| `protect.yourself-v1.0.1-debug.apk` | ~28 MB | `protect.yourself` | Debug | Debug build with logging enabled. Larger due to unstripped debug info. |
+| `protect.yourself-v1.0.27-release.apk` | ~15 MB | `protect.yourself` | Release | Production-style build. **Recommended for installation.** Adds NopoX-style supported/unsupported browser blocking. |
+| `protect.yourself-v1.0.27-debug.apk` | ~22 MB | `protect.yourself` | Debug | Debug build with logging enabled. Larger due to unstripped debug info. |
+| `protect.yourself-v1.0.26-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (title-based + uninstall protection). |
+| `protect.yourself-v1.0.26-debug.apk` | ~22 MB | `protect.yourself` | Debug | Previous build debug. |
 
 Both APKs target:
 - **Min Android**: 8.0 (API 26)
 - **Target Android**: 15 (API 35)
 - **Compile SDK**: 35
-- **Version**: 1.0.0 (versionCode 1)
+- **Version**: 1.0.27 (versionCode 27)
 - **App label**: "Protect Yourself" (release) / "Protect Yourself DEBUG" (debug)
 
 ## Signing

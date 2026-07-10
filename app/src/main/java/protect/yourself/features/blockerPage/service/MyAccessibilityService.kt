@@ -60,6 +60,7 @@ class MyAccessibilityService : AccessibilityService() {
     private var isBlockNewInstallOn = false
     private var isBlockInAppBrowsersOn = false
     private var isBlockUnsupportedBrowsersOn = false
+    private var isMakeAnyBrowserSupportedOn = false
     private var isBlockSettingsByTitleOn = false
     private var isPreventUninstallOn = false
     private var isBlockPhoneRebootOn = false
@@ -70,6 +71,9 @@ class MyAccessibilityService : AccessibilityService() {
     private var cachedBlockedIntentNames: Set<String> = emptySet()
     private var isBlockPackageIntentOn = false
     private var isStopMeRunning = false
+
+    // PackageManager-level browser detection cache: pkg -> isBrowser
+    private val browserCache = mutableMapOf<String, Boolean>()
 
     private var lastBlockedPackage: String? = null
     private var lastBlockTimeMs: Long = 0
@@ -193,12 +197,17 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         // Block unsupported browsers
-        if (isBlockUnsupportedBrowsersOn &&
-            isBrowserPackage(packageName) &&
-            !cachedUnsupportedBrowserWhitelist.contains(packageName)
-        ) {
-            launchBlockActivity(packageName, "block_page_default_unsupported_browser_message")
-            return
+        // NopoX behavior: when this switch is ON, any browser NOT in the supported
+        // list AND NOT in the unsupported-browser whitelist gets blocked on launch.
+        // A "browser" is defined as an app that handles http/https URLs (via intent filter)
+        // OR matches known browser package signatures.
+        if (isBlockUnsupportedBrowsersOn && isBrowserPackageDetected(packageName)) {
+            val isSupported = cachedSupportedBrowsers.contains(packageName)
+            val isWhitelisted = cachedUnsupportedBrowserWhitelist.contains(packageName)
+            if (!isSupported && !isWhitelisted) {
+                launchBlockActivity(packageName, "block_page_default_unsupported_browser_message")
+                return
+            }
         }
 
         // Block in-app browsers
@@ -222,8 +231,16 @@ class MyAccessibilityService : AccessibilityService() {
     private fun handleContentChange(packageName: String, event: AccessibilityEvent) {
         if (!isPornBlockerOn) return
 
-        // Try to extract URL from browser address bar
-        if (cachedSupportedBrowsers.contains(packageName) || isBrowserPackage(packageName)) {
+        // Decide whether to attempt URL scraping on this package.
+        // NopoX behavior:
+        //  - Always scrape supported browsers (the default 11 + user-added entries)
+        //  - When MAKE_ANY_BROWSER_SUPPORTED is ON, also scrape any other browser
+        //    the user opens (in case the user added it but we don't have view IDs)
+        val isSupportedBrowser = cachedSupportedBrowsers.contains(packageName)
+        val shouldScrapeUrl = isSupportedBrowser ||
+            (isMakeAnyBrowserSupportedOn && isBrowserPackageDetected(packageName))
+
+        if (shouldScrapeUrl) {
             val url = extractUrlFromEvent(event, packageName)
             if (url != null && url.isNotBlank()) {
                 handleUrlDetected(packageName, url)
@@ -282,21 +299,30 @@ class MyAccessibilityService : AccessibilityService() {
 
     /**
      * Try to extract the URL from a browser address bar via accessibility node traversal.
+     *
+     * Strategy:
+     *  1. If we have known view IDs for this browser (e.g. com.android.chrome:id/url_bar),
+     *     use them to find the URL field directly (most accurate).
+     *  2. Fallback: search any EditText-like node with URL text — used for browsers
+     *     added via "Make any browser supported" that don't have known view IDs.
      */
     private fun extractUrlFromEvent(event: AccessibilityEvent, packageName: String): String? {
-        val viewIds = BlockerPageUtils.BROWSER_URL_VIEW_IDS[packageName] ?: return null
         val root = rootInActiveWindow ?: return null
+        val viewIds = BlockerPageUtils.BROWSER_URL_VIEW_IDS[packageName]
 
         try {
-            for (viewId in viewIds) {
-                val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
-                if (nodes != null && nodes.isNotEmpty()) {
-                    val node = nodes[0]
-                    val text = node.text?.toString() ?: continue
-                    if (text.isNotBlank()) return text
+            // Strategy 1: known view IDs
+            if (viewIds != null) {
+                for (viewId in viewIds) {
+                    val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
+                    if (nodes != null && nodes.isNotEmpty()) {
+                        val node = nodes[0]
+                        val text = node.text?.toString() ?: continue
+                        if (text.isNotBlank()) return text
+                    }
                 }
             }
-            // Fallback: search any EditText-like node with URL text
+            // Strategy 2: fallback — search any EditText-like node with URL text
             val fallbackUrl = findUrlInNode(root)
             if (fallbackUrl != null) return fallbackUrl
         } catch (t: Throwable) {
@@ -498,8 +524,46 @@ class MyAccessibilityService : AccessibilityService() {
         return false
     }
 
-    private fun isBrowserPackage(packageName: String): Boolean {
-        // Common browser signatures
+    /**
+     * Robust browser detection using PackageManager intent-filter inspection.
+     *
+     * An app is considered a browser if it declares an intent filter for
+     * `android.intent.action.VIEW` with category `android.intent.category.BROWSABLE`
+     * and scheme `http` or `https`.
+     *
+     * Falls back to package-name signature matching for older apps that may not
+     * declare the standard intent filter but are still browsers.
+     *
+     * Cached per-package for performance.
+     */
+    private fun isBrowserPackageDetected(packageName: String): Boolean {
+        if (packageName.isBlank()) return false
+        if (packageName == this.packageName) return false  // Don't block self
+        if (packageName == "com.android.systemui") return false
+
+        // Check cache first
+        browserCache[packageName]?.let { return it }
+
+        val isBrowser = try {
+            val pm = packageManager
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                data = android.net.Uri.parse("https://example.com")
+                addCategory(android.content.Intent.CATEGORY_BROWSABLE)
+            }
+            val resolved = pm.queryIntentActivities(intent, 0)
+            val isBrowserByIntentFilter = resolved.any { it.activityInfo.packageName == packageName }
+            isBrowserByIntentFilter || isBrowserByPackageSignature(packageName)
+        } catch (t: Throwable) {
+            Timber.v(t, "Browser detection failed for $packageName")
+            isBrowserByPackageSignature(packageName)
+        }
+
+        browserCache[packageName] = isBrowser
+        return isBrowser
+    }
+
+    private fun isBrowserByPackageSignature(packageName: String): Boolean {
+        // Common browser package signatures (fallback when intent filter check fails)
         return packageName.contains("browser") ||
             packageName.contains("chrome") ||
             packageName.contains("firefox") ||
@@ -508,7 +572,19 @@ class MyAccessibilityService : AccessibilityService() {
             packageName.contains("edge") ||
             packageName.contains("emmx") ||
             packageName.contains("vivaldi") ||
-            packageName.contains("duckduckgo")
+            packageName.contains("duckduckgo") ||
+            packageName.contains("samsung.android.app.sbrowser") ||
+            packageName.contains("sec.android.app.sbrowser") ||
+            packageName.contains("mi.globalbrowser") ||
+            packageName.contains("bromite") ||
+            packageName.contains("fennec") ||
+            packageName.contains("torbrowser") ||
+            packageName.contains("kiwibrowser")
+    }
+
+    private fun isBrowserPackage(packageName: String): Boolean {
+        // Legacy method kept for backward compatibility with other callers
+        return isBrowserPackageDetected(packageName)
     }
 
     // ===== Block activity launcher =====
@@ -556,6 +632,7 @@ class MyAccessibilityService : AccessibilityService() {
                 isBlockNewInstallOn = switchValues.isBlockNewInstallAppsSwitchOn()
                 isBlockInAppBrowsersOn = switchValues.isBlockInAppBrowsersSwitchOn()
                 isBlockUnsupportedBrowsersOn = switchValues.isBlockUnsupportedBrowsersSwitchOn()
+                isMakeAnyBrowserSupportedOn = switchValues.isMakeAnyBrowserSupportedSwitchOn()
                 isBlockSettingsByTitleOn = switchValues.isBlockSettingPageByTitleSwitchOn()
                 isPreventUninstallOn = switchValues.isPreventUninstallSwitchOn()
                 isBlockPhoneRebootOn = switchValues.isBlockPhoneRebootSwitchOn()
@@ -568,13 +645,12 @@ class MyAccessibilityService : AccessibilityService() {
                     .filter { it.isNotBlank() }
 
                 // Load package + intent name blocking data
-                val packageIntentSwitch = db.switchStatusDao().get("block_package_intent_switch")
-                isBlockPackageIntentOn = packageIntentSwitch?.asBoolean() ?: false
+                isBlockPackageIntentOn = switchValues.isBlockPackageIntentSwitchOn()
                 cachedBlockedPackageNames = db.selectedAppsListDao()
-                    .getSelectedByIdentifier("blocked_package_names")
+                    .getSelectedByIdentifier(SelectedAppListIdentifier.BLOCKED_PACKAGE_NAMES.value)
                     .map { it.packageName }.toSet()
                 cachedBlockedIntentNames = db.selectedKeywordDao()
-                    .getSelectedByIdentifier("blocked_intent_names")
+                    .getSelectedByIdentifier(SelectedKeywordIdentifier.BLOCKED_INTENT_NAMES.value)
                     .map { it.keyword }.toSet()
 
                 // Keywords
@@ -611,7 +687,10 @@ class MyAccessibilityService : AccessibilityService() {
                 Timber.i("Blocking config refreshed: ${cachedBlockKeywords.size} block keywords, " +
                     "${cachedWhitelistKeywords.size} whitelist keywords, " +
                     "${cachedBlockApps.size} block apps, " +
-                    "${cachedSupportedBrowsers.size} supported browsers")
+                    "${cachedSupportedBrowsers.size} supported browsers, " +
+                    "unsupportedBrowsersOn=$isBlockUnsupportedBrowsersOn, " +
+                    "makeAnyBrowserSupportedOn=$isMakeAnyBrowserSupportedOn, " +
+                    "packageIntentOn=$isBlockPackageIntentOn")
             } catch (t: Throwable) {
                 Timber.e(t, "Failed to refresh blocking config")
             }

@@ -34,6 +34,7 @@ object SwitchIdentifier {
 
     // Advanced
     const val BLOCK_UNSUPPORTED_BROWSERS_SWITCH = "block_unsupported_browsers_switch"
+    const val BLOCK_PACKAGE_INTENT_SWITCH = "block_package_intent_switch"
     const val VPN_SWITCH = "vpn_switch"
     const val VPN_NOTIFICATION_HIDE_SWITCH = "vpn_notification_hide_switch"
     const val BLOCK_NEW_INSTALL_APPS_SWITCH = "block_new_install_apps_switch"
@@ -101,6 +102,7 @@ object SwitchIdentifier {
         BLOCK_RECENT_APPS_SWITCH,
         BLOCK_SETTING_PAGE_BY_TITLE_SWITCH,
         BLOCK_UNSUPPORTED_BROWSERS_SWITCH,
+        BLOCK_PACKAGE_INTENT_SWITCH,
         VPN_SWITCH,
         VPN_NOTIFICATION_HIDE_SWITCH,
         BLOCK_NEW_INSTALL_APPS_SWITCH,

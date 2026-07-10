@@ -329,6 +329,8 @@ private fun HomeWithCategories(
                     onNavigate(SubPage.CategoryPage("Advanced Features", setOf(
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER,
+                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_PACKAGE_INTENT,
+                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.VPN,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.WHITELIST_VPN_APPS,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE,

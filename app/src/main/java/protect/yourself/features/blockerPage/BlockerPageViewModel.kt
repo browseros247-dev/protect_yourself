@@ -140,6 +140,7 @@ class BlockerPageViewModel(
         // BLOCK_NOTIFICATION_DRAWER + BLOCK_RECENT_APPS removed from UI
         SwitchIdentifier.BLOCK_PHONE_REBOOT_SWITCH -> switchValues.isBlockPhoneRebootSwitchOn()
         SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH -> switchValues.isBlockUnsupportedBrowsersSwitchOn()
+        SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH -> switchValues.isBlockPackageIntentSwitchOn()
         SwitchIdentifier.VPN_SWITCH -> switchValues.isVpnSwitchOn()
         SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH -> switchValues.isVpnNotificationHideSwitchOn()
         SwitchIdentifier.BLOCK_NEW_INSTALL_APPS_SWITCH -> switchValues.isBlockNewInstallAppsSwitchOn()
@@ -352,7 +353,7 @@ class BlockerPageViewModel(
                             key = "blocked_pkg_${System.currentTimeMillis()}",
                             packageName = input,
                             appName = input,
-                            identifier = "blocked_package_names",
+                            identifier = protect.yourself.database.selectedApps.SelectedAppListIdentifier.BLOCKED_PACKAGE_NAMES.value,
                             isSelected = true
                         )
                         db.selectedAppsListDao().upsert(item)
@@ -362,14 +363,14 @@ class BlockerPageViewModel(
                         val item = protect.yourself.database.selectedKeywords.SelectedKeywordItemModel(
                             key = "blocked_intent_${System.currentTimeMillis()}",
                             keyword = input,
-                            identifier = "blocked_intent_names",
+                            identifier = protect.yourself.database.selectedKeywords.SelectedKeywordIdentifier.BLOCKED_INTENT_NAMES.value,
                             isSelected = true
                         )
                         db.selectedKeywordDao().upsert(item)
                         _navigation.emit(BlockerPageNavigation.ShowToast("Intent/class '$input' will be blocked"))
                     }
                     // Enable the package+intent switch
-                    switchValues.storeSwitchStatus("block_package_intent_switch", true)
+                    switchValues.storeSwitchStatus(SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH, true)
                     // Refresh accessibility service config
                     MyAccessibilityService.instance?.refreshBlockingConfig()
                 }
@@ -434,8 +435,9 @@ class BlockerPageViewModel(
                 }
                 SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS -> BlockerPageNavigation.OpenSelectAppPage("Blocked Titles", SelectedAppListIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_APPS)
                 SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP -> BlockerPageNavigation.OpenSelectAppPage("Blocklist Whitelist Detected Apps", SelectedAppListIdentifier.BLOCK_WHITELIST_DETECTED_APPS)
-                // NEW: Package + Intent name blocking input
-                SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER -> {
+
+                // Package + Intent name blocking input (NEW feature)
+                SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK -> {
                     BlockerPageNavigation.EditTextField(
                         "Add Package/Intent to Block",
                         "",
@@ -549,9 +551,10 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS, "Manage blocked titles", info = "View and remove blocked titles", actionLabel = "Manage"))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_ADVANCE_FEATURE, "Advanced feature", isSection = true))
-        // NEW: Package + Intent name blocking
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS, "Package + Intent Blocking", info = "Block apps by package name (e.g. com.example.app) or intent/class name", switchKey = "block_package_intent_switch"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Add package/intent to block", info = "Enter a package name or class name to block", actionLabel = "Add"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS, "Block unsupported browsers", info = "Block any browser that isn't in your supported list or whitelist", switchKey = SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Whitelist unsupported browsers", info = "Allow specific browsers to bypass the unsupported-browser block", actionLabel = "Manage"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_PACKAGE_INTENT, "Package + Intent Blocking", info = "Block apps by package name (e.g. com.example.app) or intent/class name", switchKey = SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK, "Add package/intent to block", info = "Enter a package name or class name to block", actionLabel = "Add"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN, "VPN (DNS blocking)", info = "Block adult content at network level", switchKey = SwitchIdentifier.VPN_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE, "VPN connection type", info = "Normal=Cloudflare, Powerful=AdGuard, Custom=user DNS", actionLabel = "Normal"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_VPN_APPS, "Whitelist VPN apps", info = "Apps that bypass VPN", actionLabel = "Manage"))

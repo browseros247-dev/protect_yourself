@@ -94,6 +94,9 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
     suspend fun isBlockUnsupportedBrowsersSwitchOn(): Boolean =
         dao.get(SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH)?.asBoolean() ?: false
 
+    suspend fun isBlockPackageIntentSwitchOn(): Boolean =
+        dao.get(SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH)?.asBoolean() ?: false
+
     suspend fun isVpnSwitchOn(): Boolean =
         dao.get(SwitchIdentifier.VPN_SWITCH)?.asBoolean() ?: false
 

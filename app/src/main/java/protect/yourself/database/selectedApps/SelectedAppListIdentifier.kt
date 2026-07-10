@@ -17,7 +17,8 @@ enum class SelectedAppListIdentifier(val value: String) {
     BLOCK_NEW_INSTALL_APPS("block_new_install_apps_item"),
     WHITELIST_UNSUPPORTED_BROWSER("whitelist_unsupported_browser"),
     WHITELIST_STOP_ME_APPS("whitelist_stop_me_apps"),
-    BLOCK_WHITELIST_DETECTED_APPS("block_whitelist_detected_apps");
+    BLOCK_WHITELIST_DETECTED_APPS("block_whitelist_detected_apps"),
+    BLOCKED_PACKAGE_NAMES("blocked_package_names");
 
     companion object {
         fun fromValue(value: String): SelectedAppListIdentifier? =
