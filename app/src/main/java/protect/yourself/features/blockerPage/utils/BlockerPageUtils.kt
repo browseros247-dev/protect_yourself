@@ -205,6 +205,81 @@ class BlockerPageUtils {
         return DeviceBrandIdentifiers.detect()
     }
 
+    /**
+     * Get the SafeSearch-enforced URL for a given search-engine URL.
+     *
+     * NopoX behavior: when SafeSearch switch is ON, navigating to an unsafe
+     * search engine URL triggers a redirect to the safe variant:
+     *   - www.google.com  → forcesafesearch.google.com
+     *   - www.bing.com     → strict.bing.com
+     *   - www.youtube.com  → restrict.youtube.com
+     *   - duckduckgo.com   → safe.duckduckgo.com
+     *
+     * The path and query are preserved so the user's search query is kept.
+     *
+     * @return the safe URL, or null if:
+     *          - URL is not a recognised search engine
+     *          - URL is already on the safe variant (no redirect loop)
+     *          - URL already has a safe=active / safe=strict parameter
+     */
+    fun getSafeSearchUrl(url: String): String? {
+        if (url.isBlank()) return null
+        val lower = url.lowercase(Locale.ROOT)
+
+        // Already safe — don't redirect (avoid loop)
+        if (isSafeSearchUrl(lower)) return null
+
+        try {
+            val uri = Uri.parse(url)
+            val host = uri.host?.lowercase() ?: return null
+            val safeHost = SAFE_SEARCH_HOST_MAP[host] ?: return null
+
+            // Build safe URL preserving path + query + fragment
+            val path = uri.path ?: ""
+            val query = uri.query ?: ""
+            val fragment = uri.fragment ?: ""
+            val safeUrl = StringBuilder("https://$safeHost")
+            if (path.isNotBlank()) safeUrl.append(path)
+            if (query.isNotBlank()) safeUrl.append("?").append(query)
+            if (fragment.isNotBlank()) safeUrl.append("#").append(fragment)
+            return safeUrl.toString()
+        } catch (t: Throwable) {
+            return null
+        }
+    }
+
+    /**
+     * Check if a URL is already SafeSearch-enforced (no redirect needed).
+     *
+     * Returns true if the URL:
+     *  - Contains safe=active (Google SafeSearch parameter)
+     *  - Contains safe=strict (Bing strict mode)
+     *  - Is on forcesafesearch.google.com
+     *  - Is on strict.bing.com
+     *  - Is on restrict.youtube.com
+     *  - Is on safe.duckduckgo.com
+     */
+    fun isSafeSearchUrl(url: String): Boolean {
+        val lower = url.lowercase(Locale.ROOT)
+        return lower.contains("safe=active") ||
+            lower.contains("safe=strict") ||
+            lower.contains("forcesafesearch.google.com") ||
+            lower.contains("strict.bing.com") ||
+            lower.contains("restrict.youtube.com") ||
+            lower.contains("safe.duckduckgo.com")
+    }
+
+    /**
+     * Check if a URL belongs to a search engine that SafeSearch can enforce.
+     */
+    fun isSearchEngineUrl(url: String): Boolean {
+        val lower = url.lowercase(Locale.ROOT)
+        return lower.contains("google.com") ||
+            lower.contains("bing.com") ||
+            lower.contains("youtube.com") ||
+            lower.contains("duckduckgo.com")
+    }
+
     companion object {
         @Volatile
         private var instance: BlockerPageUtils? = null
@@ -214,6 +289,44 @@ class BlockerPageUtils {
                 instance ?: BlockerPageUtils().also { instance = it }
             }
         }
+
+        /**
+         * Search engine host → SafeSearch-enforced host mapping.
+         *
+         * Used by getSafeSearchUrl() to build redirect URLs.
+         *
+         * These safe variants enforce SafeSearch at the DNS/CDN level:
+         *  - forcesafesearch.google.com — Google SafeSearch (always active)
+         *  - strict.bing.com            — Bing Strict SafeSearch
+         *  - restrict.youtube.com       — YouTube Restricted Mode
+         *  - safe.duckduckgo.com        — DuckDuckGo Safe Search
+         *
+         * When the VPN is also ON, the family DNS resolvers
+         * (Cloudflare 1.1.1.3 / AdGuard 94.140.14.15) enforce SafeSearch
+         * at the DNS level too — providing a second independent layer.
+         */
+        val SAFE_SEARCH_HOST_MAP: Map<String, String> = mapOf(
+            // Google
+            "www.google.com" to "forcesafesearch.google.com",
+            "google.com" to "forcesafesearch.google.com",
+            "m.google.com" to "forcesafesearch.google.com",
+            "www.google.co.in" to "forcesafesearch.google.com",
+            "www.google.co.uk" to "forcesafesearch.google.com",
+            "www.google.de" to "forcesafesearch.google.com",
+            "www.google.fr" to "forcesafesearch.google.com",
+            "www.google.jp" to "forcesafesearch.google.com",
+            "www.google.com.br" to "forcesafesearch.google.com",
+            // Bing
+            "www.bing.com" to "strict.bing.com",
+            "bing.com" to "strict.bing.com",
+            // YouTube
+            "www.youtube.com" to "restrict.youtube.com",
+            "youtube.com" to "restrict.youtube.com",
+            "m.youtube.com" to "restrict.youtube.com",
+            // DuckDuckGo
+            "duckduckgo.com" to "safe.duckduckgo.com",
+            "www.duckduckgo.com" to "safe.duckduckgo.com"
+        )
 
         /**
          * Text IDs in browser address bars across supported browsers.

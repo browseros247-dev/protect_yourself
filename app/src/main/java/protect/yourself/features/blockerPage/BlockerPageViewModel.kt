@@ -540,7 +540,7 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKER_CUSTOM_KEYWORD_WEBSITE, "Blocklist keywords", info = "Add/remove keywords that trigger block", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKLIST_APPS, "Blocklist apps", info = "Apps that get blocked on launch", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_ALL_WEBSITE, "Block all websites", info = "Block every URL (whitelist overrides)", switchKey = SwitchIdentifier.BLOCK_ALL_WEBSITE_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.SAFE_SEARCH, "SafeSearch enforcement", info = "Force SafeSearch on Google/Bing", switchKey = SwitchIdentifier.SAFE_SEARCH_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.SAFE_SEARCH, "SafeSearch enforcement", info = "Redirect Google/Bing/YouTube/DuckDuckGo to SafeSearch variants. VPN adds DNS-level enforcement.", switchKey = SwitchIdentifier.SAFE_SEARCH_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_IMAGE_VIDEO_SEARCH, "Block image and video search", info = "Block image/video search results", switchKey = SwitchIdentifier.BLOCK_IMAGE_VIDEO_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.MAKE_ANY_BROWSER_SUPPORTED, "Make any browser supported", info = "Add any browser to supported list", switchKey = SwitchIdentifier.MAKE_ANY_BROWSER_SUPPORTED_SWITCH))
 

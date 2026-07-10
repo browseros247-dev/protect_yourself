@@ -22,7 +22,7 @@
     <string name="block_page_default_pu_message">Your prevent uninstall switch is on.</string>
     <string name="block_page_default_stop_me_message">Your focus mode session is running, and this app is not on your whitelist of focus mode apps.</string>
     <string name="block_page_default_system_keyword_message">Your title-based block setting is on.</string>
-    <string name="block_page_default_safe_search_message">SafeSearch is enabled. Turn it off in settings to access unsafe search results.</string>
+    <string name="block_page_default_safe_search_message">SafeSearch is enabled. You are being redirected to the SafeSearch variant of this search engine.</string>
     <string name="block_page_default_unsupported_browser_message">Your block unsupported browsers switch is on, and this app is not in your whitelist unsupported browsers list.</string>
     <string name="block_phone_reboot_bw_message">Your block phone reboot switch is on.</string>
     <string name="block_recent_apps_bw_message">Your block recent apps screen switch is on.</string>

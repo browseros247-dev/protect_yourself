@@ -78,6 +78,11 @@ class MyAccessibilityService : AccessibilityService() {
     private var lastBlockedPackage: String? = null
     private var lastBlockTimeMs: Long = 0
 
+    // SafeSearch redirect throttle — prevents redirect loops + rapid-fire intents
+    private var lastSafeSearchPackage: String? = null
+    private var lastSafeSearchTimeMs: Long = 0
+    private var lastSafeSearchUrl: String? = null
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         Timber.i("Accessibility service connected")
@@ -286,11 +291,65 @@ class MyAccessibilityService : AccessibilityService() {
 
     // ===== SafeSearch enforcement =====
 
+    /**
+     * NopoX-style SafeSearch enforcement.
+     *
+     * When the SafeSearch switch is ON and the user navigates to an unsafe
+     * search engine URL (Google, Bing, YouTube, DuckDuckGo), the service:
+     *   1. Presses HOME to dismiss the unsafe page
+     *   2. Opens the SafeSearch-enforced variant URL in the same browser
+     *
+     * Safe variant hosts:
+     *   - www.google.com  → forcesafesearch.google.com
+     *   - www.bing.com     → strict.bing.com
+     *   - www.youtube.com  → restrict.youtube.com
+     *   - duckduckgo.com   → safe.duckduckgo.com
+     *
+     * The path and query are preserved so the user's search query is kept.
+     *
+     * Throttle: 2-second cooldown per package+URL to prevent redirect loops
+     * and rapid-fire intents. The safe variant URL itself is excluded from
+     * redirect (via isSafeSearchUrl check in getSafeSearchUrl).
+     *
+     * Second layer: when VPN is also ON, the family DNS resolvers
+     * (Cloudflare 1.1.1.3 / AdGuard 94.140.14.15) enforce SafeSearch at
+     * the DNS level — this accessibility redirect is the primary layer
+     * when VPN is off, and a backup when VPN is on.
+     */
     private fun enforceSafeSearch(packageName: String, url: String) {
-        // Original: redirect www.google.com -> forcesafesearch.google.com
-        // We can't modify the URL in the browser, so we block and show message
-        val lower = url.lowercase(Locale.ROOT)
-        if (lower.contains("google.com/search") && !lower.contains("safe=active")) {
+        val utils = BlockerPageUtils.getInstance()
+        val safeUrl = utils.getSafeSearchUrl(url) ?: return  // null = not a search engine / already safe
+
+        // Throttle: 2-second cooldown per package+URL to prevent loops
+        val now = System.currentTimeMillis()
+        if (packageName == lastSafeSearchPackage &&
+            url == lastSafeSearchUrl &&
+            now - lastSafeSearchTimeMs < 2000
+        ) {
+            return
+        }
+        lastSafeSearchPackage = packageName
+        lastSafeSearchTimeMs = now
+        lastSafeSearchUrl = url
+
+        Timber.i("SafeSearch redirect: $url → $safeUrl (pkg=$packageName)")
+
+        // 1. Press HOME to dismiss the unsafe search page
+        performGlobalAction(GLOBAL_ACTION_HOME)
+
+        // 2. Open the SafeSearch-enforced URL in the same browser
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(safeUrl)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                // Open in the same browser the user was using
+                setPackage(packageName)
+            }
+            startActivity(intent)
+        } catch (t: Throwable) {
+            // Fallback: if we can't open the safe URL in the same browser
+            // (e.g. browser doesn't handle the intent), show block screen
+            Timber.w(t, "SafeSearch redirect failed — falling back to block screen")
             launchBlockActivity(packageName, "block_page_default_safe_search_message")
         }
     }

@@ -102,6 +102,11 @@ class MyVpnService : VpnService() {
                 }
 
                 // 2. Select DNS based on connection type
+                // Note: NORMAL (Cloudflare Family 1.1.1.3) and POWERFUL (AdGuard
+                // Family 94.140.14.15) both enforce SafeSearch at the DNS level
+                // for Google, Bing, YouTube, and DuckDuckGo. This provides a
+                // second independent layer of SafeSearch enforcement alongside
+                // the accessibility-level URL redirect.
                 val (firstDns, secondDns) = when (currentConnectionType) {
                     VpnConnectionTypeIdentifiers.NORMAL -> {
                         DefaultDnsPresets.CLOUDFLARE_FAMILY.firstDns to
