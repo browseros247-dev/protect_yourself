@@ -384,7 +384,7 @@ class MyVpnService : VpnService() {
             val responseBuffer = ByteArray(MAX_PACKET_SIZE)
             val response = DatagramPacket(responseBuffer, responseBuffer.size)
             socket.receive(response)
-            response.copyOfRange(0, response.length)
+            response.data.copyOfRange(0, response.length)
         } catch (t: Throwable) {
             Timber.w(t, "DNS forward failed to $upstream")
             null
