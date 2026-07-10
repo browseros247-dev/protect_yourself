@@ -25,17 +25,13 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -48,7 +44,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,6 +71,10 @@ import timber.log.Timber
 
 /**
  * ViewModel for App Lock screen (unlock).
+ *
+ * FIX: Added onInputComplete() method that accepts the full input directly,
+ * avoiding the Compose state update race condition where tryUnlock() read
+ * the old state before the new input was committed.
  */
 class AppLockViewModel(
     private val context: android.content.Context,
@@ -127,6 +126,9 @@ class AppLockViewModel(
         _state.update { it.copy(input = "", error = null) }
     }
 
+    /**
+     * Try unlock with the CURRENT state input.
+     */
     fun tryUnlock(onUnlocked: () -> Unit) {
         val input = _state.value.input
         if (input.isBlank()) return
@@ -147,6 +149,43 @@ class AppLockViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Try unlock with EXPLICIT input — avoids state race condition.
+     * Use this when the input is set + unlock should happen in the same call
+     * (e.g. 4th PIN digit, 4th pattern dot).
+     */
+    fun tryUnlockWithInput(input: String, onUnlocked: () -> Unit) {
+        if (input.isBlank()) return
+
+        // Update state with the new input (for visual feedback)
+        _state.update { it.copy(input = input, error = null) }
+
+        viewModelScope.launch {
+            val success = manager.verify(input)
+            if (success) {
+                _state.update { it.copy(isUnlocked = true, error = null) }
+                onUnlocked()
+            } else {
+                val attempts = _state.value.attempts + 1
+                _state.update {
+                    it.copy(
+                        error = "Incorrect. Attempt #$attempts",
+                        input = "",
+                        attempts = attempts
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Unlock via biometric — no password needed.
+     */
+    fun biometricUnlock(onUnlocked: () -> Unit) {
+        _state.update { it.copy(isUnlocked = true, error = null) }
+        onUnlocked()
     }
 
     companion object {
@@ -173,9 +212,6 @@ data class AppLockState(
 
 /**
  * AppLockScreen — lock screen shown when app comes to foreground.
- *
- * Shows PIN pad, password field, or pattern grid depending on lock type.
- * Supports biometric (Touch ID) if enabled.
  */
 @Composable
 fun AppLockScreen(onUnlocked: () -> Unit) {
@@ -184,7 +220,7 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
         factory = AppLockViewModel.factory(context, AppDatabase.getInstance(context))
     )
     val state by viewModel.state.collectAsState()
-    val scope = rememberCoroutineScope()
+    var biometricShown by remember { mutableStateOf(false) }
 
     if (state.isLoading) {
         Box(
@@ -196,19 +232,17 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
         return
     }
 
-    // Auto-launch biometric prompt if Touch ID is enabled
+    // Auto-launch biometric prompt ONCE if Touch ID is enabled
     LaunchedEffect(state.touchIdEnabled, state.lockType) {
-        if (state.touchIdEnabled && state.lockType != AppLockType.OFF && !state.isUnlocked) {
-            launchBiometricPrompt(context as androidx.fragment.app.FragmentActivity,
-                onSuccess = {
-                    viewModel.tryUnlock { onUnlocked() }
-                    // Biometric succeeds → unlock directly
-                    onUnlocked()
-                },
-                onFailure = {
-                    // Fall back to manual entry
-                }
-            )
+        if (state.touchIdEnabled && state.lockType != AppLockType.OFF && !state.isUnlocked && !biometricShown) {
+            biometricShown = true
+            try {
+                launchBiometricPrompt(
+                    context as androidx.fragment.app.FragmentActivity,
+                    onSuccess = { viewModel.biometricUnlock(onUnlocked) },
+                    onFailure = { /* Fall back to manual entry */ }
+                )
+            } catch (_: Throwable) {}
         }
     }
 
@@ -220,9 +254,8 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Lock icon
         Icon(
-            imageVector = androidx.compose.material.icons.Icons.Filled.Lock,
+            imageVector = Icons.Filled.Lock,
             contentDescription = null,
             tint = BrandOrange,
             modifier = Modifier.size(48.dp)
@@ -240,18 +273,14 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
         Spacer(modifier = Modifier.height(32.dp))
 
         when (state.lockType) {
-            AppLockType.PIN -> PinPadUI(state, viewModel) { viewModel.tryUnlock(onUnlocked) }
-            AppLockType.PASSWORD -> PasswordUI(state, viewModel) { viewModel.tryUnlock(onUnlocked) }
-            AppLockType.PATTERN -> PatternUI(state, viewModel) { viewModel.tryUnlock(onUnlocked) }
-            AppLockType.OFF -> {
-                // Should not reach here — lock screen only shows when lock is enabled
-                Text("No lock enabled")
-            }
+            AppLockType.PIN -> PinPadUI(state, viewModel, onUnlocked)
+            AppLockType.PASSWORD -> PasswordUI(state, viewModel, onUnlocked)
+            AppLockType.PATTERN -> PatternUI(state, viewModel, onUnlocked)
+            AppLockType.OFF -> { Text("No lock enabled") }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Error message
         state.error?.let { err ->
             Text(
                 text = err,
@@ -262,14 +291,17 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Biometric button (if Touch ID enabled)
+        // Biometric button
         if (state.touchIdEnabled) {
             Button(
                 onClick = {
-                    launchBiometricPrompt(context as androidx.fragment.app.FragmentActivity,
-                        onSuccess = { onUnlocked() },
-                        onFailure = {}
-                    )
+                    try {
+                        launchBiometricPrompt(
+                            context as androidx.fragment.app.FragmentActivity,
+                            onSuccess = { viewModel.biometricUnlock(onUnlocked) },
+                            onFailure = {}
+                        )
+                    } catch (_: Throwable) {}
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = BrandOrange)
             ) {
@@ -280,7 +312,7 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
             Spacer(modifier = Modifier.height(16.dp))
         }
 
-        // Forgot password (if not disabled)
+        // Forgot password
         if (!state.forgotPasswordDisabled) {
             TextButton(onClick = {
                 val intent = Intent(Intent.ACTION_SENDTO).apply {
@@ -300,7 +332,7 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
 private fun PinPadUI(
     state: AppLockState,
     viewModel: AppLockViewModel,
-    onUnlock: () -> Unit
+    onUnlocked: () -> Unit
 ) {
     // PIN dots display
     Row(
@@ -333,22 +365,30 @@ private fun PinPadUI(
         items(9) { index ->
             val num = index + 1
             KeypadButton(num.toString()) {
-                if (state.input.length < 4) {
-                    viewModel.onInputChange(state.input + num.toString())
-                    if (state.input.length + 1 == 4) {
-                        // Auto-unlock on 4th digit
-                        viewModel.onInputChange(state.input + num.toString())
-                        onUnlock()
+                val newInput = state.input + num.toString()
+                if (newInput.length <= 4) {
+                    if (newInput.length == 4) {
+                        // Auto-unlock — use tryUnlockWithInput to avoid race condition
+                        viewModel.tryUnlockWithInput(newInput, onUnlocked)
+                    } else {
+                        viewModel.onInputChange(newInput)
                     }
                 }
             }
         }
         item { Spacer(modifier = Modifier) }
-        item { KeypadButton("0") {
-            if (state.input.length < 4) {
-                viewModel.onInputChange(state.input + "0")
+        item {
+            KeypadButton("0") {
+                val newInput = state.input + "0"
+                if (newInput.length <= 4) {
+                    if (newInput.length == 4) {
+                        viewModel.tryUnlockWithInput(newInput, onUnlocked)
+                    } else {
+                        viewModel.onInputChange(newInput)
+                    }
+                }
             }
-        }}
+        }
         item {
             KeypadButton("⌫") {
                 if (state.input.isNotEmpty()) {
@@ -383,7 +423,7 @@ private fun KeypadButton(text: String, onClick: () -> Unit) {
 private fun PasswordUI(
     state: AppLockState,
     viewModel: AppLockViewModel,
-    onUnlock: () -> Unit
+    onUnlocked: () -> Unit
 ) {
     OutlinedTextField(
         value = state.input,
@@ -399,7 +439,7 @@ private fun PasswordUI(
     Spacer(modifier = Modifier.height(16.dp))
 
     Button(
-        onClick = onUnlock,
+        onClick = { viewModel.tryUnlock(onUnlocked) },
         enabled = state.input.length >= 6,
         modifier = Modifier.fillMaxWidth(),
         colors = ButtonDefaults.buttonColors(containerColor = BrandOrange)
@@ -412,9 +452,9 @@ private fun PasswordUI(
 private fun PatternUI(
     state: AppLockState,
     viewModel: AppLockViewModel,
-    onUnlock: () -> Unit
+    onUnlocked: () -> Unit
 ) {
-    val selectedDots = state.input.map { it.digitToInt() }
+    val selectedDots = state.input.mapNotNull { it.digitToIntOrNull() }
 
     Box(
         modifier = Modifier
@@ -445,10 +485,11 @@ private fun PatternUI(
                             CircleShape
                         )
                         .clickable {
-                            viewModel.addPatternDot(dotNum)
-                            // Auto-unlock if 4+ dots
-                            if (state.input.length + 1 >= 4) {
-                                onUnlock()
+                            val newInput = state.input + dotNum.toString()
+                            viewModel.onInputChange(newInput)
+                            // Auto-unlock at 4+ dots — use tryUnlockWithInput
+                            if (newInput.length >= 4) {
+                                viewModel.tryUnlockWithInput(newInput, onUnlocked)
                             }
                         },
                     contentAlignment = Alignment.Center
@@ -491,7 +532,6 @@ fun launchBiometricPrompt(
 
             override fun onAuthenticationFailed() {
                 Timber.w("Biometric authentication failed")
-                // Don't call onFailure here — user gets another attempt
             }
         }
     )
@@ -499,7 +539,7 @@ fun launchBiometricPrompt(
     val info = BiometricPrompt.PromptInfo.Builder()
         .setTitle("Unlock Protect Yourself")
         .setSubtitle("Use your fingerprint or face to unlock")
-        .setNegativeButtonText("Use ${"PIN/password".lowercase()} instead")
+        .setNegativeButtonText("Use PIN/password instead")
         .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK)
         .build()
 
@@ -520,4 +560,3 @@ fun isBiometricAvailable(context: android.content.Context): Boolean {
         BiometricManager.Authenticators.BIOMETRIC_WEAK
     ) == BiometricManager.BIOMETRIC_SUCCESS
 }
-

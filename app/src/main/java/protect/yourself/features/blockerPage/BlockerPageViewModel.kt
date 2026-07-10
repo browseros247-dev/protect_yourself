@@ -176,9 +176,24 @@ class BlockerPageViewModel(
                 return@launch
             }
 
-            // SET_APP_LOCK should open App Lock setup page
+            // SET_APP_LOCK ON → open App Lock setup page
             if (switchKey == SwitchIdentifier.SET_APP_LOCK_SWITCH && newValue) {
                 _navigation.emit(BlockerPageNavigation.OpenAppLockSetup)
+                return@launch
+            }
+
+            // SET_APP_LOCK OFF → disable lock entirely (clears hash + type + touch ID)
+            if (switchKey == SwitchIdentifier.SET_APP_LOCK_SWITCH && !newValue) {
+                // Clear lock type, stored hash, and touch ID directly in DB
+                db.switchStatusDao().upsert(protect.yourself.database.switchStatus.SwitchStatusItemModel(
+                    key = "app_lock_type", value = "0", type = "long"
+                ))
+                db.switchStatusDao().upsert(protect.yourself.database.switchStatus.SwitchStatusItemModel(
+                    key = "app_lock_stored_hash", value = "", type = "string"
+                ))
+                switchValues.storeSwitchStatus(SwitchIdentifier.TOUCH_ID_SWITCH, false)
+                _navigation.emit(BlockerPageNavigation.ShowToast("App lock disabled"))
+                // Return here — don't fall through to normal toggle
                 return@launch
             }
 
