@@ -134,9 +134,7 @@ class BlockerPageViewModel(
 
     private suspend fun loadSwitchValue(key: String): Boolean = when (key) {
         SwitchIdentifier.PORN_BLOCKER_SWITCH -> switchValues.isPornBlockerSwitchOn()
-        SwitchIdentifier.BLOCK_ALL_WEBSITE_SWITCH -> switchValues.isBlockAllWebsiteSwitchOn()
         SwitchIdentifier.SAFE_SEARCH_SWITCH -> switchValues.isSafeSearchSwitchOn()
-        SwitchIdentifier.BLOCK_IMAGE_VIDEO_SWITCH -> switchValues.isBlockImageVideoSwitchOn()
         SwitchIdentifier.MAKE_ANY_BROWSER_SUPPORTED_SWITCH -> switchValues.isMakeAnyBrowserSupportedSwitchOn()
         SwitchIdentifier.PREVENT_UNINSTALL_SWITCH -> switchValues.isPreventUninstallSwitchOn()
         // BLOCK_NOTIFICATION_DRAWER + BLOCK_RECENT_APPS removed from UI
@@ -461,7 +459,6 @@ class BlockerPageViewModel(
                 // App picker pages
                 SettingPageItemIdentifiers.BLOCKLIST_APPS -> BlockerPageNavigation.OpenSelectAppPage("Blocklist Apps", SelectedAppListIdentifier.BLOCK_APPS)
                 SettingPageItemIdentifiers.SUPPORTED_BROWSERS -> BlockerPageNavigation.OpenSelectAppPage("Supported Browsers", SelectedAppListIdentifier.SUPPORTED_BROWSER_APPS)
-                SettingPageItemIdentifiers.SUPPORTED_SOCIAL_MEDIA -> BlockerPageNavigation.OpenSelectAppPage("Supported Social Media", SelectedAppListIdentifier.SUPPORTED_SOCIAL_MEDIA_APPS)
                 SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER -> BlockerPageNavigation.OpenSelectAppPage("Whitelist Browsers", SelectedAppListIdentifier.WHITELIST_UNSUPPORTED_BROWSER)
                 SettingPageItemIdentifiers.WHITELIST_VPN_APPS -> BlockerPageNavigation.OpenSelectAppPage("VPN Whitelist Apps", SelectedAppListIdentifier.VPN_WHITELIST_APPS)
                 SettingPageItemIdentifiers.BLOCK_IN_APP_BROWSERS -> BlockerPageNavigation.OpenSelectAppPage("Block In-App Browsers", SelectedAppListIdentifier.BLOCK_IN_APP_BROWSER_APPS)
@@ -572,13 +569,10 @@ class BlockerPageViewModel(
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_CONTENT_BLOCKING, "Content Blocking", isSection = true))
         add(SettingPageItemModel(SettingPageItemIdentifiers.SUPPORTED_BROWSERS, "Supported browsers", info = "Browsers where app can block content", actionLabel = "Manage"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.SUPPORTED_SOCIAL_MEDIA, "Supported social media", info = "Social apps where app can block searches", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.PORN_BLOCKER, "Porn blocker", info = "Block content based on keyword list", switchKey = SwitchIdentifier.PORN_BLOCKER_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKER_CUSTOM_KEYWORD_WEBSITE, "Blocklist keywords", info = "Add/remove keywords that trigger block", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKLIST_APPS, "Blocklist apps", info = "Apps that get blocked on launch", actionLabel = "Manage"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_ALL_WEBSITE, "Block all websites", info = "Block every URL (whitelist overrides)", switchKey = SwitchIdentifier.BLOCK_ALL_WEBSITE_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.SAFE_SEARCH, "SafeSearch enforcement", info = "Redirect Google/Bing/YouTube/DuckDuckGo to SafeSearch variants. VPN adds DNS-level enforcement.", switchKey = SwitchIdentifier.SAFE_SEARCH_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_IMAGE_VIDEO_SEARCH, "Block image and video search", info = "Block image/video search results", switchKey = SwitchIdentifier.BLOCK_IMAGE_VIDEO_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.MAKE_ANY_BROWSER_SUPPORTED, "Make any browser supported", info = "Add any browser to supported list", switchKey = SwitchIdentifier.MAKE_ANY_BROWSER_SUPPORTED_SWITCH))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_UNINSTALL_PROTECTION, "Uninstall Protection", isSection = true))
@@ -604,6 +598,8 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKED_SCREEN_COUNTDOWN, "Blocked screen countdown", info = "Require waiting N seconds before Close (3-300)", actionLabel = "Off"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.CUSTOM_REDIRECT_URL_APP, "Custom redirect URL", info = "URL to open when user taps Close", actionLabel = "None"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP, "Blocklist whitelist detected apps", info = "Apps detected via accessibility events", actionLabel = "Manage"))
+
+        add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_APP_LOCK, "App Lock", isSection = true))
         add(SettingPageItemModel(SettingPageItemIdentifiers.SET_APP_LOCK, "App lock", info = "Require PIN/password/pattern to open app", switchKey = SwitchIdentifier.SET_APP_LOCK_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.TOUCH_ID, "Touch ID (biometric)", info = "Use fingerprint/face to unlock (configure in App Lock)", switchKey = SwitchIdentifier.TOUCH_ID_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.DISABLE_FORGOT_PASSWORD, "Disable Forgot Password", info = "Hide forgot password option (configure in App Lock)", switchKey = SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH))

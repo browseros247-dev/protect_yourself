@@ -10,9 +10,7 @@ package protect.yourself.database.switchStatus
 object SwitchIdentifier {
     // Content blocking
     const val PORN_BLOCKER_SWITCH = "porn_blocker_switch"
-    const val BLOCK_ALL_WEBSITE_SWITCH = "block_all_website_switch"
     const val SAFE_SEARCH_SWITCH = "safe_search_switch"
-    const val BLOCK_IMAGE_VIDEO_SWITCH = "block_image_video_switch"
     const val MAKE_ANY_BROWSER_SUPPORTED_SWITCH = "make_any_browser_supported_switch"
 
     // Insta/YT/Social
@@ -69,7 +67,6 @@ object SwitchIdentifier {
     // Stop Me
     const val STOP_ME_WHITELIST_APPS_SET = "stop_me_whitelist_apps_set"
     const val SUPPORTED_BROWSER_DEFAULT_APP_SET = "supported_browser_default_app_set"
-    const val SUPPORTED_SOCIAL_MEDIA_DEFAULT_APP_SET = "supported_social_media_default_app_set"
 
     // App state
     const val TERMS_APPROVE_STATUS = "terms_approve_status"
@@ -84,9 +81,7 @@ object SwitchIdentifier {
     /** All keys defined above (for validation / migration / debugging). */
     val ALL: Set<String> = setOf(
         PORN_BLOCKER_SWITCH,
-        BLOCK_ALL_WEBSITE_SWITCH,
         SAFE_SEARCH_SWITCH,
-        BLOCK_IMAGE_VIDEO_SWITCH,
         MAKE_ANY_BROWSER_SUPPORTED_SWITCH,
         BLOCK_SNAPCHAT_STORIES_SWITCH,
         BLOCK_SNAPCHAT_SPOTLIGHT_SWITCH,
@@ -129,7 +124,6 @@ object SwitchIdentifier {
         VPN_DNS_CUSTOM_LIST_SET,
         STOP_ME_WHITELIST_APPS_SET,
         SUPPORTED_BROWSER_DEFAULT_APP_SET,
-        SUPPORTED_SOCIAL_MEDIA_DEFAULT_APP_SET,
         TERMS_APPROVE_STATUS,
         RATING_GIVEN_STATUS,
         FIREBASE_TOKEN,

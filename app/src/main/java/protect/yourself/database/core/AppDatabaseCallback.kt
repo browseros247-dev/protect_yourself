@@ -14,7 +14,6 @@ import protect.yourself.features.blockerPage.utils.DefaultDnsPresets
 import protect.yourself.features.blockerPage.utils.DefaultKeywordData
 import protect.yourself.features.blockerPage.utils.DefaultStopMeDurations
 import protect.yourself.features.blockerPage.utils.DefaultSupportedBrowsers
-import protect.yourself.features.blockerPage.utils.DefaultSupportedSocialMedia
 import protect.yourself.features.blockerPage.utils.DefaultWhitelistApps
 import timber.log.Timber
 
@@ -61,10 +60,7 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
             // === 6. Default supported browsers ===
             insertSupportedBrowsers(db)
 
-            // === 7. Default supported social media ===
-            insertSupportedSocialMedia(db)
-
-            // === 8. Default whitelist apps ===
+            // === 7. Default whitelist apps ===
             insertWhitelistApps(db)
 
             Timber.i("Core default data inserted via execSQL")
@@ -88,9 +84,7 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
     private fun insertDefaultSwitches(db: SupportSQLiteDatabase) {
         val switches = listOf(
             Triple(SwitchIdentifier.PORN_BLOCKER_SWITCH, "true", "boolean"),
-            Triple(SwitchIdentifier.BLOCK_ALL_WEBSITE_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.SAFE_SEARCH_SWITCH, "false", "boolean"),
-            Triple(SwitchIdentifier.BLOCK_IMAGE_VIDEO_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.MAKE_ANY_BROWSER_SUPPORTED_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.BLOCK_SNAPCHAT_STORIES_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.BLOCK_SNAPCHAT_SPOTLIGHT_SWITCH, "false", "boolean"),
@@ -134,7 +128,6 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
             Triple(SwitchIdentifier.VPN_DNS_CUSTOM_LIST_SET, "false", "boolean"),
             Triple(SwitchIdentifier.STOP_ME_WHITELIST_APPS_SET, "false", "boolean"),
             Triple(SwitchIdentifier.SUPPORTED_BROWSER_DEFAULT_APP_SET, "false", "boolean"),
-            Triple(SwitchIdentifier.SUPPORTED_SOCIAL_MEDIA_DEFAULT_APP_SET, "false", "boolean"),
             Triple(SwitchIdentifier.TERMS_APPROVE_STATUS, "false", "boolean"),
             Triple(SwitchIdentifier.RATING_GIVEN_STATUS, "false", "boolean"),
             Triple(SwitchIdentifier.FIREBASE_TOKEN, "", "string"),
@@ -180,17 +173,6 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
             )
         }
         Timber.i("Inserted ${DefaultSupportedBrowsers.ALL.size} supported browsers")
-    }
-
-    private fun insertSupportedSocialMedia(db: SupportSQLiteDatabase) {
-        for (app in DefaultSupportedSocialMedia.ALL) {
-            db.execSQL(
-                "INSERT OR REPLACE INTO selected_apps_table (`key`, package_name, app_name, identifier, is_selected) VALUES (?, ?, ?, ?, ?)",
-                arrayOf("preset_social_${app.packageName}", app.packageName, app.displayName,
-                    SelectedAppListIdentifier.SUPPORTED_SOCIAL_MEDIA_APPS.value, true)
-            )
-        }
-        Timber.i("Inserted ${DefaultSupportedSocialMedia.ALL.size} supported social media apps")
     }
 
     private fun insertWhitelistApps(db: SupportSQLiteDatabase) {

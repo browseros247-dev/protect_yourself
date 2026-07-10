@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
@@ -337,18 +338,15 @@ private fun HomeWithCategories(
         item {
             CategoryCard(
                 title = "Content Blocking",
-                subtitle = "Porn blocker, keywords, apps, SafeSearch, websites",
+                subtitle = "Porn blocker, keywords, apps, SafeSearch, browsers",
                 icon = Icons.Filled.Block,
                 onClick = {
                     onNavigate(SubPage.CategoryPage("Content Blocking", setOf(
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.SUPPORTED_BROWSERS,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.SUPPORTED_SOCIAL_MEDIA,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.PORN_BLOCKER,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCKER_CUSTOM_KEYWORD_WEBSITE,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCKLIST_APPS,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_ALL_WEBSITE,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.SAFE_SEARCH,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_IMAGE_VIDEO_SEARCH,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.MAKE_ANY_BROWSER_SUPPORTED
                     )))
                 }
@@ -358,7 +356,7 @@ private fun HomeWithCategories(
         item {
             CategoryCard(
                 title = "Uninstall Protection",
-                subtitle = "Prevent uninstall, block reboot, notification drawer, recent apps",
+                subtitle = "Prevent uninstall, block reboot, title-based blocking",
                 icon = Icons.Filled.Security,
                 onClick = {
                     onNavigate(SubPage.CategoryPage("Uninstall Protection", setOf(
@@ -375,8 +373,23 @@ private fun HomeWithCategories(
 
         item {
             CategoryCard(
+                title = "App Lock",
+                subtitle = "PIN/password/pattern lock, biometric, forgot password",
+                icon = Icons.Filled.Lock,
+                onClick = {
+                    onNavigate(SubPage.CategoryPage("App Lock", setOf(
+                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.SET_APP_LOCK,
+                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.TOUCH_ID,
+                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.DISABLE_FORGOT_PASSWORD
+                    )))
+                }
+            )
+        }
+
+        item {
+            CategoryCard(
                 title = "Advanced Features",
-                subtitle = "VPN, block screen customization, app lock, in-app browsers",
+                subtitle = "VPN, block screen customization, package+intent, in-app browsers",
                 icon = Icons.Filled.Settings,
                 onClick = {
                     onNavigate(SubPage.CategoryPage("Advanced Features", setOf(
@@ -394,10 +407,7 @@ private fun HomeWithCategories(
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCKED_SCREEN_MESSAGE,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCKED_SCREEN_COUNTDOWN,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.CUSTOM_REDIRECT_URL_APP,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.SET_APP_LOCK,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.TOUCH_ID,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.DISABLE_FORGOT_PASSWORD
+                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP
                     )))
                 }
             )

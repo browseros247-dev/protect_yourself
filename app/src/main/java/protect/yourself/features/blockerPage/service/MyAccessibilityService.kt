@@ -54,9 +54,7 @@ class MyAccessibilityService : AccessibilityService() {
     private var cachedUnsupportedBrowserWhitelist: Set<String> = emptySet()
 
     private var isPornBlockerOn = true
-    private var isBlockAllWebsiteOn = false
     private var isSafeSearchOn = false
-    private var isBlockImageVideoOn = false
     private var isBlockNewInstallOn = false
     private var isBlockInAppBrowsersOn = false
     private var isBlockUnsupportedBrowsersOn = false
@@ -280,18 +278,6 @@ class MyAccessibilityService : AccessibilityService() {
     private fun handleUrlDetected(packageName: String, url: String) {
         val utils = BlockerPageUtils.getInstance()
         val decoded = utils.decodeText(url)
-
-        // Block all websites (whitelist overrides)
-        if (isBlockAllWebsiteOn && !utils.isSafeUrl(decoded, cachedWhitelistKeywords)) {
-            launchBlockActivity(packageName, "block_page_default_block_all_websites_message")
-            return
-        }
-
-        // Image/video search blocking
-        if (isBlockImageVideoOn && utils.isImageVideoUrl(decoded)) {
-            launchBlockActivity(packageName, "block_page_default_img_vid_message")
-            return
-        }
 
         // Whitelist check (overrides block)
         if (utils.isSafeUrl(decoded, cachedWhitelistKeywords)) {
@@ -728,9 +714,7 @@ class MyAccessibilityService : AccessibilityService() {
 
                 // Switches
                 isPornBlockerOn = switchValues.isPornBlockerSwitchOn()
-                isBlockAllWebsiteOn = switchValues.isBlockAllWebsiteSwitchOn()
                 isSafeSearchOn = switchValues.isSafeSearchSwitchOn()
-                isBlockImageVideoOn = switchValues.isBlockImageVideoSwitchOn()
                 isBlockNewInstallOn = switchValues.isBlockNewInstallAppsSwitchOn()
                 isBlockInAppBrowsersOn = switchValues.isBlockInAppBrowsersSwitchOn()
                 isBlockUnsupportedBrowsersOn = switchValues.isBlockUnsupportedBrowsersSwitchOn()

@@ -12,9 +12,7 @@
     <!-- Block screen -->
     <string name="block_page_default_message">This page is blocked.</string>
     <string name="block_page_default_porn_blocker_message">Your porn blocker switch is on.</string>
-    <string name="block_page_default_block_all_websites_message">You have turned on the block all websites switch.</string>
     <string name="block_page_default_block_apps_message">Your porn blocker switch is on, and this app is in your block apps list.</string>
-    <string name="block_page_default_img_vid_message">You have enabled image and video search blocking.</string>
     <string name="block_page_default_in_app_browser_message">You have enabled in-app browser blocking for this app.</string>
     <string name="block_page_default_make_any_browser_supported_message">You have enabled make any browser supported blocking.</string>
     <string name="block_page_default_new_install_message">Your block new install app switch is on, and this app is in your new install app block list.</string>
@@ -97,10 +95,6 @@
     <string name="backup_sync_card_info">"The purpose of this is to backup your keywords, selected apps, and other items. So you don't have to setup the app again and again."</string>
     <string name="backup_sync_card_title">Sync and back up your data</string>
     <string name="battery_level_maintain_message">Maintain a battery level of 20% or higher to keep Protect Yourself running uninterrupted.</string>
-    <string name="block_all_website_info">"If on, you won't be able to access any websites in supported browsers. You need to add a website to your whitelist in order to access it."</string>
-    <string name="block_all_website_title">Block all websites</string>
-    <string name="block_image_video_search_card_info">"If on, you can't search images and videos on supported browsers."</string>
-    <string name="block_image_video_search_card_title">Block image and video search</string>
     <string name="block_in_app_browsers_card_info">Add apps where you want to block in app browser. As this feature is in beta, it may not detect in-app browsers in all apps.</string>
     <string name="block_in_app_browsers_card_title">Block in-app browsers</string>
     <string name="block_new_install_App_card_info">Newly installed apps will automatically be blocked if this setting is enabled. You can unblock an app by long clicking it.</string>
@@ -154,7 +148,6 @@
     <string name="request_already_in_pending_message">"Request already in progress. It can't be sent until first request is completed."</string>
     <string name="request_approve">Approved the request</string>
     <string name="supported_browsers_apps_card_info">When inappropriate content is detected on these apps, block screens appear.</string>
-    <string name="supported_social_media_apps_card_info">In these apps, block screens appear when inappropriate keywords are detected during search.</string>
     <string name="uninstall_protection">Uninstall protection</string>
     <string name="vpn_blocking_card_info">"By using VPN, you will be protected from adult content on all supported and unsupported browsers."</string>
     <string name="daily_report_real_friend_not_set_error">To use this feature, please set Real friend as your protective Mode.</string>

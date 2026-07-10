@@ -40,14 +40,8 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
     suspend fun isPornBlockerSwitchOn(): Boolean =
         dao.get(SwitchIdentifier.PORN_BLOCKER_SWITCH)?.asBoolean() ?: true
 
-    suspend fun isBlockAllWebsiteSwitchOn(): Boolean =
-        dao.get(SwitchIdentifier.BLOCK_ALL_WEBSITE_SWITCH)?.asBoolean() ?: false
-
     suspend fun isSafeSearchSwitchOn(): Boolean =
         dao.get(SwitchIdentifier.SAFE_SEARCH_SWITCH)?.asBoolean() ?: false
-
-    suspend fun isBlockImageVideoSwitchOn(): Boolean =
-        dao.get(SwitchIdentifier.BLOCK_IMAGE_VIDEO_SWITCH)?.asBoolean() ?: false
 
     suspend fun isMakeAnyBrowserSupportedSwitchOn(): Boolean =
         dao.get(SwitchIdentifier.MAKE_ANY_BROWSER_SUPPORTED_SWITCH)?.asBoolean() ?: false
@@ -151,9 +145,6 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
     suspend fun isSupportedBrowserDefaultAppSet(): Boolean =
         dao.get(SwitchIdentifier.SUPPORTED_BROWSER_DEFAULT_APP_SET)?.asBoolean() ?: false
 
-    suspend fun isSupportedSocialMediaDefaultAppSet(): Boolean =
-        dao.get(SwitchIdentifier.SUPPORTED_SOCIAL_MEDIA_DEFAULT_APP_SET)?.asBoolean() ?: false
-
     suspend fun isTermsApproved(): Boolean =
         dao.get(SwitchIdentifier.TERMS_APPROVE_STATUS)?.asBoolean() ?: false
 
@@ -248,9 +239,6 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
 
     fun observePornBlockerSwitch(): Flow<Boolean> =
         dao.observe(SwitchIdentifier.PORN_BLOCKER_SWITCH).map { it?.asBoolean() ?: true }
-
-    fun observeBlockAllWebsiteSwitch(): Flow<Boolean> =
-        dao.observe(SwitchIdentifier.BLOCK_ALL_WEBSITE_SWITCH).map { it?.asBoolean() ?: false }
 
     fun observeSafeSearchSwitch(): Flow<Boolean> =
         dao.observe(SwitchIdentifier.SAFE_SEARCH_SWITCH).map { it?.asBoolean() ?: false }

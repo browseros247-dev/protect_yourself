@@ -84,18 +84,6 @@ class PresetDataTest {
     }
 
     @Test
-    fun `default supported social media includes all 5 original apps`() {
-        val packages = DefaultSupportedSocialMedia.ALL.map { it.packageName }
-        assertThat(packages).containsExactly(
-            "com.instagram.android",
-            "com.whatsapp",
-            "com.snapchat.android",
-            "org.telegram.messenger",
-            "com.google.android.youtube"
-        )
-    }
-
-    @Test
     fun `default whitelist apps includes self package`() {
         assertThat(DefaultWhitelistApps.ALL).contains("protect.yourself")
     }

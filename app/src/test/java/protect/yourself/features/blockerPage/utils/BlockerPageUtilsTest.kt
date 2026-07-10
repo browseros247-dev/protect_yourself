@@ -138,33 +138,6 @@ class BlockerPageUtilsTest {
         assertThat(utils.isSafeUrl("https://example.com/no%66ap", listOf("nofap"))).isTrue()
     }
 
-    // ===== isImageVideoUrl =====
-
-    @Test
-    fun `isImageVideoUrl detects Google Images search`() {
-        assertThat(utils.isImageVideoUrl("https://google.com/search?q=test&tbm=isch")).isTrue()
-    }
-
-    @Test
-    fun `isImageVideoUrl detects Google Videos search`() {
-        assertThat(utils.isImageVideoUrl("https://google.com/search?q=test&tbm=vid")).isTrue()
-    }
-
-    @Test
-    fun `isImageVideoUrl detects Bing image search`() {
-        assertThat(utils.isImageVideoUrl("https://bing.com/images/search?q=test")).isTrue()
-    }
-
-    @Test
-    fun `isImageVideoUrl returns false for regular search`() {
-        assertThat(utils.isImageVideoUrl("https://google.com/search?q=test")).isFalse()
-    }
-
-    @Test
-    fun `isImageVideoUrl is case-insensitive`() {
-        assertThat(utils.isImageVideoUrl("HTTPS://GOOGLE.COM/?TBM=ISCH")).isTrue()
-    }
-
     // ===== isValidUrl =====
 
     @Test

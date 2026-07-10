@@ -7,7 +7,6 @@ package protect.yourself.database.selectedApps
  */
 enum class SelectedAppListIdentifier(val value: String) {
     ALL_APPS("all_apps"),
-    SUPPORTED_SOCIAL_MEDIA_APPS("supported_social_media_apps"),
     SUPPORTED_BROWSER_APPS("supported_browser_apps"),
     BLOCK_APPS("block_apps"),
     BLOCK_SETTING_PAGE_BY_TITLE_APPS("block_setting_page_by_title_apps"),

@@ -143,25 +143,6 @@ object DefaultSupportedBrowsers {
 }
 
 /**
- * Default supported social media — apps with keyword-based search blocking.
- */
-object DefaultSupportedSocialMedia {
-
-    data class SocialApp(
-        val packageName: String,
-        val displayName: String
-    )
-
-    val ALL: List<SocialApp> = listOf(
-        SocialApp("com.instagram.android", "Instagram"),
-        SocialApp("com.whatsapp", "WhatsApp"),
-        SocialApp("com.snapchat.android", "Snapchat"),
-        SocialApp("org.telegram.messenger", "Telegram"),
-        SocialApp("com.google.android.youtube", "YouTube")
-    )
-}
-
-/**
  * Default whitelist apps — apps that bypass blocking (the blocker app itself + system UI).
  */
 object DefaultWhitelistApps {

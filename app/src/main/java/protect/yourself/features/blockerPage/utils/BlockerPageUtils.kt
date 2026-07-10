@@ -18,7 +18,6 @@ import java.util.regex.Pattern
  *  - encodeText(text): URL-encode
  *  - isDetectWord(detectText, words): returns (found, matchedKeyword)
  *  - isSafeUrl(url, whitelistKeywords): true if URL contains any whitelist keyword
- *  - isImageVideoUrl(url): true if URL looks like image/video search
  *  - isValidUrl(url): URL pattern match
  *  - isValidDNS(dns): IPv4 validation
  *  - getSafeUrl(rawUrl): strip query params + force https
@@ -126,29 +125,6 @@ class BlockerPageUtils {
         return whitelistKeywords.any { kw ->
             kw.isNotBlank() && lower.contains(kw.lowercase(Locale.ROOT).trim())
         }
-    }
-
-    /**
-     * Check if URL is an image/video search result.
-     *
-     * Triggers on:
-     *  - tbm=isch (Google Images)
-     *  - tbm=vid (Google Videos)
-     *  - /images/ (Bing/Yahoo image search)
-     *  - /videos/ (Bing/Yahoo video search)
-     *  - ?q=...&type=image
-     *  - ?q=...&type=video
-     */
-    fun isImageVideoUrl(url: String): Boolean {
-        val lower = decodeText(url)
-        val patterns = listOf(
-            "tbm=isch", "tbm=vid",
-            "/images/", "/videos/",
-            "type=image", "type=video",
-            "search/images", "search/videos",
-            "/imgres?", "/videosearch?"
-        )
-        return patterns.any { lower.contains(it) }
     }
 
     /**

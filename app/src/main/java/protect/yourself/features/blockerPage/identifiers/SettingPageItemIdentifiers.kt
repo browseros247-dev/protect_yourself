@@ -35,13 +35,10 @@ enum class SettingPageItemIdentifiers {
     // Content blocking section
     SECTION_CONTENT_BLOCKING,
     SUPPORTED_BROWSERS,
-    SUPPORTED_SOCIAL_MEDIA,
     PORN_BLOCKER,
     BLOCKER_CUSTOM_KEYWORD_WEBSITE,
     BLOCKLIST_APPS,
-    BLOCK_ALL_WEBSITE,
     SAFE_SEARCH,
-    BLOCK_IMAGE_VIDEO_SEARCH,
     MAKE_ANY_BROWSER_SUPPORTED,
 
     // Social media blocking section
@@ -81,6 +78,9 @@ enum class SettingPageItemIdentifiers {
     BLOCKED_SCREEN_COUNTDOWN,
     CUSTOM_REDIRECT_URL_APP,
     BLOCK_WHITELIST_DETECTED_APP,
+
+    // App Lock section
+    SECTION_APP_LOCK,
     SET_APP_LOCK,
     TOUCH_ID,
     DISABLE_FORGOT_PASSWORD,
