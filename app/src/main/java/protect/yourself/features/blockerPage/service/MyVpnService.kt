@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
@@ -27,19 +28,20 @@ import java.net.InetAddress
 /**
  * MyVpnService — DNS-blocking VPN service.
  *
- * Ported from original `MyVpnService.kt`.
+ * This is a DNS-only VPN: it intercepts DNS queries and routes them to
+ * family-friendly DNS servers (Cloudflare Family, OpenDNS FamilyShield, etc.)
+ * that block adult content at the DNS resolution level.
+ *
+ * It does NOT route all traffic through the VPN — only DNS queries are
+ * redirected. This is more battery-efficient and doesn't slow down
+ * regular internet traffic.
  *
  * Behavior:
  *  - Reads selected DNS preset from vpn_custom_dns table
  *  - Establishes VPN tunnel with addDnsServer() for chosen DNS
+ *  - Does NOT addRoute() — only DNS is intercepted, not all traffic
  *  - Allows whitelisted apps to bypass VPN (per vpn_whitelist_apps)
  *  - Runs as foreground service (Android 8+ requirement)
- *  - Supports always-on VPN
- *
- * Phase 3: full DNS blocking implementation.
- *  - Reads DNS from DB
- *  - Establishes VPN interface
- *  - Shows foreground notification (configurable message)
  */
 class MyVpnService : VpnService() {
 
@@ -48,7 +50,7 @@ class MyVpnService : VpnService() {
     private var isRunning = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Timber.i("VPN service start command: intent=$intent")
+        Timber.i("VPN service start command: action=${intent?.action}")
 
         when (intent?.action) {
             ACTION_START -> startVpn()
@@ -56,7 +58,7 @@ class MyVpnService : VpnService() {
                 stopVpn()
                 stopSelf()
             }
-            else -> startVpn()  // default behavior on boot
+            else -> startVpn()
         }
 
         return START_STICKY
@@ -77,6 +79,9 @@ class MyVpnService : VpnService() {
                 val dnsPreset = db.vpnCustomDnsDao().getSelected()
                 if (dnsPreset == null) {
                     Timber.e("No DNS preset selected — cannot start VPN")
+                    // Show notification about missing DNS preset
+                    val notif = buildNotification("No DNS preset selected. Please select one in settings.", false)
+                    startForegroundCompat(notif)
                     stopSelf()
                     return@launch
                 }
@@ -94,23 +99,19 @@ class MyVpnService : VpnService() {
                     .getSelectedByIdentifier(SelectedAppListIdentifier.VPN_WHITELIST_APPS.value)
                     .map { it.packageName }
 
-                // 3. Build VPN interface
+                // 3. Build VPN interface — DNS-only (no addRoute)
                 val builder = Builder()
                     .setSession(getString(R.string.app_name))
                     .addAddress(VPN_ADDRESS, VPN_PREFIX_LENGTH)
-                    .addRoute(VPN_ROUTE, VPN_ROUTE_PREFIX)
                     .addDnsServer(InetAddress.getByName(dnsPreset.firstDns))
                     .addDnsServer(InetAddress.getByName(dnsPreset.secondDns))
                     .setMtu(VPN_MTU)
 
-                // Apply per-app routing:
-                // - If whitelist is non-empty, those apps ALLOWED to bypass VPN
-                // - Use addAllowedApplication() to restrict which apps go through VPN
-                // - Apps not in whitelist will have their DNS routed through our DNS
+                // Apply per-app routing: whitelisted apps bypass VPN
                 for (pkg in whitelistPackages) {
                     try {
                         builder.addDisallowedApplication(pkg)
-                        Timber.v("App disallowed from VPN: $pkg")
+                        Timber.v("App bypasses VPN: $pkg")
                     } catch (t: Throwable) {
                         Timber.w(t, "Failed to disallow app from VPN: $pkg")
                     }
@@ -134,13 +135,26 @@ class MyVpnService : VpnService() {
 
                 // 6. Start foreground service
                 val notification = buildNotification(notificationText, isHideNotification)
-                startForeground(NOTIFICATION_ID, notification)
+                startForegroundCompat(notification)
 
                 Timber.i("VPN started with DNS ${dnsPreset.firstDns}, ${dnsPreset.secondDns}")
             } catch (t: Throwable) {
                 Timber.e(t, "Failed to start VPN")
                 stopSelf()
             }
+        }
+    }
+
+    /**
+     * Start foreground service with correct API level handling.
+     * Android 14+ (API 34+) requires foregroundServiceType for VPN services.
+     */
+    private fun startForegroundCompat(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Android 14+: must specify foregroundServiceType
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
         }
     }
 
@@ -182,7 +196,7 @@ class MyVpnService : VpnService() {
             .setContentText(displayText)
             .setOngoing(true)
             .setContentIntent(openPending)
-            .addAction(R.drawable.ic_focus, getString(R.string.stop_me), stopPending)
+            .addAction(R.drawable.ic_focus, getString(R.string.vpn_stop), stopPending)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
@@ -218,6 +232,14 @@ class MyVpnService : VpnService() {
         // System revoked VPN (user toggled VPN off in system settings)
         stopVpn()
         stopSelf()
+        // Update the switch in DB
+        serviceScope.launch {
+            try {
+                val db = AppDatabase.getInstance(this@MyVpnService)
+                SwitchStatusValues(db.switchStatusDao())
+                    .storeSwitchStatus(protect.yourself.database.switchStatus.SwitchIdentifier.VPN_SWITCH, false)
+            } catch (_: Throwable) {}
+        }
         Timber.w("VPN revoked by system")
     }
 
@@ -227,11 +249,9 @@ class MyVpnService : VpnService() {
         const val NOTIFICATION_ID = 1001
         const val NOTIFICATION_CHANNEL_ID = "vpn_service_channel"
 
-        // VPN tunnel config (matches original)
+        // VPN tunnel config — DNS-only (no routing of all traffic)
         private const val VPN_ADDRESS = "10.0.0.2"
         private const val VPN_PREFIX_LENGTH = 32
-        private const val VPN_ROUTE = "0.0.0.0"
-        private const val VPN_ROUTE_PREFIX = 0
         private const val VPN_MTU = 1500
 
         /**

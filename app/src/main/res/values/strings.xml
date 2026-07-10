@@ -179,6 +179,7 @@
     <string name="vpn_notification_title">Protect Yourself VPN active</string>
     <string name="vpn_notification_text">DNS blocking is protecting you from adult content</string>
     <string name="vpn_notification_channel">VPN service</string>
+    <string name="vpn_stop">Stop VPN</string>
 
     <!-- Stop Me notification -->
     <string name="stop_me_notification_channel">Focus mode</string>
