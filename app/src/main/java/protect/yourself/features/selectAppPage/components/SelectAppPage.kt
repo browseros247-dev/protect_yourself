@@ -1,5 +1,9 @@
 package protect.yourself.features.selectAppPage.components
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,7 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
@@ -38,9 +42,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Image
 import androidx.lifecycle.viewmodel.compose.viewModel
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
@@ -48,16 +54,6 @@ import protect.yourself.features.selectAppPage.SelectAppPageViewModel
 import protect.yourself.features.selectAppPage.data.DisplayAppsItemModel
 import protect.yourself.theme.BrandOrange
 
-/**
- * SelectAppPage — full-screen app picker.
- *
- * Features:
- *  - Search by app name or package name
- *  - Filter: All / Selected / Unselected
- *  - Shows selected count
- *  - Tap to toggle selection
- *  - Loading + error states
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SelectAppPage(
@@ -97,7 +93,7 @@ fun SelectAppPage(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -109,7 +105,6 @@ fun SelectAppPage(
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Search field
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = {
@@ -124,7 +119,6 @@ fun SelectAppPage(
                 singleLine = true
             )
 
-            // Filter chips
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -161,16 +155,8 @@ fun SelectAppPage(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "Failed to load apps",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                        Text(
-                            text = state.error ?: "",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                        Text("Failed to load apps", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge)
+                        Text(state.error ?: "", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 return@Column
@@ -182,8 +168,7 @@ fun SelectAppPage(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (showSelectedOnly) "No selected apps yet"
-                               else "No apps found",
+                        text = if (showSelectedOnly) "No selected apps yet" else "No apps found",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -191,7 +176,6 @@ fun SelectAppPage(
                 return@Column
             }
 
-            // App list
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -230,22 +214,31 @@ private fun AppRow(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // App icon placeholder (first letter of app name)
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(
-                        color = if (app.isSelected) BrandOrange.copy(alpha = 0.2f)
-                                else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(8.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = app.appName.firstOrNull()?.toString() ?: "?",
-                    color = BrandOrange,
-                    fontWeight = FontWeight.Bold
+            // Real app icon
+            if (app.icon != null) {
+                val bitmap = remember(app.packageName) { drawableToBitmap(app.icon) }
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = app.appName,
+                    modifier = Modifier.size(40.dp)
                 )
+            } else {
+                // Fallback: first letter in colored box
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(8.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = app.appName.firstOrNull()?.toString() ?: "?",
+                        color = BrandOrange,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
             Spacer(modifier = Modifier.size(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -270,4 +263,20 @@ private fun AppRow(
             }
         }
     }
+}
+
+/**
+ * Convert a Drawable to a Bitmap for Compose Image.
+ */
+private fun drawableToBitmap(drawable: Drawable): Bitmap {
+    if (drawable is BitmapDrawable) {
+        return drawable.bitmap
+    }
+    val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 96
+    val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 96
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    drawable.setBounds(0, 0, canvas.width, canvas.height)
+    drawable.draw(canvas)
+    return bitmap
 }

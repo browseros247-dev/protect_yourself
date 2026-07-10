@@ -104,9 +104,26 @@ fun BlockerPageHome() {
                     currentPage = SubPage.SelectApp(nav.title, nav.identifier)
                 }
                 is BlockerPageNavigation.OpenAccessibilitySettings -> {
-                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
+                    // Try to open the specific accessibility service detail page
+                    val componentName = android.content.ComponentName(
+                        context.packageName,
+                        protect.yourself.features.blockerPage.service.MyAccessibilityService::class.java.name
+                    )
+                    try {
+                        // Android 12+ supports ACTION_ACCESSIBILITY_DETAIL_SETTINGS
+                        val intent = Intent("android.settings.ACCESSIBILITY_DETAIL_SETTINGS").apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            putExtra(Intent.EXTRA_COMPONENT_NAME, componentName)
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Throwable) {
+                        // Fallback: open general accessibility settings
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            })
+                        } catch (_: Throwable) {}
+                    }
                 }
                 is BlockerPageNavigation.OpenOverlaySettings -> {
                     context.startActivity(Intent(
@@ -191,6 +208,12 @@ fun BlockerPageHome() {
             }
         )
     }
+
+    // Handle system Back button — return to home list from sub-pages
+    androidx.activity.compose.BackHandler(
+        enabled = currentPage != null,
+        onBack = { currentPage = null }
+    )
 
     when (val page = currentPage) {
         null -> HomeWithCategories(context, viewModel, state, currentPage, { currentPage = it })
@@ -518,9 +541,24 @@ private fun AccessibilityWarningCard(context: android.content.Context) {
                 .fillMaxWidth()
                 .padding(top = 16.dp, bottom = 8.dp)
                 .clickable {
-                    context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
+                    // Try direct service detail page first, fallback to general settings
+                    val componentName = android.content.ComponentName(
+                        context.packageName,
+                        protect.yourself.features.blockerPage.service.MyAccessibilityService::class.java.name
+                    )
+                    try {
+                        val intent = Intent("android.settings.ACCESSIBILITY_DETAIL_SETTINGS").apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            putExtra(Intent.EXTRA_COMPONENT_NAME, componentName)
+                        }
+                        context.startActivity(intent)
+                    } catch (e: Throwable) {
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            })
+                        } catch (_: Throwable) {}
+                    }
                 },
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
