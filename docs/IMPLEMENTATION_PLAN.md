@@ -502,8 +502,9 @@ Per user remark: "block target as is so implement all as is org" — implement a
 | **Telegram Search** | Block Telegram search. |
 | **Block image/video search** | Block URLs containing `/images`, `/videos`, `tbm=isch`, `tbm=vid` etc. |
 | **SafeSearch enforcement** | DNS-level: when VPN active, redirect `www.google.com` → `forcesafesearch.google.com`, etc. |
-| **Block unsupported browsers** | All browsers not in `whitelist_unsupported_browser` get blocked. |
-| **Make any browser supported** | App injects accessibility scraping for any browser package the user adds. |
+| **Block unsupported browsers** | When ON, ANY browser NOT in `SUPPORTED_BROWSER_APPS` AND not in `WHITELIST_UNSUPPORTED_BROWSER` gets blocked on launch. Browser detection uses `PackageManager.queryIntentActivities()` for apps handling `ACTION_VIEW` + `http/https` + `BROWSABLE` category, with package-name signature fallback. |
+| **Make any browser supported** | When ON, the accessibility service attempts URL scraping on ANY browser (not just supported ones). Useful for browsers the user added but for which we have no known view IDs — uses fallback node-tree traversal to find URL-like text. |
+| **Package + Intent Blocking** | When ON, blocks apps whose package name matches an entry in `BLOCKED_PACKAGE_NAMES` (exact match) OR whose class/intent name contains any entry in `BLOCKED_INTENT_NAMES` (substring match). Separated from the unsupported-browser feature in v1.0.27. |
 | **Block settings page by title** | Accessibility detects settings activity title; if matches `setting_keywords_list`, block. |
 | **Block notification drawer** | Accessibility detects `StatusBar` window → block. |
 | **Block recent apps** | Accessibility detects recent apps window → block. |
