@@ -1,34 +1,30 @@
-# Pre-built APKs
+# Latest APK
 
-This directory contains pre-built, signed APKs of **Protect Yourself** for direct installation.
+This directory contains the **latest** pre-built, signed APK of **Protect Yourself**.
 
-## Files
+## Policy
 
-| File | Size | Package | Build Type | Description |
-|---|---|---|---|---|
-| `protect.yourself-v1.0.34-release.apk` | ~15 MB | `protect.yourself` | Release | Production-style build. **Recommended for installation.** Removes Supported Browsers + Make Any Browser Supported; moves Block Unsupported Browsers + Whitelist to Content Blocking; moves Package+Intent to Uninstall Protection. |
-| `protect.yourself-v1.0.34-debug.apk` | ~22 MB | `protect.yourself` | Debug | Debug build with logging enabled. Larger due to unstripped debug info. |
-| `protect.yourself-v1.0.33-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (App Lock card, removed Social Media/Block All Websites/Image Video Search). |
-| `protect.yourself-v1.0.33-debug.apk` | ~22 MB | `protect.yourself` | Debug | Previous build debug. |
-| `protect.yourself-v1.0.32-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (Prevent Uninstall fix, block screen fix, dialog contrast, bookmarked titles, package+intent UI). |
-| `protect.yourself-v1.0.32-debug.apk` | ~22 MB | `protect.yourself` | Debug | Previous build debug. |
-| `protect.yourself-v1.0.31-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (in-app Stop Me + Keyword Manager pages). |
-| `protect.yourself-v1.0.31-debug.apk` | ~22 MB | `protect.yourself` | Debug | Previous build debug. |
-| `protect.yourself-v1.0.30-release.apk` | ~15 MB | `protect.yourself` | Release | Previous build (local crash logging system). |
-| `protect.yourself-v1.0.30-debug.apk` | ~22 MB | `protect.yourself` | Debug | Previous build debug. |
+- **Only the latest version** is kept here. When a new version is built, the previous APKs are removed.
+- Each version has two files: `*-debug.apk` (debug build with logging) and `*-release.apk` (production build, recommended).
 
-Both APKs target:
+## Current Version: 1.0.34 (versionCode 34)
+
+| File | Size | Build Type | Description |
+|---|---|---|---|
+| `protect.yourself-v1.0.34-release.apk` | ~15 MB | Release | **Recommended for installation.** Removes Supported Browsers + Make Any Browser Supported; moves Block Unsupported Browsers + Whitelist to Content Blocking; moves Package+Intent to Uninstall Protection. |
+| `protect.yourself-v1.0.34-debug.apk` | ~22 MB | Debug | Debug build with logging enabled. Larger due to unstripped debug info. |
+
+## Build Targets
+
 - **Min Android**: 8.0 (API 26)
 - **Target Android**: 15 (API 35)
 - **Compile SDK**: 35
-- **Version**: 1.0.34 (versionCode 34)
 - **App label**: "Protect Yourself" (release) / "Protect Yourself DEBUG" (debug)
 
 ## Signing
 
 Both APKs are signed with the embedded debug keystore (Android Debug certificate):
 - **Subject**: C=US, O=Android, CN=Android Debug
-- **SHA256**: `33493ce032e3bbc3f2b8deb70395706427b959417d93dca344616bc64f2e8d07`
 - **Signature scheme**: v2
 - **Valid until**: July 1, 2056
 
@@ -42,57 +38,17 @@ For Play Store distribution, re-sign with your own release keystore before uploa
 4. Tap **Install**
 5. Open **Protect Yourself** from your app drawer
 
-## First-Launch Setup
+## Going-Forward Workflow
 
-After installation, the app will guide you through:
+When a new version is built:
+1. Remove the old `protect.yourself-v*.apk` files from this directory
+2. Copy the new `protect.yourself-v<NEW_VERSION>-debug.apk` and `protect.yourself-v<NEW_VERSION>-release.apk` here
+3. Update this README with the new version number + description
+4. Commit + push to GitHub
 
-1. **Terms & Privacy** — read and agree
-2. **Accessibility permission** — required for content blocking
-3. **Display Pop-up Window permission** — required to show block screen over other apps
-4. Optional: **Device Admin** (anti-uninstall), **VPN** (DNS blocking), **App Lock**
+This keeps the repo lean — only the latest APK is ever stored.
 
-## Firebase Configuration
-
-These APKs are built with the Firebase project configured in `app/google-services.json`:
-
-- **Project ID**: `flutter-ai-playground-64339`
-- **Project Number**: `149261109336`
-- **App ID**: `1:149261109336:android:10a383c68a9b5a7626e22d`
-- **Package**: `protect.yourself`
-
-To use a different Firebase project, replace `app/google-services.json` and rebuild.
-
-## Build Provenance
-
-Built with:
-- **Temurin JDK**: 17.0.13
-- **Android SDK**: Platform 35 + Build-Tools 35.0.0 + Platform-Tools
-- **Gradle**: 8.10.2
-- **Android Gradle Plugin**: 8.7.2
-- **Kotlin**: 2.0.21
-- **Jetpack Compose BOM**: 2024.10.01
-- **Room**: 2.6.1
-- **Firebase BoM**: 33.5.1
-
-Build commands:
-```bash
-./gradlew assembleRelease --no-daemon --max-workers=1
-./gradlew assembleDebug   --no-daemon --max-workers=1
-```
-
-## Verification
-
-You can verify the APK signature using `uber-apk-signer`:
-
-```bash
-java -jar uber-apk-signer.jar -a protect.yourself-v1.0.1-release.apk -y
-```
-
-Expected output: `signature verified [v2]` with the SHA256 above.
-
-## Rebuilding
-
-To rebuild from source:
+## Rebuilding from Source
 
 ```bash
 git clone https://github.com/258044aamm-Dev/Protect-Yourself.git
