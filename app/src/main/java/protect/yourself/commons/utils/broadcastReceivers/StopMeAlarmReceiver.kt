@@ -3,6 +3,10 @@ package protect.yourself.commons.utils.broadcastReceivers
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import protect.yourself.features.blockerPage.utils.StopMeManager
 import timber.log.Timber
 
@@ -10,25 +14,34 @@ import timber.log.Timber
  * Receiver for Stop Me session start/end alarms.
  *
  * Fired by AlarmManager when a Stop Me session:
- *  - Starts (scheduled session triggered)
- *  - Ends (instant session duration elapsed)
+ *  - Starts (scheduled session triggered) → starts the instant session
+ *  - Ends (instant session duration elapsed) → stops the session
  */
 class StopMeAlarmReceiver : BroadcastReceiver() {
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onReceive(context: Context, intent: Intent) {
         val sessionKey = intent.getStringExtra(EXTRA_SESSION_KEY) ?: return
-        when (intent.action) {
-            ACTION_STOP_ME_START -> {
-                Timber.i("Stop Me start alarm fired: $sessionKey")
-                // The actual session start happens in StopMeManager.checkDueSchedules()
-                // This alarm just wakes up the device to let the worker run.
-            }
-            ACTION_STOP_ME_END -> {
-                Timber.i("Stop Me end alarm fired: $sessionKey")
-                // Stop the active session
-                kotlinx.coroutines.runBlocking {
-                    StopMeManager.getInstance(context).stopActiveSession()
+        val pendingResult = goAsync()
+
+        scope.launch {
+            try {
+                when (intent.action) {
+                    ACTION_STOP_ME_START -> {
+                        Timber.i("Stop Me start alarm fired: $sessionKey")
+                        // Actually start the scheduled session
+                        StopMeManager.getInstance(context).checkDueSchedules()
+                    }
+                    ACTION_STOP_ME_END -> {
+                        Timber.i("Stop Me end alarm fired: $sessionKey")
+                        StopMeManager.getInstance(context).stopActiveSession()
+                    }
                 }
+            } catch (t: Throwable) {
+                Timber.e(t, "Stop Me alarm handling failed")
+            } finally {
+                pendingResult.finish()
             }
         }
     }

@@ -60,6 +60,10 @@ class StopMeManager(private val context: Context) {
             // Notify accessibility service to start blocking non-whitelisted apps
             notifyAccessibilityServiceStart()
 
+            // Show toast
+            val mins = TimeUnit.MILLISECONDS.toMinutes(durationMillis)
+            showToast(context, "Stop Me: ${mins}min session started")
+
             Timber.i("Stop Me instant session started: key=$key duration=${durationMillis}ms endTime=$endTime")
             key
         } catch (t: Throwable) {
@@ -124,10 +128,13 @@ class StopMeManager(private val context: Context) {
                 cancelEndAlarm(active.key)
                 // Increment session count (session completed)
                 db.stopMeSessionCountDao().increment()
-                Timber.i("Stop Me session stopped + count incremented: key=${active.key}")
+                Timber.i("Stop Me session stopped: key=${active.key}")
             }
 
             notifyAccessibilityServiceStop()
+
+            // Show toast
+            showToast(context, "Stop Me: Session stopped")
         } catch (t: Throwable) {
             Timber.e(t, "Failed to stop Stop Me session")
         }
@@ -302,6 +309,14 @@ class StopMeManager(private val context: Context) {
     private fun notifyAccessibilityServiceStop() {
         protect.yourself.features.blockerPage.service.MyAccessibilityService.instance
             ?.setStopMeRunning(false)
+    }
+
+    private fun showToast(context: Context, message: String) {
+        try {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } catch (_: Throwable) {}
     }
 
     companion object {
