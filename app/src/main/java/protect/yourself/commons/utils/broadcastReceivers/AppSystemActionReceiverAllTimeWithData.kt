@@ -28,6 +28,15 @@ class AppSystemActionReceiverAllTimeWithData : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         Timber.i("Package event: ${intent.action} data=${intent.data}")
+        // Mirror NopoX: attempt self-heal on every package event. The most
+        // important one is MY_PACKAGE_REPLACED — after an app update, Android
+        // sometimes re-evaluates accessibility permissions and may disable
+        // the service. selfHealSafe re-arms it instantly.
+        try {
+            protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(context)
+        } catch (t: Throwable) {
+            Timber.w(t, "selfHealSafe in package-event receiver failed")
+        }
         val pendingResult = goAsync()
 
         scope.launch {

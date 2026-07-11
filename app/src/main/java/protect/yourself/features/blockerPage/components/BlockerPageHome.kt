@@ -327,6 +327,24 @@ fun BlockerPageHome() {
             }
         )
         SubPage.ImagePicker -> SimpleSubPage("Choose Image") { currentPage = null }
+        SubPage.ReliableAccessibility ->
+            protect.yourself.features.protectedApps.WriteSecureSettingsSetupPage(
+                onBack = { currentPage = null }
+            )
+        SubPage.ProtectedApps -> {
+            // Launch the ProtectedAppsActivity (separate activity to keep
+            // navigation simple and avoid recomposition overhead).
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                ctx.startActivity(
+                    android.content.Intent(
+                        ctx,
+                        protect.yourself.features.protectedApps.ProtectedAppsActivity::class.java
+                    )
+                )
+                currentPage = null
+            }
+        }
     }
 }
 
@@ -446,6 +464,15 @@ private fun HomeWithCategories(
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP
                     )))
                 }
+            )
+        }
+
+        item {
+            CategoryCard(
+                title = "Reliable Accessibility",
+                subtitle = "One-time ADB setup to prevent OEMs from killing the service",
+                icon = Icons.Filled.Security,
+                onClick = { onNavigate(SubPage.ReliableAccessibility) }
             )
         }
 
@@ -931,4 +958,8 @@ sealed class SubPage {
     data object StopMe : SubPage()
     data object VpnManagement : SubPage()
     data object ImagePicker : SubPage()
+    /** One-time setup page for granting WRITE_SECURE_SETTINGS via ADB. */
+    data object ReliableAccessibility : SubPage()
+    /** Lists all installed accessibility services for protection toggling. */
+    data object ProtectedApps : SubPage()
 }

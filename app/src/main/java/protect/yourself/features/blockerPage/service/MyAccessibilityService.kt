@@ -12,6 +12,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
@@ -91,8 +92,33 @@ class MyAccessibilityService : AccessibilityService() {
             ?.logBreadcrumb("AccessibilityService", "onServiceConnected")
         configureService()
         refreshBlockingConfig()
+        // Re-arm persistence the moment the service starts — this catches the
+        // case where the service was disabled, then re-enabled by the user via
+        // Settings. selfHealSafe is a no-op if WRITE_SECURE_SETTINGS isn't granted.
+        try {
+            protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this)
+        } catch (t: Throwable) {
+            Timber.w(t, "selfHealSafe in onServiceConnected failed")
+        }
         // Show toast to confirm service is active
         android.widget.Toast.makeText(this, "Protect Yourself: Accessibility connected", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * Called by the system when the last client unbinds from this service.
+     *
+     * This is one of the earliest signals that Android may be about to kill
+     * or disable the service. NopoX calls `selfHealSafe` here for the same
+     * reason — if WRITE_SECURE_SETTINGS is granted, we can re-arm ourselves
+     * in the enabled list before the system finishes tearing us down.
+     */
+    override fun onUnbind(intent: Intent?): Boolean {
+        try {
+            protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this)
+        } catch (t: Throwable) {
+            Timber.w(t, "selfHealSafe in onUnbind failed")
+        }
+        return super.onUnbind(intent)
     }
 
     private fun configureService() {
@@ -156,6 +182,16 @@ class MyAccessibilityService : AccessibilityService() {
         super.onDestroy()
         Timber.w("Accessibility service destroyed")
         instance = null
+        // Last-chance self-heal before the service is fully destroyed.
+        // If WRITE_SECURE_SETTINGS is granted, this writes us back into
+        // enabled_accessibility_services so the system will restart us.
+        try {
+            protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this)
+        } catch (t: Throwable) {
+            Timber.w(t, "selfHealSafe in onDestroy failed")
+        }
+        // Cancel the service scope to prevent coroutine leaks (Phase 6 P0 fix)
+        try { serviceScope.cancel() } catch (_: Throwable) {}
         // Show toast to warn user
         android.widget.Toast.makeText(this, "Protect Yourself: Accessibility disconnected — blocking disabled", android.widget.Toast.LENGTH_LONG).show()
     }
