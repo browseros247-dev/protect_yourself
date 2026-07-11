@@ -73,6 +73,8 @@ class PornBlockActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.page_porn_block)
+        // BUG-08 fix: register the predictive-back callback
+        onBackPressedDispatcher.addCallback(this, backPressedCallback)
 
         bindViews()
         configureBlockScreen()
@@ -339,9 +341,32 @@ class PornBlockActivity : AppCompatActivity() {
         countDownTimer?.cancel()
     }
 
+    /**
+     * BUG-08 fix: the deprecated `onBackPressed()` is bypassed by Android 14+
+     * predictive back gesture. The user can swipe back from the edge to dismiss
+     * the block screen without triggering `onBackPressed()`.
+     *
+     * The fix is to register an `OnBackPressedCallback` with
+     * `OnBackPressedDispatcher`. The callback is enabled for the lifetime of
+     * the activity, so the predictive back gesture is also intercepted.
+     *
+     * The callback does nothing (swallow the back press) — the user must use
+     * the Close button (or wait for the countdown to finish).
+     */
+    private val backPressedCallback = object : androidx.activity.OnBackPressedCallback(true) {
+        override fun handleOnBackPressed() {
+            // Swallow — user must use Close button
+            Timber.d("PornBlockActivity: back press swallowed (predictive back intercepted)")
+        }
+    }
+
+    @Deprecated("Deprecated in Java — use OnBackPressedDispatcher via backPressedCallback", ReplaceWith("onBackPressedDispatcher.onBackPressed()"))
     override fun onBackPressed() {
         // Block back button — user must use Close button
         // (or wait for countdown to finish)
+        // BUG-08 fix: this is now handled by backPressedCallback for predictive back.
+        // This override is kept for backward compatibility with Android < 13.
+        onBackPressedDispatcher.onBackPressed()
     }
 
     companion object {

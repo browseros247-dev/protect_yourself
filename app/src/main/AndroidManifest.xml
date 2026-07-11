@@ -53,8 +53,10 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
 
-    <!-- Firebase Cloud Messaging -->
-    <uses-permission android:name="com.google.android.c2dm.permission.RECEIVE" />
+    <!-- BUG-07 fix: removed dead com.google.android.c2dm.permission.RECEIVE
+         permission. Firebase Cloud Messaging was stripped from the build;
+         keeping this permission is dead code + attracts Play Store review
+         attention for no benefit. -->
 
     <!-- Query all packages (app list feature) -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
@@ -190,14 +192,11 @@
 
         <!-- ===== Services ===== -->
 
-        <!-- Firebase Messaging -->
-        <service
-            android:name="protect.yourself.commons.utils.firebaseUtils.MyFirebaseMessagingService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
+        <!-- BUG-07 fix: removed dead Firebase Messaging service declaration.
+             The class doesn't exist (Firebase was stripped from the build).
+             Keeping this declaration would cause ClassNotFoundException if an
+             FCM intent ever arrived (it shouldn't, since FCM is removed, but
+             the declaration is dead code regardless). -->
 
         <!-- Accessibility service (core blocking) -->
         <service

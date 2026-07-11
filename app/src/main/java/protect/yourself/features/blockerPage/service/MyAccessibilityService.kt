@@ -46,34 +46,39 @@ class MyAccessibilityService : AccessibilityService() {
     )
 
     // Cached blocking config (refreshed periodically)
-    private var cachedBlockKeywords: List<String> = emptyList()
-    private var cachedWhitelistKeywords: List<String> = emptyList()
-    private var cachedBlockApps: Set<String> = emptySet()
-    private var cachedStopMeWhitelist: Set<String> = emptySet()
-    private var cachedVpnWhitelist: Set<String> = emptySet()
-    private var cachedNewInstallBlockApps: Set<String> = emptySet()
-    private var cachedInAppBrowserBlockApps: Set<String> = emptySet()
-    private var cachedUnsupportedBrowserWhitelist: Set<String> = emptySet()
+    // BUG-09 fix: all cached fields are @Volatile because they are written from
+    // serviceScope.launch (Dispatchers.Default) and read from onAccessibilityEvent
+    // (main thread). Without @Volatile, the JVM memory model does not guarantee
+    // that the main thread ever sees the updated values — the write may stay in
+    // the worker thread's CPU cache indefinitely.
+    @Volatile private var cachedBlockKeywords: List<String> = emptyList()
+    @Volatile private var cachedWhitelistKeywords: List<String> = emptyList()
+    @Volatile private var cachedBlockApps: Set<String> = emptySet()
+    @Volatile private var cachedStopMeWhitelist: Set<String> = emptySet()
+    @Volatile private var cachedVpnWhitelist: Set<String> = emptySet()
+    @Volatile private var cachedNewInstallBlockApps: Set<String> = emptySet()
+    @Volatile private var cachedInAppBrowserBlockApps: Set<String> = emptySet()
+    @Volatile private var cachedUnsupportedBrowserWhitelist: Set<String> = emptySet()
 
-    private var isPornBlockerOn = true
-    private var isSafeSearchOn = false
-    private var isBlockNewInstallOn = false
-    private var isBlockInAppBrowsersOn = false
-    private var isBlockUnsupportedBrowsersOn = false
-    private var isBlockSettingsByTitleOn = false
-    private var isPreventUninstallOn = false
-    private var isBlockPhoneRebootOn = false
+    @Volatile private var isPornBlockerOn = true
+    @Volatile private var isSafeSearchOn = false
+    @Volatile private var isBlockNewInstallOn = false
+    @Volatile private var isBlockInAppBrowsersOn = false
+    @Volatile private var isBlockUnsupportedBrowsersOn = false
+    @Volatile private var isBlockSettingsByTitleOn = false
+    @Volatile private var isPreventUninstallOn = false
+    @Volatile private var isBlockPhoneRebootOn = false
     // Anti-circumvention switches — re-added (UP-03 fix). These were previously
     // removed from the UI but the detection logic was kept as dead code. They
     // are now wired via loadAllConfig() but default to OFF (the user can
     // enable them via the database or a future UI toggle).
-    private var isBlockNotificationDrawerOn = false
-    private var isBlockRecentAppsOn = false
-    private var cachedSettingTitles: List<String> = emptyList()
+    @Volatile private var isBlockNotificationDrawerOn = false
+    @Volatile private var isBlockRecentAppsOn = false
+    @Volatile private var cachedSettingTitles: List<String> = emptyList()
     // Package + intent name blocking
-    private var cachedBlockedPackageNames: Set<String> = emptySet()
-    private var cachedBlockedIntentNames: Set<String> = emptySet()
-    private var isBlockPackageIntentOn = false
+    @Volatile private var cachedBlockedPackageNames: Set<String> = emptySet()
+    @Volatile private var cachedBlockedIntentNames: Set<String> = emptySet()
+    @Volatile private var isBlockPackageIntentOn = false
     // AB-01 fix: Stop Me state is now a persisted end-time timestamp, not an
     // in-memory boolean. This survives process death (reboot, force-stop, OEM
     // killing the service). On every event we check
