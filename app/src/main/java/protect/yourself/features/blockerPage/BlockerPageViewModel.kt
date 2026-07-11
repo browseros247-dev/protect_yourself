@@ -356,6 +356,7 @@ class BlockerPageViewModel(
 
             // Refresh accessibility service blocking config
             MyAccessibilityService.instance?.refreshBlockingConfig()
+                ?: Timber.w("Switch toggle: MyAccessibilityService instance is null \u2014 config not refreshed")
 
             // Show toast feedback
             val switchName = item.title
