@@ -651,5 +651,83 @@ class BlockerPageUtils {
                 else -> "autostart"
             }
         }
+
+        /**
+         * Force-stop button text across locales.
+         * The "Force stop" button appears on every app info page — detecting
+         * it (combined with our app name in the event text) is a strong signal
+         * that the user is on our app info page.
+         *
+         * UP-06 fix: added (was missing entirely).
+         */
+        val FORCE_STOP_TEXTS_TO_MATCH: List<String> = listOf(
+            "force stop",       // en
+            "forcestop",        // en (no space)
+            "erzwingen",        // de (Force stop)
+            "detener",          // es
+            "forcer l'arrêt",   // fr
+            "forza interruzione", // it
+            "強制終了",           // ja
+            "강제 종료",           // ko
+            "принудительно остановить", // ru
+            "强行停止",           // zh
+            "zorla durdur"      // tr
+        )
+
+        /**
+         * Multi-user / guest mode text across locales.
+         * Detecting this prevents the user from switching to a guest user
+         * (which doesn't have our accessibility service enabled).
+         *
+         * UP-06 fix: added (was missing entirely).
+         */
+        val MULTI_USER_TEXTS_TO_MATCH: List<String> = listOf(
+            "you (owner)",
+            "Add user",
+            "Add guest",
+            "Switch user",
+            "Benutzer hinzufügen",   // de
+            "Ajouter un utilisateur", // fr
+            "Añadir usuario",        // es
+            "添加用户",               // zh
+            "ユーザーを追加",          // ja
+            "사용자 추가"              // ko
+        )
+
+        /**
+         * Notification shade / quick settings text across locales.
+         * Used by [MyAccessibilityService.isNotificationDrawer] as a secondary
+         * check when class-name matching is inconclusive.
+         *
+         * UP-06 fix: added (was missing entirely).
+         */
+        val NOTIFICATION_SHADE_TEXTS_TO_MATCH: List<String> = listOf(
+            "quick settings",
+            "quicksettings",
+            "notification panel",
+            "notification shade",
+            "status bar",
+            "Schnelleinstellungen",   // de
+            "paramètres rapides",     // fr
+            "ajustes rápidos",        // es
+            "快速设置",                // zh
+            "クイック設定",            // ja
+            "빠른 설정"                // ko
+        )
+
+        /**
+         * Notification shade lock text (the "no notifications" text that
+         * appears when the shade is pulled down with no notifications).
+         * Used to detect the shade even when no notifications are present.
+         */
+        val NOTIFICATION_SHADE_LOCK_TEXTS_TO_MATCH: List<String> = listOf(
+            "No notifications",
+            "Keine Benachrichtigungen",
+            "Aucune notification",
+            "Sin notificaciones",
+            "无通知",
+            "通知なし",
+            "알림 없음"
+        )
     }
 }
