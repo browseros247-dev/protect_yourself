@@ -1,0 +1,118 @@
+==============================================================================
+PROTECT-YOURSELF APK ANALYSIS  —  v1.0.37 release
+==============================================================================
+Package:        protect.yourself
+App name:       Protect Yourself
+Version:        1.0.37 (code 37)
+Min SDK:        26
+Target SDK:     35
+Compile SDK:    N/A (not in APK manifest)
+Main activity:  protect.yourself.features.mainActivityPage.MainActivity
+Signed:         v1=False v2=True v3=False
+Cert subject:   <asn1crypto.x509.Name 140293052125328 b'071\x160\x14\x06\x03U\x04\x03\x0c\rAndroid Debug1\x100\x0e\x06\x03U\x04\n\x0c\x07Android1\x0b0\t\x06\x03U\x04\x06\x13\x02US'>
+Cert issuer:    <asn1crypto.x509.Name 140293028516528 b'071\x160\x14\x06\x03U\x04\x03\x0c\rAndroid Debug1\x100\x0e\x06\x03U\x04\n\x0c\x07Android1\x0b0\t\x06\x03U\x04\x06\x13\x02US'>
+Cert SHA-256:   30 8A 9A A7 06 54 F9 1F 34 02 E3 9B 1F C2 D9 47 96 87 62 60 18 37 77 A4 45 B7 E9 A2 CA 4E 34 85
+
+Total files in APK: 1490
+File extensions:
+  .xml          660
+  (no-ext)      449
+  .png          223
+  .version      87
+  .properties   35
+  .json         10
+  .kotlin_builtins  7
+  .dex          4
+  .so           4
+  .ttf          4
+  .textproto    1
+  .prof         1
+  .profm        1
+  .bin          1
+  .coroutineexceptionhandler  1
+  .maindispatcherfactory  1
+  .arsc         1
+
+Permissions (25):
+  - android.permission.ACCESS_NETWORK_STATE
+  - android.permission.ACCESS_NOTIFICATION_POLICY
+  - android.permission.FOREGROUND_SERVICE
+  - android.permission.FOREGROUND_SERVICE_DATA_SYNC
+  - android.permission.FOREGROUND_SERVICE_SPECIAL_USE
+  - android.permission.INTERACT_ACROSS_USERS
+  - android.permission.INTERACT_ACROSS_USERS_FULL
+  - android.permission.INTERNET
+  - android.permission.KILL_BACKGROUND_PROCESSES
+  - android.permission.POST_NOTIFICATIONS
+  - android.permission.QUERY_ALL_PACKAGES
+  - android.permission.RECEIVE_BOOT_COMPLETED
+  - android.permission.REORDER_TASKS
+  - android.permission.SCHEDULE_EXACT_ALARM
+  - android.permission.SYSTEM_ALERT_WINDOW
+  - android.permission.USE_BIOMETRIC
+  - android.permission.USE_EXACT_ALARM
+  - android.permission.USE_FINGERPRINT
+  - android.permission.USE_FULL_SCREEN_INTENT
+  - android.permission.VIBRATE
+  - android.permission.WAKE_LOCK
+  - android.permission.WRITE_SECURE_SETTINGS
+  - com.android.alarm.permission.SET_ALARM
+  - com.google.android.c2dm.permission.RECEIVE
+  - protect.yourself.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+
+Activities (5):
+  - protect.yourself.features.blockerPage.ui.PornBlockActivity
+  - protect.yourself.features.mainActivityPage.MainActivity
+  - protect.yourself.features.protectedApps.ProtectedAppsActivity
+  - protect.yourself.features.ratingPage.inAppReview.InAppReviewActivity
+  - protect.yourself.features.transparentPage.TransparentActivity
+
+Services (8):
+  - androidx.room.MultiInstanceInvalidationService
+  - androidx.work.impl.background.systemalarm.SystemAlarmService
+  - androidx.work.impl.background.systemjob.SystemJobService
+  - androidx.work.impl.foreground.SystemForegroundService
+  - protect.yourself.commons.utils.firebaseUtils.MyFirebaseMessagingService
+  - protect.yourself.commons.utils.notificationUtils.NotificationActionService
+  - protect.yourself.features.blockerPage.service.MyAccessibilityService
+  - protect.yourself.features.blockerPage.service.MyVpnService
+
+Receivers (16):
+  - androidx.profileinstaller.ProfileInstallReceiver
+  - androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy
+  - androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy
+  - androidx.work.impl.background.systemalarm.ConstraintProxy$NetworkStateProxy
+  - androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy
+  - androidx.work.impl.background.systemalarm.ConstraintProxyUpdateReceiver
+  - androidx.work.impl.background.systemalarm.RescheduleReceiver
+  - androidx.work.impl.diagnostics.DiagnosticsReceiver
+  - androidx.work.impl.utils.ForceStopRunnable$BroadcastReceiver
+  - protect.yourself.commons.utils.broadcastReceivers.AppSystemActionReceiver
+  - protect.yourself.commons.utils.broadcastReceivers.AppSystemActionReceiverAllTime
+  - protect.yourself.commons.utils.broadcastReceivers.AppSystemActionReceiverAllTimeWithData
+  - protect.yourself.commons.utils.broadcastReceivers.StopMeAlarmReceiver
+  - protect.yourself.features.blockerPage.utils.DeviceAdminUtils$MyDeviceAdminReceiver
+  - protect.yourself.features.blockerPage.widget.StopMeWidget
+  - protect.yourself.features.streakPage.widget.StreakWidget
+
+Providers (2):
+  - androidx.core.content.FileProvider
+  - androidx.startup.InitializationProvider
+
+Native libraries (4):
+  - lib/arm64-v8a/libandroidx.graphics.path.so
+  - lib/armeabi-v7a/libandroidx.graphics.path.so
+  - lib/x86/libandroidx.graphics.path.so
+  - lib/x86_64/libandroidx.graphics.path.so
+
+Assets (10):
+  - assets/dexopt/baseline.prof
+  - assets/dexopt/baseline.profm
+  - assets/loading.json
+  - assets/no_history.json
+  - assets/no_internet.json
+  - assets/preset_block_keywords.json
+  - assets/preset_whitelist_keywords.json
+  - assets/reminder.json
+  - assets/streak_fire.json
+  - assets/twinkle_crown.json

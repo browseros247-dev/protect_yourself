@@ -1,0 +1,154 @@
+==============================================================================
+NOPON ANALYSIS SUMMARY  —  NopoX_1.0.53.apk
+==============================================================================
+Package:        com.planproductive.nopoz
+App name:       NopoX
+Version:        1.0.53 (code 1053)
+Min SDK:        23
+Target SDK:     33
+Compile SDK:    N/A (not in APK manifest)
+Main activity:  com.planproductive.nopox.features.mainActivityPage.MainActivity
+Signed:         v1=True v2=True v3=True
+Cert subject:   <asn1crypto.x509.Name 139964159359744 b'0g1\x0b0\t\x06\x03U\x04\x06\x13\x02BD1\x0e0\x0c\x06\x03U\x04\x08\x13\x05Local1\x0e0\x0c\x06\x03U\x04\x07\x13\x05Local1\x0e0\x0c\x06\x03U\x04\n\x13\x05Local1\x140\x12\x06\x03U\x04\x0b\x13\x0bReverse-Eng1\x120\x10\x06\x03U\x04\x03\x13\tNopoX-Mod'>
+Cert issuer:    <asn1crypto.x509.Name 139964159360320 b'0g1\x0b0\t\x06\x03U\x04\x06\x13\x02BD1\x0e0\x0c\x06\x03U\x04\x08\x13\x05Local1\x0e0\x0c\x06\x03U\x04\x07\x13\x05Local1\x0e0\x0c\x06\x03U\x04\n\x13\x05Local1\x140\x12\x06\x03U\x04\x0b\x13\x0bReverse-Eng1\x120\x10\x06\x03U\x04\x03\x13\tNopoX-Mod'>
+Cert SHA-256:   6A 00 9D 7E 03 87 36 D3 80 35 00 4F 59 97 56 D3 62 90 0E 04 88 E1 78 FE C8 1E 11 20 91 2B A3 F3
+
+Total files in APK: 1730
+File extensions:
+  .xml          713
+  (no-ext)      468
+  .png          260
+  .version      89
+  .webp         67
+  .properties   63
+  .proto        26
+  .dex          7
+  .json         7
+  .kotlin_builtins  7
+  .otf          6
+  .gif          2
+  .arsc         1
+  .prof         1
+  .profm        1
+  .txt          1
+  .managedchannelprovider  1
+  .nameresolverprovider  1
+  .maindispatcherfactory  1
+  .coroutineexceptionhandler  1
+  .loadbalancerprovider  1
+  .gz           1
+  .jks          1
+  .bin          1
+  .sf           1
+  .rsa          1
+  .mf           1
+
+Permissions (24):
+  - android.permission.ACCESS_NETWORK_STATE
+  - android.permission.ACCESS_NOTIFICATION_POLICY
+  - android.permission.FOREGROUND_SERVICE
+  - android.permission.INTERACT_ACROSS_USERS
+  - android.permission.INTERACT_ACROSS_USERS_FULL
+  - android.permission.INTERNET
+  - android.permission.KILL_BACKGROUND_PROCESSES
+  - android.permission.POST_NOTIFICATIONS
+  - android.permission.RECEIVE_BOOT_COMPLETED
+  - android.permission.REORDER_TASKS
+  - android.permission.SCHEDULE_EXACT_ALARM
+  - android.permission.SYSTEM_ALERT_WINDOW
+  - android.permission.USE_BIOMETRIC
+  - android.permission.USE_FINGERPRINT
+  - android.permission.USE_FULL_SCREEN_INTENT
+  - android.permission.VIBRATE
+  - android.permission.WAKE_LOCK
+  - android.permission.WRITE_SECURE_SETTINGS
+  - com.android.alarm.permission.SET_ALARM
+  - com.android.vending.BILLING
+  - com.google.android.c2dm.permission.RECEIVE
+  - com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE
+  - com.google.android.gms.permission.AD_ID
+  - com.planproductive.nopoz.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+
+Activities (19):
+  - androidx.test.core.app.InstrumentationActivityInvoker$BootstrapActivity
+  - androidx.test.core.app.InstrumentationActivityInvoker$EmptyActivity
+  - androidx.test.core.app.InstrumentationActivityInvoker$EmptyFloatingActivity
+  - com.android.billingclient.api.ProxyBillingActivity
+  - com.canhub.cropper.CropImageActivity
+  - com.google.android.gms.ads.AdActivity
+  - com.google.android.gms.ads.OutOfContextTestingActivity
+  - com.google.android.gms.auth.api.signin.internal.SignInHubActivity
+  - com.google.android.gms.common.api.GoogleApiActivity
+  - com.google.android.play.core.common.PlayCoreDialogWrapperActivity
+  - com.google.android.play.core.missingsplits.PlayCoreMissingSplitsActivity
+  - com.google.firebase.auth.internal.GenericIdpActivity
+  - com.google.firebase.auth.internal.RecaptchaActivity
+  - com.planproductive.nopox.features.mainActivityPage.MainActivity
+  - com.planproductive.nopox.features.premiumPage.PremiumAnywhereActivity
+  - com.planproductive.nopox.features.protectedApps.ProtectedAppsActivity
+  - com.planproductive.nopox.features.puPromotionPage.PuPromotionActivity
+  - com.planproductive.nopox.features.ratingPage.inAppReview.InAppReviewActivity
+  - com.planproductive.nopox.features.transparentPage.TransparentActivity
+
+Services (17):
+  - androidx.room.MultiInstanceInvalidationService
+  - androidx.work.impl.background.systemalarm.SystemAlarmService
+  - androidx.work.impl.background.systemjob.SystemJobService
+  - androidx.work.impl.foreground.SystemForegroundService
+  - com.google.android.datatransport.runtime.backends.TransportBackendDiscovery
+  - com.google.android.datatransport.runtime.scheduling.jobscheduling.JobInfoSchedulerService
+  - com.google.android.gms.ads.AdService
+  - com.google.android.gms.auth.api.signin.RevocationBoundService
+  - com.google.android.gms.measurement.AppMeasurementJobService
+  - com.google.android.gms.measurement.AppMeasurementService
+  - com.google.android.play.core.assetpacks.AssetPackExtractionService
+  - com.google.firebase.components.ComponentDiscoveryService
+  - com.google.firebase.messaging.FirebaseMessagingService
+  - com.planproductive.nopox.commons.utils.firebaseUtils.MyFirebaseMessagingService
+  - com.planproductive.nopox.commons.utils.notificationUtils.NotificationActionService
+  - com.planproductive.nopox.features.blockerPage.service.MyAccessibilityService
+  - com.planproductive.nopox.features.blockerPage.service.MyVpnService
+
+Receivers (18):
+  - androidx.profileinstaller.ProfileInstallReceiver
+  - androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryChargingProxy
+  - androidx.work.impl.background.systemalarm.ConstraintProxy$BatteryNotLowProxy
+  - androidx.work.impl.background.systemalarm.ConstraintProxy$NetworkStateProxy
+  - androidx.work.impl.background.systemalarm.ConstraintProxy$StorageNotLowProxy
+  - androidx.work.impl.background.systemalarm.ConstraintProxyUpdateReceiver
+  - androidx.work.impl.background.systemalarm.RescheduleReceiver
+  - androidx.work.impl.diagnostics.DiagnosticsReceiver
+  - androidx.work.impl.utils.ForceStopRunnable$BroadcastReceiver
+  - com.google.android.datatransport.runtime.scheduling.jobscheduling.AlarmManagerSchedulerBroadcastReceiver
+  - com.google.android.gms.measurement.AppMeasurementReceiver
+  - com.google.firebase.iid.FirebaseInstanceIdReceiver
+  - com.planproductive.nopox.commons.utils.broadcastReceivers.AppSystemActionReceiver
+  - com.planproductive.nopox.commons.utils.broadcastReceivers.AppSystemActionReceiverAllTime
+  - com.planproductive.nopox.commons.utils.broadcastReceivers.AppSystemActionReceiverAllTimeWithData
+  - com.planproductive.nopox.features.blockerPage.utils.DeviceAdminUtils$MyDeviceAdminReceiver
+  - com.planproductive.nopox.features.blockerPage.widget.StopMeWidget
+  - com.planproductive.nopox.features.streakPage.widget.StreakWidget
+
+Providers (5):
+  - androidx.core.content.FileProvider
+  - androidx.startup.InitializationProvider
+  - com.canhub.cropper.CropFileProvider
+  - com.google.android.gms.ads.MobileAdsInitProvider
+  - com.google.firebase.provider.FirebaseInitProvider
+
+Native libraries (0):
+
+Assets (8):
+  - assets/dexopt/baseline.prof
+  - assets/dexopt/baseline.profm
+  - assets/loading.json
+  - assets/no_history.json
+  - assets/no_internet.json
+  - assets/reminder.json
+  - assets/streak_fire.json
+  - assets/twinkle_crown.json
+
+Declared (custom) permissions (1):
+  - com.planproductive.nopoz.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+
+Features (0):
