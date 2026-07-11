@@ -15,7 +15,11 @@ import kotlinx.coroutines.SupervisorJob
  *
  * Rebuild adds:
  *  - appDatabase: AppDatabase (Room)
- *  - applicationScope: CoroutineScope (SupervisorJob + IO dispatcher)
+ *  - applicationScope: CoroutineScope (SupervisorJob + IO dispatcher +
+ *    AppCoroutineExceptionHandler so uncaught coroutine exceptions are
+ *    routed to CrashLogger with scope context — fixes the silent-loss
+ *    bug where `async { throw }` without `await` lost the exception
+ *    entirely).
  */
 class AppContainer(
     private val appContext: Context
@@ -23,8 +27,16 @@ class AppContainer(
     /**
      * Application-scoped coroutine supervisor scope.
      * Use for fire-and-forget background work that should survive ViewModel lifecycle.
+     *
+     * Installs [AppCoroutineExceptionHandler] so any uncaught exception in a
+     * coroutine launched from this scope is logged to CrashLogger with
+     * `tag="Coroutine:applicationScope"` + dispatcher + job context.
      */
-    val applicationScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val applicationScope: CoroutineScope = appCoroutineScope(
+        scopeName = "applicationScope",
+        dispatcher = Dispatchers.Default,
+        context = appContext
+    )
 
     /**
      * Room database (singleton).

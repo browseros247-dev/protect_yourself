@@ -6,11 +6,9 @@ import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
 import android.widget.RemoteViews
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import protect.yourself.R
+import protect.yourself.core.appCoroutineScope
 import protect.yourself.features.mainActivityPage.MainActivity
 import timber.log.Timber
 import java.util.Calendar
@@ -26,7 +24,10 @@ import java.util.concurrent.TimeUnit
  */
 class StreakWidget : AppWidgetProvider() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = appCoroutineScope(
+        scopeName = "StreakWidget",
+        dispatcher = kotlinx.coroutines.Dispatchers.IO
+    )
 
     override fun onUpdate(
         context: Context,

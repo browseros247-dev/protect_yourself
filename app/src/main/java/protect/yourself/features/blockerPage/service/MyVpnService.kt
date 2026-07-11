@@ -12,12 +12,10 @@ import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import protect.yourself.R
+import protect.yourself.core.appCoroutineScope
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
 import protect.yourself.database.switchStatus.SwitchIdentifier
@@ -78,7 +76,11 @@ import java.net.InetAddress
  */
 class MyVpnService : VpnService() {
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val serviceScope = appCoroutineScope(
+        scopeName = "MyVpnService",
+        dispatcher = kotlinx.coroutines.Dispatchers.IO,
+        context = this
+    )
     private var vpnInterface: ParcelFileDescriptor? = null
     private var isRunning = false
     private var isStarting = false

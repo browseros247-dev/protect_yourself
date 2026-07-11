@@ -357,6 +357,11 @@ class BackupManager(private val context: Context) {
         // throw IOException or return null for "wt" because they don't support
         // truncate mode. We handle BOTH failure modes in a single loop so the
         // retry actually fires when the first attempt fails.
+        //
+        // Note: CrashLogViewModel.exportToUri uses the shared SafUtils helper
+        // which mirrors this exact logic. We keep the inline version here to
+        // avoid coupling BackupManager to SafUtils (the backup feature is
+        // critical-path and should be self-contained).
         val bytes = json.toByteArray(Charsets.UTF_8)
         val modes = listOf("wt", "w")
         var lastError: IOException? = null

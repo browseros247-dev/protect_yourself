@@ -14,11 +14,9 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import protect.yourself.R
+import protect.yourself.core.appCoroutineScope
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.switchStatus.SwitchIdentifier
 import protect.yourself.database.switchStatus.SwitchStatusValues
@@ -48,8 +46,16 @@ import java.io.File
  */
 class PornBlockActivity : AppCompatActivity() {
 
-    private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val uiScope = appCoroutineScope(
+        scopeName = "PornBlockActivity-ui",
+        dispatcher = kotlinx.coroutines.Dispatchers.Main,
+        context = this
+    )
+    private val ioScope = appCoroutineScope(
+        scopeName = "PornBlockActivity-io",
+        dispatcher = kotlinx.coroutines.Dispatchers.IO,
+        context = this
+    )
 
     private var countDownTimer: CountDownTimer? = null
 
