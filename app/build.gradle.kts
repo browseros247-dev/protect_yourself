@@ -208,6 +208,9 @@ dependencies {
     testImplementation(libs.androidx.arch.core.testing)
     testImplementation(libs.truth)
     testImplementation(libs.androidx.work.testing)
+    // Required by tests that use androidx.test.core.app.ApplicationProvider
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
 
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

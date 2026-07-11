@@ -187,7 +187,7 @@ class BlockerPageUtilsTest {
     }
 
     @Test
-    fun `isValidDNS accepts with leading/trailing whitespace`() {
+    fun `isValidDNS accepts with leading and trailing whitespace`() {
         assertThat(utils.isValidDNS("  1.1.1.3  ")).isTrue()
     }
 

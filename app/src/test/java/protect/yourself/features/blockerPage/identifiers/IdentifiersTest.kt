@@ -13,7 +13,7 @@ class IdentifiersTest {
 
     @Test
     fun `AccountabilityPartnerTypeIdentifiers has 4 types`() {
-        assertThat(AccountabilityPartnerTypeIdentifiers.values()).hasSize(4)
+        assertThat(AccountabilityPartnerTypeIdentifiers.values()).asList().hasSize(4)
     }
 
     @Test
@@ -62,7 +62,7 @@ class IdentifiersTest {
 
     @Test
     fun `AppLockTypeIdentifiers has 4 types`() {
-        assertThat(AppLockTypeIdentifiers.values()).hasSize(4)
+        assertThat(AppLockTypeIdentifiers.values()).asList().hasSize(4)
     }
 
     @Test
@@ -102,7 +102,7 @@ class IdentifiersTest {
 
     @Test
     fun `VpnConnectionTypeIdentifiers has 4 types`() {
-        assertThat(VpnConnectionTypeIdentifiers.values()).hasSize(4)
+        assertThat(VpnConnectionTypeIdentifiers.values()).asList().hasSize(4)
     }
 
     @Test
@@ -129,7 +129,7 @@ class IdentifiersTest {
 
     @Test
     fun `KeywordListTypeIdentifiers has 3 types`() {
-        assertThat(KeywordListTypeIdentifiers.values()).hasSize(3)
+        assertThat(KeywordListTypeIdentifiers.values()).asList().hasSize(3)
     }
 
     @Test

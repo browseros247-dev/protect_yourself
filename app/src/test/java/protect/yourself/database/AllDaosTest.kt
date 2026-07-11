@@ -229,8 +229,8 @@ class AllDaosTest {
 
     @Test
     fun `vpnCustomDnsDao upsert and getSelected`() = runBlocking {
-        db.vpnCustomDnsDao().upsert(VpnCustomDnsItemModel("preset1", "1.1.1.3", "1.0.0.3", false))
-        db.vpnCustomDnsDao().upsert(VpnCustomDnsItemModel("preset2", "8.8.8.8", "8.8.4.4", true))
+        db.vpnCustomDnsDao().upsert(VpnCustomDnsItemModel("preset1", "Preset 1", "1.1.1.3", "1.0.0.3", false))
+        db.vpnCustomDnsDao().upsert(VpnCustomDnsItemModel("preset2", "Preset 2", "8.8.8.8", "8.8.4.4", true))
 
         val selected = db.vpnCustomDnsDao().getSelected()
         assertThat(selected).isNotNull()
@@ -239,8 +239,8 @@ class AllDaosTest {
 
     @Test
     fun `vpnCustomDnsDao setSelected sets only matching key as selected`() = runBlocking {
-        db.vpnCustomDnsDao().upsert(VpnCustomDnsItemModel("preset1", "1.1.1.3", "1.0.0.3", true))
-        db.vpnCustomDnsDao().upsert(VpnCustomDnsItemModel("preset2", "8.8.8.8", "8.8.4.4", false))
+        db.vpnCustomDnsDao().upsert(VpnCustomDnsItemModel("preset1", "Preset 1", "1.1.1.3", "1.0.0.3", true))
+        db.vpnCustomDnsDao().upsert(VpnCustomDnsItemModel("preset2", "Preset 2", "8.8.8.8", "8.8.4.4", false))
 
         db.vpnCustomDnsDao().setSelected("preset2")
 
@@ -250,8 +250,8 @@ class AllDaosTest {
 
     @Test
     fun `vpnCustomDnsDao deleteByKey removes only that item`() = runBlocking {
-        db.vpnCustomDnsDao().upsert(VpnCustomDnsItemModel("preset1", "1.1.1.3", "1.0.0.3", true))
-        db.vpnCustomDnsDao().upsert(VpnCustomDnsItemModel("preset2", "8.8.8.8", "8.8.4.4", false))
+        db.vpnCustomDnsDao().upsert(VpnCustomDnsItemModel("preset1", "Preset 1", "1.1.1.3", "1.0.0.3", true))
+        db.vpnCustomDnsDao().upsert(VpnCustomDnsItemModel("preset2", "Preset 2", "8.8.8.8", "8.8.4.4", false))
 
         db.vpnCustomDnsDao().deleteByKey("preset1")
         val all = db.vpnCustomDnsDao().observeAll().first()

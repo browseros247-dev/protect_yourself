@@ -5,14 +5,21 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedKeywords.SelectedKeywordIdentifier
 import protect.yourself.database.selectedKeywords.SelectedKeywordItemModel
+import protect.yourself.database.switchStatus.SwitchIdentifier
+import protect.yourself.database.switchStatus.SwitchStatusValues
+import protect.yourself.features.blockerPage.utils.BlockingValidator
+import protect.yourself.features.blockerPage.utils.ValidationResult
 import timber.log.Timber
 
 /**
@@ -33,12 +40,24 @@ class KeywordManagerViewModel(
 ) : AndroidViewModel(application) {
 
     private val db = AppDatabase.getInstance(application)
+    private val switchValues = SwitchStatusValues(db.switchStatusDao())
 
     private val _state = MutableStateFlow(KeywordManagerState())
     val state: StateFlow<KeywordManagerState> = _state.asStateFlow()
 
+    /**
+     * One-shot UI events (toast feedback for add/delete/validation errors).
+     * Consumed by the UI via [collect]. Each event is emitted at most once per
+     * emission — the buffer drops old events if the UI is slow to consume.
+     */
+    private val _events = MutableSharedFlow<KeywordManagerEvent>(
+        extraBufferCapacity = 8
+    )
+    val events: SharedFlow<KeywordManagerEvent> = _events.asSharedFlow()
+
     init {
         observeAllLists()
+        observeSettingTitleSwitch()
     }
 
     private fun observeAllLists() {
@@ -83,73 +102,182 @@ class KeywordManagerViewModel(
     }
 
     /**
-     * Add a new keyword to the blocklist.
+     * Observe the BLOCK_SETTING_PAGE_BY_TITLE_SWITCH so the UI can render the
+     * master toggle for setting-title blocking live. Previously this switch
+     * was hidden in the DB and only flipped to ON by the legacy
+     * `saveTextField` flow — leaving the user with no way to turn it back off
+     * without using the legacy flow.
      */
-    fun addBlockKeyword(keyword: String) {
-        val trimmed = keyword.trim()
-        // KB-10 fix: validate min 2 chars, max 100 chars, no duplicate.
-        if (!isValidKeyword(trimmed, _state.value.blockKeywords)) return
+    private fun observeSettingTitleSwitch() {
         viewModelScope.launch {
             try {
-                val item = SelectedKeywordItemModel(
-                    key = "block_${System.currentTimeMillis()}_${trimmed.hashCode()}",
-                    keyword = trimmed,
-                    identifier = SelectedKeywordIdentifier.PORN_BLOCK_WORDS.value,
-                    isSelected = true
-                )
-                db.selectedKeywordDao().upsert(item)
-                refreshAccessibility()
-                Timber.i("Added block keyword: $trimmed")
+                db.switchStatusDao()
+                    .observe(SwitchIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_SWITCH)
+                    .collect { item ->
+                        val isOn = item?.asBoolean() ?: false
+                        _state.update { it.copy(isSettingTitleSwitchOn = isOn) }
+                    }
             } catch (t: Throwable) {
-                Timber.e(t, "Failed to add block keyword: $trimmed")
+                Timber.e(t, "Failed to observe setting-title switch")
+            }
+        }
+    }
+
+    /**
+     * Add a new keyword to the blocklist.
+     * Emits a [KeywordManagerEvent] with the validation outcome so the UI can
+     * show inline feedback (success toast or error message).
+     */
+    fun addBlockKeyword(keyword: String) {
+        val result = BlockingValidator.validateKeyword(
+            keyword,
+            _state.value.blockKeywords.map { it.keyword }
+        )
+        if (result is ValidationResult.Valid) {
+            val normalized = result.normalized
+            viewModelScope.launch {
+                try {
+                    val item = SelectedKeywordItemModel(
+                        key = "block_${System.currentTimeMillis()}_${normalized.hashCode()}",
+                        keyword = normalized,
+                        identifier = SelectedKeywordIdentifier.PORN_BLOCK_WORDS.value,
+                        isSelected = true
+                    )
+                    db.selectedKeywordDao().upsert(item)
+                    refreshAccessibility()
+                    Timber.i("Added block keyword: $normalized")
+                    _events.emit(KeywordManagerEvent.Added(normalized, "blocklist"))
+                } catch (t: Throwable) {
+                    Timber.e(t, "Failed to add block keyword: $normalized")
+                    _events.emit(
+                        KeywordManagerEvent.Error(
+                            "Failed to add: ${t.message ?: "unknown error"}"
+                        )
+                    )
+                }
+            }
+        } else {
+            Timber.w("Rejected block keyword '$keyword': $result")
+            viewModelScope.launch {
+                _events.emit(KeywordManagerEvent.ValidationFailed(result))
             }
         }
     }
 
     /**
      * Add a new keyword to the whitelist.
+     * Emits a [KeywordManagerEvent] with the validation outcome so the UI can
+     * show inline feedback.
      */
     fun addWhitelistKeyword(keyword: String) {
-        val trimmed = keyword.trim()
-        // KB-10 fix: validate.
-        if (!isValidKeyword(trimmed, _state.value.whitelistKeywords)) return
-        viewModelScope.launch {
-            try {
-                val item = SelectedKeywordItemModel(
-                    key = "white_${System.currentTimeMillis()}_${trimmed.hashCode()}",
-                    keyword = trimmed,
-                    identifier = SelectedKeywordIdentifier.PORN_WHITE_LIST_WORDS.value,
-                    isSelected = true
-                )
-                db.selectedKeywordDao().upsert(item)
-                refreshAccessibility()
-                Timber.i("Added whitelist keyword: $trimmed")
-            } catch (t: Throwable) {
-                Timber.e(t, "Failed to add whitelist keyword: $trimmed")
+        val result = BlockingValidator.validateKeyword(
+            keyword,
+            _state.value.whitelistKeywords.map { it.keyword }
+        )
+        if (result is ValidationResult.Valid) {
+            val normalized = result.normalized
+            viewModelScope.launch {
+                try {
+                    val item = SelectedKeywordItemModel(
+                        key = "white_${System.currentTimeMillis()}_${normalized.hashCode()}",
+                        keyword = normalized,
+                        identifier = SelectedKeywordIdentifier.PORN_WHITE_LIST_WORDS.value,
+                        isSelected = true
+                    )
+                    db.selectedKeywordDao().upsert(item)
+                    refreshAccessibility()
+                    Timber.i("Added whitelist keyword: $normalized")
+                    _events.emit(KeywordManagerEvent.Added(normalized, "whitelist"))
+                } catch (t: Throwable) {
+                    Timber.e(t, "Failed to add whitelist keyword: $normalized")
+                    _events.emit(
+                        KeywordManagerEvent.Error(
+                            "Failed to add: ${t.message ?: "unknown error"}"
+                        )
+                    )
+                }
+            }
+        } else {
+            Timber.w("Rejected whitelist keyword '$keyword': $result")
+            viewModelScope.launch {
+                _events.emit(KeywordManagerEvent.ValidationFailed(result))
             }
         }
     }
 
     /**
      * Add a new setting title keyword.
+     *
+     * Side-effect: auto-enables the BLOCK_SETTING_PAGE_BY_TITLE_SWITCH on the
+     * first add (mirrors the legacy `saveTextField` flow). The user can
+     * subsequently toggle the switch OFF via [setSettingTitleSwitchEnabled].
      */
     fun addSettingTitleKeyword(keyword: String) {
-        val trimmed = keyword.trim()
-        // KB-10 fix: validate.
-        if (!isValidKeyword(trimmed, _state.value.settingTitleKeywords)) return
+        val result = BlockingValidator.validateKeyword(
+            keyword,
+            _state.value.settingTitleKeywords.map { it.keyword }
+        )
+        if (result is ValidationResult.Valid) {
+            val normalized = result.normalized
+            viewModelScope.launch {
+                try {
+                    val item = SelectedKeywordItemModel(
+                        key = "setting_${System.currentTimeMillis()}_${normalized.hashCode()}",
+                        keyword = normalized,
+                        identifier = SelectedKeywordIdentifier.SETTING_KEYWORDS_LIST_WORDS.value,
+                        isSelected = true
+                    )
+                    db.selectedKeywordDao().upsert(item)
+                    // Auto-enable the master switch so the user does not have
+                    // to find it separately. Mirrors the legacy flow.
+                    if (!switchValues.isBlockSettingPageByTitleSwitchOn()) {
+                        switchValues.storeSwitchStatus(
+                            SwitchIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_SWITCH,
+                            true
+                        )
+                        Timber.i("Auto-enabled BLOCK_SETTING_PAGE_BY_TITLE_SWITCH")
+                    }
+                    refreshAccessibility()
+                    Timber.i("Added setting title keyword: $normalized")
+                    _events.emit(KeywordManagerEvent.Added(normalized, "setting titles"))
+                } catch (t: Throwable) {
+                    Timber.e(t, "Failed to add setting title keyword: $normalized")
+                    _events.emit(
+                        KeywordManagerEvent.Error(
+                            "Failed to add: ${t.message ?: "unknown error"}"
+                        )
+                    )
+                }
+            }
+        } else {
+            Timber.w("Rejected setting title keyword '$keyword': $result")
+            viewModelScope.launch {
+                _events.emit(KeywordManagerEvent.ValidationFailed(result))
+            }
+        }
+    }
+
+    /**
+     * Toggle the BLOCK_SETTING_PAGE_BY_TITLE_SWITCH. Exposed so the unified
+     * blocking page can render a master switch on the "Setting Titles" tab.
+     */
+    fun setSettingTitleSwitchEnabled(enabled: Boolean) {
         viewModelScope.launch {
             try {
-                val item = SelectedKeywordItemModel(
-                    key = "setting_${System.currentTimeMillis()}_${trimmed.hashCode()}",
-                    keyword = trimmed,
-                    identifier = SelectedKeywordIdentifier.SETTING_KEYWORDS_LIST_WORDS.value,
-                    isSelected = true
+                switchValues.storeSwitchStatus(
+                    SwitchIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_SWITCH,
+                    enabled
                 )
-                db.selectedKeywordDao().upsert(item)
+                _state.update { it.copy(isSettingTitleSwitchOn = enabled) }
                 refreshAccessibility()
-                Timber.i("Added setting title keyword: $trimmed")
+                Timber.i("Setting-title switch set to $enabled")
             } catch (t: Throwable) {
-                Timber.e(t, "Failed to add setting title keyword: $trimmed")
+                Timber.e(t, "Failed to set setting-title switch to $enabled")
+                _events.emit(
+                    KeywordManagerEvent.Error(
+                        "Failed to toggle switch: ${t.message ?: "unknown error"}"
+                    )
+                )
             }
         }
     }
@@ -187,15 +315,32 @@ class KeywordManagerViewModel(
 
     /**
      * Delete a keyword by key.
+     * Emits a [KeywordManagerEvent.Deleted] event for UI feedback.
      */
     fun deleteKeyword(key: String) {
         viewModelScope.launch {
             try {
+                // Look up the keyword before deleting so we can include it in
+                // the success event (used for the "Removed 'X'" toast).
+                val existing = listOf(
+                    *_state.value.blockKeywords.toTypedArray(),
+                    *_state.value.whitelistKeywords.toTypedArray(),
+                    *_state.value.settingTitleKeywords.toTypedArray()
+                ).firstOrNull { it.key == key }
+
                 db.selectedKeywordDao().deleteByKey(key)
                 refreshAccessibility()
                 Timber.i("Deleted keyword: $key")
+                _events.emit(
+                    KeywordManagerEvent.Deleted(existing?.keyword ?: "entry")
+                )
             } catch (t: Throwable) {
                 Timber.e(t, "Failed to delete keyword: $key")
+                _events.emit(
+                    KeywordManagerEvent.Error(
+                        "Failed to delete: ${t.message ?: "unknown error"}"
+                    )
+                )
             }
         }
     }
@@ -251,7 +396,14 @@ data class KeywordManagerState(
     val whitelistKeywords: List<SelectedKeywordItemModel> = emptyList(),
     val settingTitleKeywords: List<SelectedKeywordItemModel> = emptyList(),
     val activeTab: KeywordTab = KeywordTab.BLOCKLIST,
-    val searchQuery: String = ""
+    val searchQuery: String = "",
+    /**
+     * Live state of the BLOCK_SETTING_PAGE_BY_TITLE_SWITCH.
+     * Used by the UnifiedBlockingPage to render a master toggle on the
+     * "Setting Titles" tab. When OFF, setting-title keywords are stored but
+     * NOT enforced by the accessibility service.
+     */
+    val isSettingTitleSwitchOn: Boolean = false
 ) {
     /** Returns the keywords for the active tab, filtered by search query. */
     fun filteredKeywords(): List<SelectedKeywordItemModel> {
@@ -266,4 +418,24 @@ data class KeywordManagerState(
 
     /** Total count across all tabs. */
     fun totalCount(): Int = blockKeywords.size + whitelistKeywords.size + settingTitleKeywords.size
+}
+
+/**
+ * One-shot UI events emitted by [KeywordManagerViewModel].
+ *
+ * The UnifiedBlockingPage collects these via [KeywordManagerViewModel.events]
+ * and shows appropriate feedback (Toast / inline error) to the user.
+ */
+sealed class KeywordManagerEvent {
+    /** Entry was successfully added to the named list. */
+    data class Added(val entry: String, val listName: String) : KeywordManagerEvent()
+
+    /** Entry was successfully deleted. */
+    data class Deleted(val entry: String) : KeywordManagerEvent()
+
+    /** Input failed validation. [result] carries the specific failure. */
+    data class ValidationFailed(val result: ValidationResult) : KeywordManagerEvent()
+
+    /** An unexpected error occurred (DB write failure, etc). */
+    data class Error(val message: String) : KeywordManagerEvent()
 }

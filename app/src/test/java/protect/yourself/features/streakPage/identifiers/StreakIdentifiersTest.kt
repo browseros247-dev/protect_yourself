@@ -12,7 +12,7 @@ class StreakIdentifiersTest {
 
     @Test
     fun `RelapseTypeIdentifiers has 7 types`() {
-        assertThat(RelapseTypeIdentifiers.values()).hasSize(7)
+        assertThat(RelapseTypeIdentifiers.values()).asList().hasSize(7)
     }
 
     @Test
@@ -52,7 +52,7 @@ class StreakIdentifiersTest {
 
     @Test
     fun `StreakAchievement has 9 milestones`() {
-        assertThat(StreakAchievement.values()).hasSize(9)
+        assertThat(StreakAchievement.values()).asList().hasSize(9)
     }
 
     @Test

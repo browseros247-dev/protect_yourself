@@ -19,6 +19,7 @@ import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedApps.SelectedAppItemModel
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
 import protect.yourself.database.switchStatus.SwitchStatusValues
+import protect.yourself.features.blockerPage.service.MyAccessibilityService
 import protect.yourself.features.blockerPage.service.MyVpnService
 import protect.yourself.features.selectAppPage.data.DisplayAppsItemModel
 import timber.log.Timber
@@ -150,7 +151,6 @@ class SelectAppPageViewModel(
                         _navigation.emit("VPN whitelist saved. Toggle VPN off/on to apply.")
                     }
                 }
-            }
             } else if (identifier == SelectedAppListIdentifier.WHITELIST_UNSUPPORTED_BROWSER) {
                 // Unsupported browser whitelist fix: when the user changes the
                 // whitelist, refresh the accessibility service so the service
