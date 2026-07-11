@@ -60,9 +60,31 @@ class AppDataCheckWorker(
                 Timber.w("Porn blocker switch missing — DB may need re-population")
             }
 
-            // TODO Phase 3+: re-apply accessibility blocking values
-            // TODO Phase 5: streak date rollover
-            // TODO Phase 5: due Stop Me scheduled sessions
+            // PM-04 fix: streak date rollover. If today is a new day and no
+            // streak entry exists for today, insert one. This ensures the streak
+            // counter increments even if the user doesn't open the Streak page.
+            val now = System.currentTimeMillis()
+            val todayStart = getDayStart(now)
+            val existingToday = db.streakDatesDao().getAll().any { it.startTime == todayStart }
+            if (!existingToday) {
+                db.streakDatesDao().upsert(
+                    protect.yourself.database.streakDates.StreakDatesItemModel(
+                        startTime = todayStart,
+                        endTime = now,
+                        type = "",
+                        freeText = ""
+                    )
+                )
+                Timber.i("PM-04: Inserted streak entry for today (startTime=$todayStart)")
+            }
+
+            // PM-04 fix: check due Stop Me scheduled sessions
+            protect.yourself.features.blockerPage.utils.StopMeManager
+                .getInstance(applicationContext).checkDueSchedules()
+
+            // PM-04 fix: re-apply accessibility blocking config
+            protect.yourself.features.blockerPage.service.MyAccessibilityService.instance
+                ?.refreshBlockingConfig()
 
             Timber.i("AppDataCheckWorker completed successfully")
             Result.success()
@@ -75,6 +97,21 @@ class AppDataCheckWorker(
     companion object {
         const val WORK_NAME = "app_data_check_worker"
         const val CHANNEL_ID = "app_data_check_channel"
+
+        /**
+         * Returns the start of the day (midnight local time) for the given
+         * timestamp. Used by streak date rollover to determine if a streak
+         * entry already exists for "today".
+         */
+        private fun getDayStart(timestamp: Long): Long {
+            val cal = java.util.Calendar.getInstance()
+            cal.timeInMillis = timestamp
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            cal.set(java.util.Calendar.MINUTE, 0)
+            cal.set(java.util.Calendar.SECOND, 0)
+            cal.set(java.util.Calendar.MILLISECOND, 0)
+            return cal.timeInMillis
+        }
 
         /**
          * Create the notification channel (Android 8+).

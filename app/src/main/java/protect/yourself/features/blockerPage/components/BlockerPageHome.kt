@@ -78,6 +78,8 @@ fun BlockerPageHome() {
     var currentPage: SubPage? by remember { mutableStateOf(null) }
     var editDialog: EditDialogData? by remember { mutableStateOf(null) }
     var numberDialog: NumberDialogData? by remember { mutableStateOf(null) }
+    // PM-01: Time Delay countdown dialog state
+    var timeDelayDialog: TimeDelayDialogData? by remember { mutableStateOf(null) }
 
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -217,6 +219,10 @@ fun BlockerPageHome() {
                 is BlockerPageNavigation.PickBlockScreenImage -> {
                     imagePickerLauncher.launch("image/*")
                 }
+                is BlockerPageNavigation.RequestTimeDelay -> {
+                    // PM-01: show the Time Delay countdown dialog
+                    timeDelayDialog = TimeDelayDialogData(nav.delaySeconds, nav.item)
+                }
                 is BlockerPageNavigation.RequestDeviceAdmin -> {
                     try {
                         val adminManager = protect.yourself.features.protectedApps.DeviceAdminManager.getInstance(context)
@@ -264,6 +270,23 @@ fun BlockerPageHome() {
             onSave = { value ->
                 viewModel.saveNumberField(dialog.switchKey, value)
                 numberDialog = null
+            }
+        )
+    }
+
+    // PM-01: Time Delay countdown dialog
+    timeDelayDialog?.let { dialog ->
+        TimeDelayDialog(
+            delaySeconds = dialog.delaySeconds,
+            switchName = dialog.item.title,
+            onConfirm = {
+                viewModel.confirmToggleAfterDelay(dialog.item)
+                timeDelayDialog = null
+            },
+            onCancel = {
+                // User cancelled — don't toggle. The switch reverts to its
+                // original ON state automatically (the UI was never updated).
+                timeDelayDialog = null
             }
         )
     }
@@ -916,6 +939,66 @@ private fun SimpleSubPage(title: String, onBack: () -> Unit) {
 
 private data class EditDialogData(val title: String, val currentValue: String, val hint: String, val switchKey: String)
 private data class NumberDialogData(val title: String, val currentValue: Int, val min: Int, val max: Int, val switchKey: String)
+// PM-01: Time Delay dialog state
+private data class TimeDelayDialogData(val delaySeconds: Int, val item: protect.yourself.features.blockerPage.data.SettingPageItemModel)
+
+/**
+ * PM-01: Time Delay countdown dialog. Shows a live countdown and blocks the
+ * toggle until the countdown completes. The user can cancel at any time.
+ */
+@Composable
+private fun TimeDelayDialog(
+    delaySeconds: Int,
+    switchName: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    var remaining by remember { mutableStateOf(delaySeconds) }
+
+    // Tick down every second
+    androidx.compose.runtime.LaunchedEffect(delaySeconds) {
+        while (remaining > 0) {
+            kotlinx.coroutines.delay(1000)
+            remaining--
+        }
+        // Countdown complete — auto-confirm
+        onConfirm()
+    }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Time Delay") },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "Please wait $remaining seconds before disabling \"$switchName\".",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                CircularProgressIndicator(
+                    progress = 1f - (remaining.toFloat() / delaySeconds.toFloat()),
+                    color = BrandOrange,
+                    strokeWidth = 4.dp
+                )
+            }
+        },
+        confirmButton = {
+            // Confirm button is only enabled when countdown reaches 0
+            androidx.compose.material3.TextButton(
+                onClick = onConfirm,
+                enabled = remaining == 0
+            ) {
+                Text("Disable now", color = if (remaining == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onCancel) {
+                Text("Cancel")
+            }
+        }
+    )
+}
 
 sealed class SubPage {
     data class SelectApp(val title: String, val identifier: SelectedAppListIdentifier) : SubPage()
