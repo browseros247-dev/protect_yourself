@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.map
 import protect.yourself.features.blockerPage.identifiers.AccountabilityPartnerTypeIdentifiers
 import protect.yourself.features.blockerPage.identifiers.AppLockTypeIdentifiers
 import protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers
+import timber.log.Timber
 
 /**
  * SwitchStatusValues — central accessor for all switch/setting states.
@@ -213,12 +214,17 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
     }
 
     suspend fun getAppLockType(): AppLockTypeIdentifiers {
-        val raw = dao.get(SwitchIdentifier.SET_APP_LOCK_SWITCH)?.asString()
-        // AppLockTypeIdentifiers stored as Long under the SET_APP_LOCK_SWITCH key
-        // when SET_APP_LOCK_SWITCH is true, the actual type is stored elsewhere.
-        // Original code uses a separate "app_lock_type" key — add it for clarity.
-        val typeRaw = dao.get("app_lock_type")?.asString()
-        return AppLockTypeIdentifiers.fromString(typeRaw)
+        // BUG-15 fix: removed the dead `dao.get(SwitchIdentifier.SET_APP_LOCK_SWITCH)` read.
+        // The result was assigned to `val raw` but never used — `raw` was a
+        // leftover from a refactor. The actual type is stored under the
+        // "app_lock_type" key, which is what we return.
+        return try {
+            val typeRaw = dao.get("app_lock_type")?.asString()
+            AppLockTypeIdentifiers.fromString(typeRaw)
+        } catch (t: Throwable) {
+            Timber.w(t, "getAppLockType failed — defaulting to OFF")
+            AppLockTypeIdentifiers.OFF
+        }
     }
 
     // ===== Premium / ads — REMOVED stubs =====

@@ -31,33 +31,97 @@ class DailyReportWorker(
 
             val context = applicationContext
             val db = AppDatabase.getInstance(context)
+            val switchValues = protect.yourself.database.switchStatus.SwitchStatusValues(db.switchStatusDao())
+
+            // 4. Check due Stop Me schedules (always runs — independent of daily report toggle)
+            try {
+                StopMeManager.getInstance(context).checkDueSchedules()
+            } catch (t: Throwable) {
+                Timber.w(t, "DailyReportWorker: checkDueSchedules failed (non-fatal)")
+                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                    throwable = t,
+                    severity = protect.yourself.features.crashLog.CrashSeverity.WARN,
+                    tag = "DailyReportWorker",
+                    message = "checkDueSchedules failed (non-fatal)",
+                    extraContext = mapOf("worker" to "DailyReportWorker")
+                )
+            }
+
+            // 5. Check accessibility service state (always runs — independent of daily report toggle)
+            try {
+                if (!protect.yourself.features.protectedApps.AccessibilityGuard
+                    .isAccessibilityServiceEnabled(context)) {
+                    NotificationHelper.showAccessibilityDisabledNotification(context)
+                }
+            } catch (t: Throwable) {
+                Timber.w(t, "DailyReportWorker: accessibility check failed (non-fatal)")
+            }
+
+            // BUG-05 fix: check the daily report switch BEFORE showing the notification.
+            // The Stop Me + accessibility checks above always run (they're independent
+            // of whether the user wants the daily report notification). Only the
+            // notification itself is gated by the switch.
+            val dailyReportEnabled = try {
+                switchValues.isDailyReportSwitchOn()
+            } catch (t: Throwable) {
+                Timber.w(t, "DailyReportWorker: failed to read daily report switch — defaulting to false")
+                false
+            }
+
+            if (!dailyReportEnabled) {
+                Timber.i("DailyReportWorker: daily report switch is OFF — skipping notification " +
+                    "(Stop Me + accessibility checks still ran)")
+                return Result.success()
+            }
 
             // 1. Get block count
-            val blockCount = db.blockScreenCountDao().getCount()?.count ?: 0
+            val blockCount = try {
+                db.blockScreenCountDao().getCount()?.count ?: 0
+            } catch (t: Throwable) {
+                Timber.w(t, "DailyReportWorker: failed to read block count — defaulting to 0")
+                0
+            }
 
             // 2. Get current streak (active days)
-            val streakDays = db.streakDatesDao().countActiveStreakDays()
+            val streakDays = try {
+                db.streakDatesDao().countActiveStreakDays()
+            } catch (t: Throwable) {
+                Timber.w(t, "DailyReportWorker: failed to read streak days — defaulting to 0")
+                0
+            }
 
             // 3. Show daily report notification
-            NotificationHelper.showDailyReportNotification(
-                context = context,
-                blockCount = blockCount,
-                streakDays = streakDays
-            )
-
-            // 4. Check due Stop Me schedules
-            StopMeManager.getInstance(context).checkDueSchedules()
-
-            // 5. Check accessibility service state
-            if (!protect.yourself.features.protectedApps.AccessibilityGuard
-                .isAccessibilityServiceEnabled(context)) {
-                NotificationHelper.showAccessibilityDisabledNotification(context)
+            try {
+                NotificationHelper.showDailyReportNotification(
+                    context = context,
+                    blockCount = blockCount,
+                    streakDays = streakDays
+                )
+            } catch (t: Throwable) {
+                Timber.e(t, "DailyReportWorker: failed to show daily report notification")
+                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                    throwable = t,
+                    severity = protect.yourself.features.crashLog.CrashSeverity.ERROR,
+                    tag = "DailyReportWorker",
+                    message = "Failed to show daily report notification",
+                    extraContext = mapOf(
+                        "blockCount" to blockCount.toString(),
+                        "streakDays" to streakDays.toString()
+                    )
+                )
             }
 
             Timber.i("DailyReportWorker completed: blockCount=$blockCount streakDays=$streakDays")
             Result.success()
         } catch (t: Throwable) {
             Timber.e(t, "DailyReportWorker failed")
+            protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                throwable = t,
+                severity = protect.yourself.features.crashLog.CrashSeverity.ERROR,
+                tag = "DailyReportWorker",
+                message = "DailyReportWorker failed with unexpected error",
+                extraContext = mapOf("worker" to "DailyReportWorker")
+            )
             Result.retry()
         }
     }

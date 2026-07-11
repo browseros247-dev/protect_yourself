@@ -58,22 +58,42 @@ class AccessibilityGuard {
      * ContentObserver that fires the instant `enabled_accessibility_services`
      * changes. Registered via [ensureWatching] and unregistered via
      * [stopWatching]. Re-entrancy guarded by [observerRegistered].
+     *
+     * BUG-06 fix: replaced raw `Thread({...}).start()` with a single-threaded
+     * ExecutorService. Raw Thread creation per observer fire is wasteful (each
+     * thread allocates ~512KB of stack) and can lead to thread explosion if
+     * the setting changes rapidly. The ExecutorService reuses a single thread
+     * and queues work — much more efficient.
      */
+    private val selfHealExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "A11yGuard-Rearm").apply { isDaemon = true }
+    }
+
     private val servicesObserver = object : ContentObserver(handler) {
         override fun onChange(selfChange: Boolean) {
             onChange(selfChange, null)
         }
 
         override fun onChange(selfChange: Boolean, uri: Uri?) {
-            // Spawn a background thread — never do ContentResolver I/O on main.
             val ctx = context ?: return
-            Thread({
+            // BUG-06 fix: use the single-threaded executor instead of spawning
+            // a new Thread per change. The executor queues work if a previous
+            // self-heal is still running, preventing concurrent self-heal races.
+            try {
+                selfHealExecutor.execute {
+                    try {
+                        AccessibilityPersistUtils.selfHealSafe(ctx)
+                    } catch (t: Throwable) {
+                        Timber.w(t, "AccessibilityGuard observer: selfHealSafe threw")
+                    }
+                }
+            } catch (t: Throwable) {
+                // Executor may be shut down — fall back to direct call
+                Timber.w(t, "AccessibilityGuard: executor rejected task — direct call")
                 try {
                     AccessibilityPersistUtils.selfHealSafe(ctx)
-                } catch (t: Throwable) {
-                    Timber.w(t, "AccessibilityGuard observer: selfHealSafe threw")
-                }
-            }, "A11yGuard-Rearm").start()
+                } catch (_: Throwable) {}
+            }
         }
     }
 
@@ -176,6 +196,11 @@ class AccessibilityGuard {
          * - If not granted: posts a high-priority notification prompting
          *   the user to re-enable it manually (Android 13+ cannot
          *   programmatically enable accessibility without the permission).
+         *
+         * BUG-24 fix: the notification is throttled to once per hour. Without
+         * throttling, the 30-second polling loop + ContentObserver would spam
+         * the notification every 30 seconds if the user keeps the service
+         * disabled — extremely annoying and causes notification fatigue.
          */
         fun selfHeal(context: Context) {
             try {
@@ -183,12 +208,49 @@ class AccessibilityGuard {
                 val reArmed = AccessibilityPersistUtils.selfHealAccessibilityService(context)
                 if (!reArmed) {
                     // Permission missing or write failed — fall back to notification.
-                    protect.yourself.commons.utils.notificationUtils.NotificationHelper
-                        .showAccessibilityDisabledNotification(context)
+                    // BUG-24 fix: throttle to once per hour.
+                    if (shouldShowDisabledNotification(context)) {
+                        protect.yourself.commons.utils.notificationUtils.NotificationHelper
+                            .showAccessibilityDisabledNotification(context)
+                        recordNotificationShown(context)
+                    } else {
+                        Timber.d("AccessibilityGuard: notification throttled (already shown recently)")
+                    }
                 }
             } catch (t: Throwable) {
                 Timber.e(t, "AccessibilityGuard: selfHeal failed")
             }
+        }
+
+        /**
+         * BUG-24 fix: throttle the "accessibility disabled" notification to
+         * once per hour. The timestamp is persisted in SharedPreferences so
+         * it survives app restarts (prevents spam across process death + relaunch).
+         */
+        private const val NOTIFICATION_THROTTLE_MS = 60 * 60 * 1000L  // 1 hour
+        private const val PREFS_NAME = "accessibility_guard_prefs"
+        private const val KEY_LAST_NOTIF_MS = "last_disabled_notif_ms"
+
+        private fun shouldShowDisabledNotification(context: Context): Boolean {
+            return try {
+                val prefs = context.applicationContext
+                    .getSharedPreferences(PREFS_NAME, 0)
+                val lastMs = prefs.getLong(KEY_LAST_NOTIF_MS, 0L)
+                val nowMs = System.currentTimeMillis()
+                nowMs - lastMs >= NOTIFICATION_THROTTLE_MS
+            } catch (_: Throwable) {
+                true  // If prefs read fails, show the notification (safe default)
+            }
+        }
+
+        private fun recordNotificationShown(context: Context) {
+            try {
+                context.applicationContext
+                    .getSharedPreferences(PREFS_NAME, 0)
+                    .edit()
+                    .putLong(KEY_LAST_NOTIF_MS, System.currentTimeMillis())
+                    .apply()
+            } catch (_: Throwable) {}
         }
     }
 }

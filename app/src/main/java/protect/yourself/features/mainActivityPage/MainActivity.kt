@@ -174,8 +174,21 @@ class MainActivity : FragmentActivity() {
                 }
                 Timber.i("App state: $appState (terms=$termsAccepted, lock=$lockEnabled)")
             } catch (t: Throwable) {
-                Timber.e(t, "Failed to check app state — defaulting to MAIN")
-                appState = AppState.MAIN
+                // BUG-25 fix: default to ONBOARDING instead of MAIN on DB error.
+                // Defaulting to MAIN would bypass the terms + lock checks,
+                // letting the user into the app without accepting terms or
+                // unlocking — a security hole. ONBOARDING is the safe default
+                // because it forces the user to re-accept terms (and the lock
+                // check re-runs on the next checkAppState call).
+                Timber.e(t, "Failed to check app state — defaulting to ONBOARDING (safe fallback)")
+                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                    throwable = t,
+                    severity = protect.yourself.features.crashLog.CrashSeverity.ERROR,
+                    tag = "MainActivity",
+                    message = "checkAppState failed — defaulting to ONBOARDING",
+                    extraContext = mapOf("fallback" to "ONBOARDING")
+                )
+                appState = AppState.ONBOARDING
             }
         }
     }

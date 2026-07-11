@@ -82,12 +82,27 @@ class MyVpnService : VpnService() {
         context = this
     )
     private var vpnInterface: ParcelFileDescriptor? = null
+
+    // BUG-01 fix: mark all cross-thread fields @Volatile.
+    // These fields are written from serviceScope.launch (Dispatchers.IO) and
+    // read from onStartCommand (main thread) + refreshNotification (main thread).
+    // Without @Volatile, the JVM memory model does not guarantee visibility.
+    @Volatile
     private var isRunning = false
-    private var isStarting = false
+
+    // BUG-01 fix: use AtomicBoolean for isStarting to make the check-and-set
+    // atomic. Two concurrent startVpn() calls could both read isStarting==false
+    // before either writes true, leading to two establish() calls.
+    private val isStarting = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    @Volatile
     private var currentConnectionType = VpnConnectionTypeIdentifiers.OFF
+    @Volatile
     private var currentFirstDns: String = ""
+    @Volatile
     private var currentSecondDns: String = ""
 
+    @Volatile
     private var restartJob: kotlinx.coroutines.Job? = null
 
     private var vpnState: VpnState = VpnState.IDLE
@@ -125,11 +140,12 @@ class MyVpnService : VpnService() {
             Timber.w("VPN already running — ignoring start request")
             return
         }
-        if (isStarting) {
+        // BUG-01 fix: AtomicBoolean.compareAndSet makes the check-and-set atomic.
+        // Two concurrent calls cannot both pass this guard.
+        if (!isStarting.compareAndSet(false, true)) {
             Timber.w("VPN start already in progress — ignoring duplicate start request")
             return
         }
-        isStarting = true
 
         vpnState = VpnState.CONNECTING
         protect.yourself.core.ProtectYourselfApp.getCrashLogger()
@@ -181,7 +197,7 @@ class MyVpnService : VpnService() {
                 val utils = BlockerPageUtils.getInstance()
                 if (!utils.isValidDNS(firstDns) || !utils.isValidDNS(secondDns)) {
                     Timber.e("Invalid DNS addresses: $firstDns, $secondDns")
-                    isStarting = false
+                    isStarting.set(false)
                     vpnState = VpnState.FAILED
                     stopSelf()
                     return@launch
@@ -255,7 +271,7 @@ class MyVpnService : VpnService() {
                 vpnInterface = builder.establish()
                 if (vpnInterface == null) {
                     Timber.e("Failed to establish VPN interface — user may have revoked permission")
-                    isStarting = false
+                    isStarting.set(false)
                     vpnState = VpnState.FAILED
                     switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
                     stopSelf()
@@ -263,7 +279,7 @@ class MyVpnService : VpnService() {
                 }
 
                 isRunning = true
-                isStarting = false
+                isStarting.set(false)
                 vpnState = VpnState.CONNECTED
 
                 // 8. Get notification message (custom or default)
@@ -288,7 +304,7 @@ class MyVpnService : VpnService() {
                 Timber.i("VPN started: type=$currentConnectionType DNS=$firstDns,$secondDns (NopoX-style DNS filtering)")
             } catch (t: Throwable) {
                 Timber.e(t, "Failed to start VPN")
-                isStarting = false
+                isStarting.set(false)
                 vpnState = VpnState.FAILED
                 protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
                     throwable = t,
