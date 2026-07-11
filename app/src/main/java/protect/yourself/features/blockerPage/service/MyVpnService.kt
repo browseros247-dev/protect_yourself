@@ -82,34 +82,70 @@ class MyVpnService : VpnService() {
         context = this
     )
     private var vpnInterface: ParcelFileDescriptor? = null
-    private var isRunning = false
-    private var isStarting = false
+    // FIX 1.3: @Volatile for cross-thread visibility on Dispatchers.IO
+    @Volatile private var isRunning = false
+    @Volatile private var isStarting = false
     private var currentConnectionType = VpnConnectionTypeIdentifiers.OFF
     private var currentFirstDns: String = ""
     private var currentSecondDns: String = ""
 
     private var restartJob: kotlinx.coroutines.Job? = null
 
-    private var vpnState: VpnState = VpnState.IDLE
-        set(value) {
-            field = value
-            try { refreshNotification() } catch (_: Throwable) {}
-        }
+    // FIX 1.5: removed the setter's refreshNotification() call — it posted
+    // a notification via NotificationManager.notify() BEFORE startForeground()
+    // tied the notification ID to the foreground service, causing a brief
+    // "notification posted by a non-foreground service" warning on Android 14+.
+    // refreshNotification() is now called explicitly after startForeground().
+    @Volatile private var vpnState: VpnState = VpnState.IDLE
 
     enum class VpnState { IDLE, CONNECTING, CONNECTED, FAILED }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Timber.i("VPN service start command: action=${intent?.action}")
 
+        // FIX 1.4: call startForeground() synchronously with a placeholder
+        // "Connecting…" notification BEFORE the async startVpn() coroutine.
+        // This prevents the system from killing the service during the
+        // startup window (DB reads + establish() can take 500ms+).
+        if (intent?.action == ACTION_START || intent?.action == ACTION_RESTART || intent?.action == null) {
+            try {
+                val placeholderNotif = buildNotification(
+                    getString(R.string.vpn_notification_text),
+                    false
+                )
+                startForegroundCompat(placeholderNotif)
+            } catch (t: Throwable) {
+                Timber.w(t, "Failed to call startForeground early — continuing anyway")
+            }
+        }
+
         when (intent?.action) {
             ACTION_START -> startVpn()
             ACTION_STOP -> {
+                // FIX 1.1: persist VPN_SWITCH=false so the UI and boot
+                // receiver know the user explicitly stopped the VPN.
+                // Without this, the DB still says VPN is ON → the toggle
+                // shows ON while no service is running, and on next reboot
+                // the VPN auto-restarts against the user's stop intent.
+                serviceScope.launch {
+                    try {
+                        val db = AppDatabase.getInstance(this@MyVpnService)
+                        SwitchStatusValues(db.switchStatusDao())
+                            .storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
+                        Timber.i("VPN_SWITCH set to false (user stopped via notification)")
+                    } catch (t: Throwable) {
+                        Timber.e(t, "Failed to sync VPN_SWITCH=false on stop")
+                    }
+                }
                 stopVpn()
                 stopSelf()
             }
             ACTION_RESTART -> {
+                // FIX 1.2: assign the restart coroutine to restartJob so
+                // stopVpn() can cancel it if the user taps Stop during the
+                // 300ms restart window.
                 stopVpn()
-                serviceScope.launch {
+                restartJob = serviceScope.launch {
                     kotlinx.coroutines.delay(300)
                     startVpn()
                 }

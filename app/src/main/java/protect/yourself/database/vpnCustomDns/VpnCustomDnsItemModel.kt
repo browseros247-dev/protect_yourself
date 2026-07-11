@@ -10,14 +10,15 @@ import androidx.room.PrimaryKey
  * (e.g. "Cloudflare Family", "OpenDNS FamilyShield") without looking them
  * up from [protect.yourself.features.blockerPage.utils.DefaultDnsPresets].
  *
- * `displayName` is nullable so that backups created before v1.0.35 (which
- * don't include this field) can still be deserialised by Gson without
- * throwing a NullPointerException. The UI treats null as "Unknown".
+ * FIX 6.1: changed from `String? = null` to `String = ""` to match the
+ * DB schema (NOT NULL DEFAULT ''). The UI already handles blank names
+ * by falling back to the key. For old backups without displayName, Gson
+ * leaves the field as the default "" — no NPE.
  */
 @Entity(tableName = "vpn_custom_dns")
 data class VpnCustomDnsItemModel(
     @PrimaryKey val key: String,
-    val displayName: String? = null,
+    val displayName: String = "",
     val firstDns: String,
     val secondDns: String,
     val isSelected: Boolean = false

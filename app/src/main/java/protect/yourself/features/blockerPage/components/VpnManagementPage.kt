@@ -117,28 +117,12 @@ fun VpnManagementPage(
     // Load the VPN management state when the page opens.
     LaunchedEffect(Unit) { viewModel.loadVpnManagementState() }
 
-    // Collect navigation events (RestartVpn + ShowToast + ShowToastRes) while
-    // this page is on top.
-    LaunchedEffect(Unit) {
-        viewModel.navigation.collect { nav ->
-            when (nav) {
-                is BlockerPageNavigation.RestartVpn -> MyVpnService.restart(context)
-                is BlockerPageNavigation.ShowToast -> {
-                    android.widget.Toast.makeText(context, nav.message, android.widget.Toast.LENGTH_SHORT).show()
-                }
-                is BlockerPageNavigation.ShowToastRes -> {
-                    // VPN-14 fix: resolve the string resource in the UI layer.
-                    val msg = if (nav.args.isEmpty()) {
-                        context.getString(nav.resId)
-                    } else {
-                        context.getString(nav.resId, *nav.args.toTypedArray())
-                    }
-                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                }
-                else -> Unit // Other navigation events are handled by the parent.
-            }
-        }
-    }
+    // FIX 2.1: Do NOT collect navigation events here. The parent
+    // (BlockerPageHome) already collects from the same SharedFlow and
+    // handles RestartVpn / ShowToast / ShowToastRes. Collecting here
+    // too causes double-restart and duplicate toasts because
+    // MutableSharedFlow delivers every emission to every active collector.
+    // The parent's collector handles all VPN-related navigation events.
 
     // VPN permission launcher — required to turn the VPN on.
     val vpnPermissionLauncher = rememberLauncherForActivityResult(

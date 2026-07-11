@@ -420,6 +420,10 @@ class BlockerPageViewModel(
                     }
                 )
             }
+            // FIX 2.2: refresh VPN management state so the toggle on the
+            // VPN management page flips to ON immediately. Without this,
+            // the toggle stays OFF until the user leaves and re-enters the page.
+            loadVpnManagementState()
             _navigation.emit(BlockerPageNavigation.ShowToast("VPN enabled"))
         }
     }
@@ -790,9 +794,11 @@ class BlockerPageViewModel(
                     selectedCustomDnsKey = selectedPresetKey,
                     isNotificationHidden = hideNotification,
                     notificationMessage = notificationMessage,
-                    // VPN-15: keep the previous isLoading value if we've already
-                    // loaded once. Only show the spinner on the very first load.
-                    isLoading = prev.isLoading && prev.customDnsPresets.isEmpty()
+                    // FIX 3.1: always set isLoading=false after a successful load.
+                    // The previous logic (prev.isLoading && prev.customDnsPresets.isEmpty())
+                    // kept the spinner on forever because on the first load,
+                    // prev.customDnsPresets was empty → isLoading stayed true.
+                    isLoading = false
                 )
             }
         }
@@ -951,7 +957,11 @@ class BlockerPageViewModel(
         safeLaunch {
             // Generate a unique key — use timestamp to avoid collisions with
             // the default preset keys ("preset_cloudflare_family" etc.).
-            val key = "user_${System.currentTimeMillis()}"
+            // FIX 3.3: use UUID instead of System.currentTimeMillis() to
+            // prevent key collisions when the user double-taps Save or the
+            // system clock is coarse. OnConflictStrategy.REPLACE would
+            // silently overwrite the first preset with the second.
+            val key = "user_${java.util.UUID.randomUUID()}"
             val preset = protect.yourself.database.vpnCustomDns.VpnCustomDnsItemModel(
                 key = key,
                 displayName = trimmedName,
