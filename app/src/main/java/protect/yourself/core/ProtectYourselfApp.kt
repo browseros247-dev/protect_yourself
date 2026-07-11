@@ -190,6 +190,9 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
     private fun initCrashLogger() {
         CrashLogger.init(this)
         crashLogger = CrashLogger.get()
+        // Reset the once-per-session log dedup tracker — each new app session
+        // starts fresh so warnings can be logged again.
+        protect.yourself.commons.utils.OncePerSessionLogger.resetAll()
     }
 
     private fun initTimberLog() {

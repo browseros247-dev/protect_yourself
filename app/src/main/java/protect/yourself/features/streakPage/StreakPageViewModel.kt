@@ -3,6 +3,7 @@ package protect.yourself.features.streakPage
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -124,6 +125,13 @@ class StreakPageViewModel(
 
                     Timber.d("Streak data updated: current=$currentStreak, relapses=${relapses.size}, history=${sorted.size}")
                 }
+            } catch (t: CancellationException) {
+                // Normal control flow — viewModelScope was cancelled (user
+                // navigated away). Re-throw to preserve structured concurrency.
+                // The previous code caught this via `catch (t: Throwable)` and
+                // logged it as "Failed to observe streak data", which spammed
+                // the crash log with false-positive ERROR entries.
+                throw t
             } catch (t: Throwable) {
                 Timber.e(t, "Failed to observe streak data")
                 _state.update { it.copy(isLoading = false, error = t.message) }
