@@ -202,14 +202,8 @@ fun BlockerPageHome() {
                 is BlockerPageNavigation.OpenAppLockSetup -> {
                     currentPage = SubPage.AppLockSetup
                 }
-                is BlockerPageNavigation.OpenKeywordManager -> {
-                    currentPage = SubPage.KeywordManager
-                }
-                is BlockerPageNavigation.OpenKeywordManagerTab -> {
-                    currentPage = SubPage.KeywordManagerTab(nav.tab)
-                }
-                is BlockerPageNavigation.OpenPackageIntentManager -> {
-                    currentPage = SubPage.PackageIntentManager
+                is BlockerPageNavigation.OpenUnifiedBlocking -> {
+                    currentPage = SubPage.UnifiedBlocking
                 }
                 is BlockerPageNavigation.OpenRequestHistory -> {
                     currentPage = SubPage.RequestHistory
@@ -317,14 +311,7 @@ fun BlockerPageHome() {
                 onBack = { currentPage = null }
             )
         }
-        SubPage.KeywordManager -> protect.yourself.features.keywordManagerPage.KeywordManagerPage(
-            onBack = { currentPage = null }
-        )
-        is SubPage.KeywordManagerTab -> protect.yourself.features.keywordManagerPage.KeywordManagerPage(
-            initialTab = page.tab,
-            onBack = { currentPage = null }
-        )
-        SubPage.PackageIntentManager -> protect.yourself.features.packageIntentPage.PackageIntentPage(
+        SubPage.UnifiedBlocking -> protect.yourself.features.blockerPage.components.UnifiedBlockingPage(
             onBack = { currentPage = null }
         )
         SubPage.RequestHistory -> SimpleSubPage("Request History") { currentPage = null }
@@ -425,7 +412,7 @@ private fun HomeWithCategories(
                 onClick = {
                     onNavigate(SubPage.CategoryPage("Content Blocking", setOf(
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.PORN_BLOCKER,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCKER_CUSTOM_KEYWORD_WEBSITE,
+                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.UNIFIED_BLOCKING_MANAGEMENT,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCKLIST_APPS,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.SAFE_SEARCH,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS,
@@ -438,16 +425,12 @@ private fun HomeWithCategories(
         item {
             CategoryCard(
                 title = "Uninstall Protection",
-                subtitle = "Prevent uninstall, block reboot, title-based + package/intent blocking",
+                subtitle = "Prevent uninstall, block reboot",
                 icon = Icons.Filled.Security,
                 onClick = {
                     onNavigate(SubPage.CategoryPage("Uninstall Protection", setOf(
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.PREVENT_UNINSTALL_SETTINGS,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_PHONE_REBOOT,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_PACKAGE_INTENT,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK
                     )))
                 }
             )
@@ -1034,9 +1017,7 @@ private fun TimeDelayDialog(
 sealed class SubPage {
     data class SelectApp(val title: String, val identifier: SelectedAppListIdentifier) : SubPage()
     data class CategoryPage(val title: String, val identifiers: Set<protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers>) : SubPage()
-    data object KeywordManager : SubPage()
-    data class KeywordManagerTab(val tab: protect.yourself.features.keywordManagerPage.KeywordTab) : SubPage()
-    data object PackageIntentManager : SubPage()
+    data object UnifiedBlocking : SubPage()
     data object AppLockSetup : SubPage()
     data object RequestHistory : SubPage()
     data object Faq : SubPage()

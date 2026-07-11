@@ -49,9 +49,7 @@ sealed class BlockerPageNavigation {
     data object OpenAccessibilitySettings : BlockerPageNavigation()
     data object OpenOverlaySettings : BlockerPageNavigation()
     data object OpenAppLockSetup : BlockerPageNavigation()
-    data object OpenKeywordManager : BlockerPageNavigation()
-    data class OpenKeywordManagerTab(val tab: protect.yourself.features.keywordManagerPage.KeywordTab) : BlockerPageNavigation()
-    data object OpenPackageIntentManager : BlockerPageNavigation()
+    data object OpenUnifiedBlocking : BlockerPageNavigation()
     data object OpenStopMe : BlockerPageNavigation()
     data object OpenFaq : BlockerPageNavigation()
     data object OpenRequestHistory : BlockerPageNavigation()
@@ -629,22 +627,9 @@ class BlockerPageViewModel(
                 SettingPageItemIdentifiers.WHITELIST_VPN_APPS -> BlockerPageNavigation.OpenSelectAppPage("VPN Whitelist Apps", SelectedAppListIdentifier.VPN_WHITELIST_APPS)
                 SettingPageItemIdentifiers.BLOCK_IN_APP_BROWSERS -> BlockerPageNavigation.OpenSelectAppPage("Block In-App Browsers", SelectedAppListIdentifier.BLOCK_IN_APP_BROWSER_APPS)
                 SettingPageItemIdentifiers.BLOCK_NEW_INSTALL_APPS -> BlockerPageNavigation.OpenSelectAppPage("Block New Install Apps", SelectedAppListIdentifier.BLOCK_NEW_INSTALL_APPS)
-                SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE -> {
-                    // Text input for settings page title to block
-                    BlockerPageNavigation.EditTextField(
-                        "Title to Block in Settings",
-                        "",
-                        "Enter a settings page title (e.g. 'battery', 'apps')",
-                        SwitchIdentifier.BLOCK_SETTING_TITLE_INPUT
-                    )
-                }
-                SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS ->
-                    BlockerPageNavigation.OpenKeywordManagerTab(protect.yourself.features.keywordManagerPage.KeywordTab.SETTING_TITLES)
                 SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP -> BlockerPageNavigation.OpenSelectAppPage("Blocklist Whitelist Detected Apps", SelectedAppListIdentifier.BLOCK_WHITELIST_DETECTED_APPS)
+                SettingPageItemIdentifiers.UNIFIED_BLOCKING_MANAGEMENT -> BlockerPageNavigation.OpenUnifiedBlocking
 
-                // Package + Intent name blocking — open dedicated management page
-                SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK ->
-                    BlockerPageNavigation.OpenPackageIntentManager
 
                 // VPN management page (mode picker + custom DNS manager + advanced settings)
                 SettingPageItemIdentifiers.VPN_MANAGE ->
@@ -682,7 +667,6 @@ class BlockerPageViewModel(
                 SettingPageItemIdentifiers.SET_APP_LOCK -> BlockerPageNavigation.OpenAppLockSetup
 
                 // Other
-                SettingPageItemIdentifiers.BLOCKER_CUSTOM_KEYWORD_WEBSITE -> BlockerPageNavigation.OpenKeywordManager
                 SettingPageItemIdentifiers.REQUEST_HISTORY -> BlockerPageNavigation.OpenRequestHistory
                 SettingPageItemIdentifiers.SUGGEST_PROTECTIVE_MODE -> BlockerPageNavigation.OpenUrl("mailto:support@protectyourself.app?subject=Suggest%20Protective%20Mode")
                 SettingPageItemIdentifiers.KEEP_NOPOX_LIVE -> BlockerPageNavigation.OpenFaq
@@ -713,21 +697,17 @@ class BlockerPageViewModel(
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_CONTENT_BLOCKING, "Content Blocking", isSection = true))
         add(SettingPageItemModel(SettingPageItemIdentifiers.PORN_BLOCKER, "Porn blocker", info = "Block content based on keyword list", switchKey = SwitchIdentifier.PORN_BLOCKER_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKER_CUSTOM_KEYWORD_WEBSITE, "Blocklist keywords", info = "Add/remove keywords that trigger block", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKLIST_APPS, "Blocklist apps", info = "Apps that get blocked on launch", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.SAFE_SEARCH, "SafeSearch enforcement", info = "Redirect Google/Bing/YouTube/DuckDuckGo to SafeSearch variants. VPN adds DNS-level enforcement.", switchKey = SwitchIdentifier.SAFE_SEARCH_SWITCH))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_UNINSTALL_PROTECTION, "Uninstall Protection", isSection = true))
         add(SettingPageItemModel(SettingPageItemIdentifiers.PREVENT_UNINSTALL_SETTINGS, "Prevent uninstall", info = "Block attempts to uninstall (requires Device Admin)", switchKey = SwitchIdentifier.PREVENT_UNINSTALL_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_PHONE_REBOOT, "Block phone reboot", info = "Restart blocking automatically after reboot", switchKey = SwitchIdentifier.BLOCK_PHONE_REBOOT_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE, "Title-based block setting", info = "Enter a title to block in any app (e.g. 'battery', 'settings')", actionLabel = "Add"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS, "Manage blocked titles", info = "View and remove blocked titles", actionLabel = "Manage"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.UNIFIED_BLOCKING_MANAGEMENT, "Unified Blocking Management", actionLabel = "Manage", action = ActionType.NAVIGATION))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_ADVANCE_FEATURE, "Advanced feature", isSection = true))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS, "Block unsupported browsers", info = "Block obscure/unknown browsers. Major browsers (Chrome, Firefox, Edge, etc.) are always allowed. Use the whitelist to let additional rare browsers through.", switchKey = SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Whitelist unsupported browsers", info = "Allow specific rare/unknown browsers to bypass the block. Add browsers you trust that are not automatically allowed.", actionLabel = "Manage"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_PACKAGE_INTENT, "Package + Intent Blocking", info = "Block apps by package name (e.g. com.example.app) or intent/class name", switchKey = SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK, "Manage blocked packages/intents", info = "Add, view, and remove package + intent entries", actionLabel = "Manage"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS, "Block unsupported browsers", info = "Block any browser that isn't in your supported list or whitelist", switchKey = SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Whitelist unsupported browsers", info = "Allow specific browsers to bypass the unsupported-browser block", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN, "VPN (DNS blocking)", info = "Block adult content at network level. Tap Manage to choose a filtering mode.", switchKey = SwitchIdentifier.VPN_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_MANAGE, "VPN mode", info = "Choose Balanced, Strict, or Custom DNS provider.", actionLabel = "Balanced"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_VPN_APPS, "Whitelist VPN apps", info = "Apps that bypass VPN", actionLabel = "Manage"))
