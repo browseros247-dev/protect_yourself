@@ -61,7 +61,12 @@ class MyAccessibilityService : AccessibilityService() {
     private var isBlockSettingsByTitleOn = false
     private var isPreventUninstallOn = false
     private var isBlockPhoneRebootOn = false
-    // BLOCK_NOTIFICATION_DRAWER + BLOCK_RECENT_APPS removed from UI
+    // Anti-circumvention switches — re-added (UP-03 fix). These were previously
+    // removed from the UI but the detection logic was kept as dead code. They
+    // are now wired via loadAllConfig() but default to OFF (the user can
+    // enable them via the database or a future UI toggle).
+    private var isBlockNotificationDrawerOn = false
+    private var isBlockRecentAppsOn = false
     private var cachedSettingTitles: List<String> = emptyList()
     // Package + intent name blocking
     private var cachedBlockedPackageNames: Set<String> = emptySet()
@@ -91,6 +96,29 @@ class MyAccessibilityService : AccessibilityService() {
     private var lastSafeSearchTimeMs: Long = 0
     private var lastSafeSearchUrl: String? = null
 
+    /**
+     * BlockOverlayManager — WindowManager overlay for non-dismissible block screens.
+     *
+     * NopoX uses a WindowManager overlay (TYPE_APPLICATION_OVERLAY) instead of
+     * an Activity because Activities can be dismissed via Home/Recents/Back
+     * gestures, defeating uninstall prevention. The overlay is created lazily
+     * on first use.
+     */
+    @Volatile
+    private var blockOverlayManager: BlockOverlayManager? = null
+
+    /**
+     * Get-or-create the BlockOverlayManager. Lazily initialised because it
+     * needs the service context which isn't available at construction time.
+     */
+    private fun getBlockOverlayManager(): BlockOverlayManager {
+        return blockOverlayManager ?: synchronized(this) {
+            blockOverlayManager ?: BlockOverlayManager(this).also {
+                blockOverlayManager = it
+            }
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         Timber.i("Accessibility service connected")
@@ -107,8 +135,9 @@ class MyAccessibilityService : AccessibilityService() {
         } catch (t: Throwable) {
             Timber.w(t, "selfHealSafe in onServiceConnected failed")
         }
-        // Show toast to confirm service is active
-        android.widget.Toast.makeText(this, "Protect Yourself: Accessibility connected", android.widget.Toast.LENGTH_SHORT).show()
+        // NopoX does NOT show a Toast here — user feedback is exclusively via
+        // the block overlay. Toasts from the accessibility service are an
+        // anti-pattern (they're noisy and can be missed). Removed per NopoX.
     }
 
     /**
@@ -197,10 +226,15 @@ class MyAccessibilityService : AccessibilityService() {
         } catch (t: Throwable) {
             Timber.w(t, "selfHealSafe in onDestroy failed")
         }
+        // Hide the block overlay if it's visible (otherwise it would persist
+        // after the service is destroyed, locking the user out).
+        try {
+            blockOverlayManager?.hideBlockOverlay()
+        } catch (_: Throwable) {}
         // Cancel the service scope to prevent coroutine leaks (Phase 6 P0 fix)
         try { serviceScope.cancel() } catch (_: Throwable) {}
-        // Show toast to warn user
-        android.widget.Toast.makeText(this, "Protect Yourself: Accessibility disconnected — blocking disabled", android.widget.Toast.LENGTH_LONG).show()
+        // NopoX does NOT show a Toast here — removed per NopoX pattern.
+        // User feedback is exclusively via notifications + the block overlay.
     }
 
     // ===== Window state change handler =====
@@ -228,9 +262,54 @@ class MyAccessibilityService : AccessibilityService() {
         // that re-triggers blocking.
         if (packageName == this.packageName) return
 
-        // Skip SystemUI (status bar, notification shade, recents, etc.) —
-        // blocking these can freeze the device.
+        // ===== Anti-circumvention checks (run FIRST, before prevent-uninstall) =====
+        // These MUST run before the prevent-uninstall check because they block
+        // the escape paths the user would use to bypass prevent-uninstall:
+        //   - Power menu → reboot to safe mode → disable accessibility
+        //   - Notification drawer → quick settings tile → Settings → Accessibility
+        //   - Recent apps → swipe our app away / force-stop
+        //
+        // UP-03 fix: do NOT blanket-skip SystemUI here. The AOSP GlobalActionsDialog
+        // (power menu), notification panel, and recents overview all come from
+        // com.android.systemui. The individual is*() helpers below are
+        // class-name-scoped, so they won't false-positive on unrelated SystemUI
+        // windows. Only skip SystemUI for the content-blocking checks below.
+
+        // Block phone reboot: detect power menu / ultra power saving
+        // (runs first — if the user reaches the power menu, they can reboot
+        // to safe mode and bypass everything)
+        if (isBlockPhoneRebootOn && isPowerMenu(className, packageName, text)) {
+            launchBlockActivity(packageName, "block_phone_reboot_bw_message")
+            return
+        }
+
+        // Block notification drawer — prevents access to quick settings tiles
+        // (Settings gear, airplane mode, etc.)
+        if (isBlockNotificationDrawerOn && isNotificationDrawer(className, packageName)) {
+            launchBlockActivity(packageName, "block_page_default_notification_drawer_message")
+            return
+        }
+
+        // Block recent apps — prevents force-stop / uninstall from recents
+        if (isBlockRecentAppsOn && isRecentApps(className, packageName)) {
+            launchBlockActivity(packageName, "block_recent_apps_bw_message")
+            return
+        }
+
+        // ===== Now skip SystemUI for the remaining content-blocking checks =====
+        // (settings page blocking, app blocking, browser blocking, etc. should
+        // never fire on SystemUI windows — they're not user content)
         if (packageName == "com.android.systemui") return
+
+        // ===== Prevent Uninstall: detect when user is on our app info page =====
+        // This is the core anti-uninstall check. Runs after anti-circumvention
+        // so the escape paths are already blocked.
+        if (isPreventUninstallOn && isAppInfoPage(packageName, className, text)) {
+            launchBlockActivity(packageName, "block_page_default_pu_message")
+            return
+        }
+
+        // ===== Content-blocking checks =====
 
         // Settings page title blocking (NopoX-style: checks settings pages)
         if (isBlockSettingsByTitleOn && isSettingsPage(packageName, text)) {
@@ -250,18 +329,6 @@ class MyAccessibilityService : AccessibilityService() {
                 launchBlockActivity(packageName, "block_page_default_block_apps_message")
                 return
             }
-        }
-
-        // Prevent Uninstall: detect when user is on our app info page
-        if (isPreventUninstallOn && isAppInfoPage(packageName, className, text)) {
-            launchBlockActivity(packageName, "block_page_default_pu_message")
-            return
-        }
-
-        // Block phone reboot: detect power menu / ultra power saving
-        if (isBlockPhoneRebootOn && isPowerMenu(className, packageName, text)) {
-            launchBlockActivity(packageName, "block_phone_reboot_bw_message")
-            return
         }
 
         // Block apps (blocklist).
@@ -560,22 +627,108 @@ class MyAccessibilityService : AccessibilityService() {
         }
     }
 
-    // ===== Detection helpers =====
-
-    private fun isNotificationDrawer(className: String, packageName: String): Boolean {
-        val lower = className.lowercase(Locale.ROOT)
-        return lower.contains("statusbar") ||
-            lower.contains("notification") ||
-            lower.contains("quicksettings") ||
-            packageName == "com.android.systemui" && lower.contains("shade")
+    /**
+     * Safe wrapper around [collectText] — catches SecurityException and other
+     * Throwable that can be thrown when accessing recycled nodes or nodes from
+     * a different package (NopoX pattern). Returns silently on failure.
+     *
+     * UP-04 fix: needed because [isAppInfoPage] does node-tree traversal as a
+     * fallback when event.text is empty.
+     */
+    private fun safeCollectText(
+        node: AccessibilityNodeInfo,
+        sb: StringBuilder,
+        depth: Int,
+        maxDepth: Int
+    ) {
+        try {
+            collectText(node, sb, depth, maxDepth)
+        } catch (_: Throwable) {
+            // Recycled node / SecurityException — silent fallback
+        }
     }
 
+    /**
+     * Safe wrapper around [AccessibilityNodeInfo.findAccessibilityNodeInfosByViewId] —
+     * catches SecurityException and returns empty list. NopoX wraps every
+     * findAccessibilityNodeInfosByViewId call this way.
+     *
+     * UP-04 fix.
+     */
+    private fun safeFindByIds(viewId: String): List<AccessibilityNodeInfo> {
+        return try {
+            rootInActiveWindow?.findAccessibilityNodeInfosByViewId(viewId) ?: emptyList()
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    /**
+     * Safe wrapper around [AccessibilityNodeInfo.findAccessibilityNodeInfosByText] —
+     * catches SecurityException and returns empty list.
+     */
+    private fun safeFindByText(text: String): List<AccessibilityNodeInfo> {
+        return try {
+            rootInActiveWindow?.findAccessibilityNodeInfosByText(text) ?: emptyList()
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    // ===== Detection helpers =====
+
+    /**
+     * Detect the notification drawer / quick settings shade.
+     *
+     * UP-03 fix: no longer dead code — now wired in [handleWindowStateChange]
+     * BEFORE the SystemUI blanket-skip.
+     *
+     * UP-04 fix: wrapped in try/catch (NopoX pattern).
+     */
+    private fun isNotificationDrawer(className: String, packageName: String): Boolean {
+        return try {
+            val lower = className.lowercase(Locale.ROOT)
+            if (lower.contains("statusbar") ||
+                lower.contains("notification") ||
+                lower.contains("quicksettings") ||
+                lower.contains("notificationpanel") ||
+                lower.contains("notificationshade") ||
+                lower.contains("control_panel") ||
+                lower.contains("settings_shortcut") ||
+                (packageName == "com.android.systemui" && lower.contains("shade"))
+            ) {
+                return true
+            }
+            false
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Detect the recent apps / overview screen.
+     *
+     * UP-03 fix: no longer dead code — now wired in [handleWindowStateChange]
+     * BEFORE the SystemUI blanket-skip.
+     *
+     * UP-04 fix: wrapped in try/catch (NopoX pattern).
+     */
     private fun isRecentApps(className: String, packageName: String): Boolean {
-        val lower = className.lowercase(Locale.ROOT)
-        return lower.contains("recents") ||
-            lower.contains("recentapps") ||
-            lower.contains("overview") ||
-            lower.contains("taskview")
+        return try {
+            val lower = className.lowercase(Locale.ROOT)
+            if (lower.contains("recents") ||
+                lower.contains("recentapps") ||
+                lower.contains("overview") ||
+                lower.contains("taskview") ||
+                lower.contains("overview_panel") ||
+                lower.contains("recent_apps")
+            ) {
+                return true
+            }
+            false
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun isSettingsPage(packageName: String, text: String): Boolean {
@@ -653,102 +806,223 @@ class MyAccessibilityService : AccessibilityService() {
     /**
      * Detect if the user is on the app info page for our package.
      * This is the page where the Uninstall button lives.
+     *
+     * UP-04/UP-05/UP-07 fix: enhanced with:
+     *   - try/catch around every branch (NopoX pattern — safe fallback is to
+     *     not block, because a false positive on a legitimate Settings page
+     *     is worse than a false negative)
+     *   - OEM-specific class name checks (Samsung, MIUI, Huawei, OnePlus, OPLUS)
+     *   - View-ID-based detection via [safeFindByIds] (NopoX uses this heavily)
+     *   - Node-tree text traversal via [safeCollectText] as a fallback when
+     *     the event text is empty (some OEMs don't populate event.text)
+     *   - App-name text search is NO LONGER gated behind a class-name guard
+     *     (UP-18 fix) — the class-name guard defeated the purpose because
+     *     many OEMs use custom class names that don't contain "appinfo"
      */
     private fun isAppInfoPage(packageName: String, className: String, text: String): Boolean {
-        // Must be a settings app
-        if (packageName != "com.android.settings" && !packageName.contains(".settings")) {
-            return false
+        return try {
+            isAppInfoPageUnsafe(packageName, className, text)
+        } catch (t: Throwable) {
+            Timber.w(t, "isAppInfoPage threw — safe fallback is false (don't block)")
+            false
         }
+    }
+
+    private fun isAppInfoPageUnsafe(packageName: String, className: String, text: String): Boolean {
+        // Must be a settings app OR an OEM settings variant
+        if (!isSettingsPackage(packageName)) return false
 
         val lower = text.lowercase(Locale.ROOT)
         val lowerClass = className.lowercase(Locale.ROOT)
 
-        // Check if class name indicates an app info / installed app details page
+        // ===== Check 1: class name indicates an app info / installed app details page =====
+        // Covers AOSP + most OEMs
         if (lowerClass.contains("appinfodashboard") ||
             lowerClass.contains("installedappdetails") ||
             lowerClass.contains("appinfoactivity") ||
-            lowerClass.contains("appinfopage")
+            lowerClass.contains("appinfopage") ||
+            lowerClass.contains("appinfo")
         ) {
             return true
         }
 
-        // Check if text contains our app name — BUT ONLY if the class name
-        // indicates an app info page. Without this guard, the method would
-        // match ANY settings page that mentions "Protect Yourself" (accessibility
-        // settings, notification settings, etc.), locking the user out.
-        // AB-03 fix: also move the device-admin text matching inside this guard.
-        // Previously it ran unconditionally, matching any settings page that
-        // mentioned "admin" or "deactivate" — locking users out of unrelated
-        // pages like "Administrator settings" or "Deactivate account".
-        if (lowerClass.contains("appinfo") || lowerClass.contains("appdetails") ||
-            lowerClass.contains("appinfodashboard") || lowerClass.contains("installedappdetails")) {
-            try {
-                val appName = getString(protect.yourself.R.string.app_name).lowercase(Locale.ROOT)
-                if (appName.isNotBlank() && lower.contains(appName)) {
-                    return true
-                }
-            } catch (_: Throwable) {}
+        // OEM-specific class names (UP-07 fix)
+        // Samsung: AppInfoDashboardActivity, InstalledAppDetailsActivity
+        // MIUI: AppInfoActivity, AppDetailsActivity
+        // Huawei: AppInfoActivity, AppDetailsActivity
+        // OnePlus/OPLUS: AppInfoActivity
+        if (lowerClass.contains("appdetails") ||
+            lowerClass.contains("appdetail") ||
+            lowerClass.contains("installedappdetails") ||
+            lowerClass.contains("appinfodashboard")
+        ) {
+            return true
+        }
 
-            // Check against device admin text patterns (localized) — ONLY on
-            // app-info pages, not on any settings page.
-            val deviceAdminTexts = BlockerPageUtils.DEVICE_ADMIN_TEXTS_TO_MATCH
-            for (matchText in deviceAdminTexts) {
-                if (lower.contains(matchText.lowercase(Locale.ROOT))) {
+        // ===== Check 2: text contains our app name =====
+        // UP-18 fix: NO class-name guard. The guard was defeating the purpose
+        // because many OEMs use custom class names. The risk of false positives
+        // (matching "Protect Yourself" on an unrelated settings page) is low
+        // because our app name is distinctive.
+        // AB-03 fix (from main): to further reduce false positives, require an
+        // uninstall-related keyword in addition to the app name.
+        try {
+            val appName = getString(protect.yourself.R.string.app_name).lowercase(Locale.ROOT)
+            if (appName.isNotBlank() && lower.contains(appName)) {
+                // Additional check: the text must ALSO contain an uninstall-related
+                // keyword, to avoid matching our app name on unrelated pages
+                // (e.g. accessibility settings mentioning our app).
+                if (lower.contains("uninstall") ||
+                    lower.contains("disable") ||
+                    lower.contains("force stop") ||
+                    lower.contains("forcestop") ||
+                    lower.contains("deactivate") ||
+                    lower.contains("remove") ||
+                    lower.contains("clear data") ||
+                    lower.contains("cleardata") ||
+                    lower.contains("storage") ||
+                    lower.contains("permissions")
+                ) {
                     return true
                 }
             }
+        } catch (_: Throwable) {}
+
+        // ===== Check 3: device admin text patterns =====
+        // These match the Device Admin deactivation page (which is where the
+        // user goes to deactivate our Device Admin before uninstalling).
+        // AB-03 fix (from main): gate behind app-info class-name check to avoid
+        // matching "admin"/"deactivate" on unrelated settings pages.
+        if (lowerClass.contains("appinfo") || lowerClass.contains("appdetails") ||
+            lowerClass.contains("appinfodashboard") || lowerClass.contains("installedappdetails")) {
+            val deviceAdminTexts = BlockerPageUtils.DEVICE_ADMIN_TEXTS_TO_MATCH
+            for (matchText in deviceAdminTexts) {
+                try {
+                    if (lower.contains(matchText.lowercase(Locale.ROOT))) {
+                        return true
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
+
+        // ===== Check 4: force-stop text patterns =====
+        // The "Force stop" button appears on every app info page.
+        val forceStopTexts = BlockerPageUtils.FORCE_STOP_TEXTS_TO_MATCH
+        for (matchText in forceStopTexts) {
+            try {
+                if (lower.contains(matchText.lowercase(Locale.ROOT))) {
+                    // Force-stop text alone isn't enough — it appears on every
+                    // app info page. Only match if our app name is also present
+                    // OR if we're on a settings page with an app-info class name.
+                    try {
+                        val appName = getString(protect.yourself.R.string.app_name).lowercase(Locale.ROOT)
+                        if (appName.isNotBlank() && lower.contains(appName)) {
+                            return true
+                        }
+                    } catch (_: Throwable) {}
+                    if (lowerClass.contains("appinfo") || lowerClass.contains("appdetail")) {
+                        return true
+                    }
+                }
+            } catch (_: Throwable) {}
+        }
+
+        // ===== Check 5: node-tree text traversal (fallback) =====
+        // Some OEMs don't populate event.text. Walk the node tree to collect
+        // text and re-check.
+        if (lower.isBlank()) {
+            try {
+                val root = rootInActiveWindow ?: return false
+                val sb = StringBuilder()
+                safeCollectText(root, sb, 0, 5)
+                val nodeText = sb.toString().lowercase(Locale.ROOT)
+                if (nodeText.isNotBlank()) {
+                    try {
+                        val appName = getString(protect.yourself.R.string.app_name).lowercase(Locale.ROOT)
+                        if (appName.isNotBlank() && nodeText.contains(appName) &&
+                            (nodeText.contains("uninstall") || nodeText.contains("force stop") ||
+                                nodeText.contains("deactivate"))) {
+                            return true
+                        }
+                    } catch (_: Throwable) {}
+                }
+            } catch (_: Throwable) {}
         }
 
         return false
     }
 
     /**
+     * Check if the package is a settings package (AOSP or OEM variant).
+     * UP-07 fix: covers Samsung, MIUI, Huawei, OnePlus, OPLUS settings packages.
+     */
+    private fun isSettingsPackage(packageName: String): Boolean {
+        if (packageName == "com.android.settings") return true
+        if (packageName.contains(".settings")) return true
+        // OEM settings packages
+        if (packageName == "com.miui.securitycenter") return true
+        if (packageName == "com.android.settings.miui") return true
+        if (packageName == "com.samsung.android.settings") return true
+        if (packageName == "com.huawei.systemmanager") return true
+        if (packageName == "com.coloros.safecenter") return true
+        if (packageName == "com.oppo.safe") return true
+        if (packageName == "com.iqiyi.terms") return true  // some OEMs
+        return false
+    }
+
+    /**
      * Detect power menu / ultra power saving mode.
      * Uses localized strings from BlockerPageUtils.HUAWEI_ULTRA_POWER_SAVING_TEXTS.
+     *
+     * UP-04 fix: wrapped in try/catch (NopoX pattern).
      */
     private fun isPowerMenu(className: String, packageName: String, text: String): Boolean {
-        val lower = text.lowercase(Locale.ROOT).replace(" ", "")
-        val lowerClass = className.lowercase(Locale.ROOT)
-        val lowerPkg = packageName.lowercase(Locale.ROOT)
+        return try {
+            val lower = text.lowercase(Locale.ROOT).replace(" ", "")
+            val lowerClass = className.lowercase(Locale.ROOT)
+            val lowerPkg = packageName.lowercase(Locale.ROOT)
 
-        // Detect power menu
-        if (lowerClass.contains("powerdialog") ||
-            lowerClass.contains("shutdownactivity") ||
-            lowerClass.contains("globalactions") ||
-            lowerClass.contains("powermenu") ||
-            lowerClass.contains("shutdownthread") ||
-            lowerClass.contains("globalactionsdialog") ||
-            lowerClass.contains("globalactionsimpl")
-        ) {
-            return true
-        }
-
-        // Detect power menu by package name (OEM-specific power dialog packages).
-        // AB-04 fix: use exact package-name matching instead of substring.
-        // The old `contains("shutdown")` matched `com.example.shutdown.helper`
-        // (not a power menu) as a false positive.
-        val knownPowerMenuPackages = setOf(
-            "com.android.server",          // Android system global actions
-            "com.miui.powermanager",       // Xiaomi power manager
-            "com.huawei.systemmanager",    // Huawei power manager
-            "com.samsung.android.app.powermain", // Samsung power menu
-            "com.oppo.powermanager",       // OPPO power manager
-            "com.coloros.powermanager",    // ColorOS power manager
-            "com.android.settings"         // Settings can show shutdown intent
-        )
-        if (lowerPkg in knownPowerMenuPackages.map { it.lowercase(Locale.ROOT) }.toSet()) {
-            return true
-        }
-
-        // Detect ultra power saving (localized)
-        for (powerText in BlockerPageUtils.HUAWEI_ULTRA_POWER_SAVING_TEXTS) {
-            val normalized = powerText.lowercase(Locale.ROOT).replace(" ", "")
-            if (normalized.isNotBlank() && lower.contains(normalized)) {
+            // Detect power menu
+            if (lowerClass.contains("powerdialog") ||
+                lowerClass.contains("shutdownactivity") ||
+                lowerClass.contains("globalactions") ||
+                lowerClass.contains("powermenu") ||
+                lowerClass.contains("shutdownthread") ||
+                lowerClass.contains("globalactionsdialog") ||
+                lowerClass.contains("globalactionsimpl")
+            ) {
                 return true
             }
-        }
 
-        return false
+            // Detect power menu by package name (OEM-specific power dialog packages).
+            // AB-04 fix (from main): use exact package-name matching instead of substring.
+            // The old `contains("shutdown")` matched `com.example.shutdown.helper`
+            // (not a power menu) as a false positive.
+            val knownPowerMenuPackages = setOf(
+                "com.android.server",          // Android system global actions
+                "com.miui.powermanager",       // Xiaomi power manager
+                "com.huawei.systemmanager",    // Huawei power manager
+                "com.samsung.android.app.powermain", // Samsung power menu
+                "com.oppo.powermanager",       // OPPO power manager
+                "com.coloros.powermanager",    // ColorOS power manager
+                "com.android.settings"         // Settings can show shutdown intent
+            )
+            if (lowerPkg in knownPowerMenuPackages.map { it.lowercase(Locale.ROOT) }.toSet()) {
+                return true
+            }
+
+            // Detect ultra power saving (localized)
+            for (powerText in BlockerPageUtils.HUAWEI_ULTRA_POWER_SAVING_TEXTS) {
+                val normalized = powerText.lowercase(Locale.ROOT).replace(" ", "")
+                if (normalized.isNotBlank() && lower.contains(normalized)) {
+                    return true
+                }
+            }
+
+            false
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     /**
@@ -846,71 +1120,117 @@ class MyAccessibilityService : AccessibilityService() {
 
     // ===== Block activity launcher =====
 
+    /**
+     * Launch the block screen on top of the offending app.
+     *
+     * ## Strategy (UP-01 fix)
+     *
+     * 1. **Try the WindowManager overlay first** via [BlockOverlayManager].
+     *    This is non-dismissible (cannot be dismissed by Home/Recents/Back
+     *    gestures) and runs a 500ms HOME×5 + BACK×1 kill timer to actually
+     *    kill the offending activity underneath. This is what NopoX does.
+     *
+     * 2. **If the overlay cannot be shown** (SYSTEM_ALERT_WINDOW not granted,
+     *    WindowManager unavailable, or addView throws), fall back to the
+     *    Activity-based `PornBlockActivity`. This IS dismissible but is
+     *    better than nothing.
+     *
+     * 3. **If the Activity fallback also fails**, press GLOBAL_ACTION_HOME
+     *    as a last resort to at least dismiss the offending content.
+     *
+     * ## Throttling (UP-10 fix)
+     *
+     * NopoX uses a single-flight guard (`if (isPageShow) return`) — only
+     * one block screen visible at a time. There is NO per-package throttle
+     * because that creates a bypass window (the user could quickly switch
+     * between two blocked apps to bypass a per-package throttle).
+     *
+     * We replicate this: the BlockOverlayManager has its own single-flight
+     * guard via AtomicBoolean. The Activity fallback uses a global throttle
+     * (300ms) to prevent storm-launching activities.
+     */
     private fun launchBlockActivity(
         packageName: String,
         messageResKey: String,
         matchedKeyword: String? = null
     ) {
-        val now = System.currentTimeMillis()
-        // KB-06 fix: dual throttle — both per-package AND global.
-        // The per-package throttle (500ms) prevents the same app from
-        // re-triggering on every content-change event. The global throttle
-        // (300ms) prevents a block-screen storm when two different blocked
-        // apps fire events in alternation (e.g. Chrome + Firefox both matching).
-        if (packageName == lastBlockedPackage && now - lastBlockTimeMs < BLOCK_THROTTLE_PER_PACKAGE_MS) {
-            return
+        // Log the block attempt to CrashLogger for diagnostics
+        protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+            "BlockAttempt",
+            "pkg=$packageName messageKey=$messageResKey keyword=$matchedKeyword"
+        )
+
+        // ===== Strategy 1: WindowManager overlay (preferred) =====
+        try {
+            val mgr = getBlockOverlayManager()
+            if (mgr.canDrawOverlays()) {
+                val shown = mgr.showBlockOverlay(packageName, messageResKey, matchedKeyword)
+                if (shown) {
+                    Timber.i("Block overlay shown for pkg=$packageName messageKey=$messageResKey keyword=$matchedKeyword")
+                    return
+                }
+                Timber.w("Overlay manager returned false — falling back to Activity")
+            } else {
+                Timber.w("SYSTEM_ALERT_WINDOW not granted — falling back to Activity. " +
+                    "User should grant it via Settings → Apps → Protect Yourself → " +
+                    "Display over other apps.")
+                // Log to CrashLogger so the user can see the recommendation
+                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                    "BlockFallback",
+                    "Overlay permission missing — using Activity fallback for pkg=$packageName"
+                )
+            }
+        } catch (t: Throwable) {
+            Timber.e(t, "BlockOverlayManager threw — falling back to Activity")
+            protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                throwable = t,
+                severity = protect.yourself.features.crashLog.CrashSeverity.ERROR,
+                tag = "BlockOverlay",
+                message = "Overlay show failed for pkg=$packageName",
+                extraContext = mapOf("packageName" to packageName, "messageKey" to messageResKey)
+            )
         }
+
+        // ===== Strategy 2: Activity fallback =====
+        // Throttle the Activity fallback (300ms global) to prevent storm-launching.
+        val now = System.currentTimeMillis()
         if (now - lastBlockTimeMs < BLOCK_THROTTLE_GLOBAL_MS) {
             return
         }
         lastBlockedPackage = packageName
         lastBlockTimeMs = now
 
-        // Launch PornBlockActivity on top of the offending app.
-        //
-        // IMPORTANT: Do NOT press GLOBAL_ACTION_HOME here. Pressing HOME before
-        // startActivity was causing the block screen to be immediately dismissed
-        // by the system's activity transition — the user never saw the explanation
-        // message, the content just "closed immediately". Pressing HOME after
-        // startActivity is also wrong because it would dismiss the block activity
-        // itself.
-        //
-        // The block activity launches with FLAG_ACTIVITY_NEW_TASK +
-        // FLAG_ACTIVITY_CLEAR_TOP so it appears on top. When the user taps Close,
-        // the block activity finishes and the system returns to the home screen
-        // (not back to the offending app, because CLEAR_TOP cleared that task).
-        //
-        // The offending app remains in the background but the user has to
-        // actively switch to it, at which point the accessibility service will
-        // re-block it.
         val intent = Intent(this, protect.yourself.features.blockerPage.ui.PornBlockActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
             putExtra(EXTRA_BLOCK_PACKAGE, packageName)
             putExtra(EXTRA_BLOCK_MESSAGE_KEY, messageResKey)
-            // KB-19 fix: pass the matched keyword so the block screen can show
-            // the user WHY they were blocked (helps them understand false
-            // positives and adjust their keyword list).
             if (!matchedKeyword.isNullOrBlank()) {
                 putExtra(EXTRA_MATCHED_KEYWORD, matchedKeyword)
             }
         }
         try {
             startActivity(intent)
-            Timber.i("Block screen launched for pkg=$packageName messageKey=$messageResKey keyword=$matchedKeyword")
-            // AB-05 fix: press HOME after a short delay to move the offending
-            // app to the background. The delay lets the block activity appear
-            // first so HOME doesn't dismiss it. Without this, the offending app
-            // stays in the back stack and the user returns to it after Close.
+            Timber.i("Block Activity (fallback) launched for pkg=$packageName messageKey=$messageResKey")
+            // AB-05 fix (from main): press HOME after a short delay to move the
+            // offending app to the background. The delay lets the block activity
+            // appear first so HOME doesn't dismiss it. Without this, the offending
+            // app stays in the back stack and the user returns to it after Close.
             serviceScope.launch {
                 kotlinx.coroutines.delay(200)
                 try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Throwable) {}
             }
         } catch (t: Throwable) {
-            Timber.e(t, "Failed to launch PornBlockActivity")
-            // Fallback: if we can't launch the block activity, press HOME to
-            // at least dismiss the offending content
+            Timber.e(t, "Activity fallback also failed — pressing HOME as last resort")
+            protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                throwable = t,
+                severity = protect.yourself.features.crashLog.CrashSeverity.ERROR,
+                tag = "BlockLaunch",
+                message = "Both overlay and Activity failed for pkg=$packageName — pressing HOME",
+                extraContext = mapOf("packageName" to packageName, "messageKey" to messageResKey)
+            )
+            // ===== Strategy 3: HOME press (last resort) =====
             try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Throwable) {}
         }
     }
@@ -996,7 +1316,14 @@ class MyAccessibilityService : AccessibilityService() {
             isBlockSettingsByTitleOn = switchValues.isBlockSettingPageByTitleSwitchOn()
             isPreventUninstallOn = switchValues.isPreventUninstallSwitchOn()
             isBlockPhoneRebootOn = switchValues.isBlockPhoneRebootSwitchOn()
-            // BLOCK_NOTIFICATION_DRAWER + BLOCK_RECENT_APPS removed from UI
+            // UP-03 fix: load anti-circumvention switches. These default to
+            // OFF but can be enabled via the database or a future UI toggle.
+            isBlockNotificationDrawerOn = try {
+                switchValues.isBlockNotificationDrawerSwitchOn()
+            } catch (_: Throwable) { false }
+            isBlockRecentAppsOn = try {
+                switchValues.isBlockRecentAppsSwitchOn()
+            } catch (_: Throwable) { false }
 
             // Load setting titles to block from keyword DB
             cachedSettingTitles = db.selectedKeywordDao()
