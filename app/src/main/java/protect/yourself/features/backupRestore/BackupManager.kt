@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.room.withTransaction
 import com.google.gson.Gson
+import com.google.gson.JsonParseException
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
@@ -110,16 +111,25 @@ class BackupManager(private val context: Context) {
             }
             _progress.value = BackupProgress.Exporting(75, "Writing file…")
 
-            // 3. Write atomically: write to temp URI content, then it's persisted by SAF
-            // (SAF doesn't support temp-file + rename, so we write directly but with
-            // try/catch around each step + verify by re-reading the file size)
+            // 3. Write atomically: write to user-picked URI via SAF.
+            // SAF doesn't support temp-file + rename, so we write directly.
+            // After writing, we verify the persisted file size matches the
+            // expected byte count — this catches truncated writes (disk full,
+            // provider quota, network drop on cloud providers).
+            val expectedSize = withContext(Dispatchers.Default) {
+                json.toByteArray(Charsets.UTF_8).size
+            }
             withContext(Dispatchers.IO) {
                 writeJsonToUri(outputUri, json)
+            }
+            _progress.value = BackupProgress.Exporting(90, "Verifying…")
+            withContext(Dispatchers.IO) {
+                verifyWrittenSize(outputUri, expectedSize)
             }
             _progress.value = BackupProgress.Exporting(100, "Done")
 
             val stats = envelope.stats
-            val sizeBytes = json.toByteArray(Charsets.UTF_8).size
+            val sizeBytes = expectedSize
             Timber.i("BackupManager: export success — ${stats?.totalRows ?: 0} rows, $sizeBytes bytes")
             _progress.value = BackupProgress.Idle
 
@@ -140,6 +150,11 @@ class BackupManager(private val context: Context) {
             BackupResult.Error.StorageError(
                 "Could not write backup file: ${t.message ?: "storage I/O error"}"
             )
+        } catch (t: kotlinx.coroutines.CancellationException) {
+            // Don't swallow coroutine cancellation — propagate to preserve
+            // structured concurrency.
+            _progress.value = BackupProgress.Idle
+            throw t
         } catch (t: Throwable) {
             Timber.e(t, "BackupManager: unexpected error during export")
             _progress.value = BackupProgress.Idle
@@ -178,7 +193,11 @@ class BackupManager(private val context: Context) {
                 val parsed: BackupEnvelope? = try {
                     gson.fromJson(json, BACKUP_ENVELOPE_TYPE)
                 } catch (t: JsonSyntaxException) {
-                    throw InvalidBackupFormatException(t.message ?: "Malformed JSON")
+                    throw InvalidBackupFormatException("Malformed JSON: ${t.message}")
+                } catch (t: JsonParseException) {
+                    // JsonParseException is the parent of JsonSyntaxException and
+                    // JsonIOException — catches stream-level JSON errors too.
+                    throw InvalidBackupFormatException("JSON parse error: ${t.message}")
                 }
                 parsed ?: throw InvalidBackupFormatException("Backup file is empty or null")
             }
@@ -255,11 +274,17 @@ class BackupManager(private val context: Context) {
             BackupResult.Error.StorageError(
                 "Could not read backup file: ${t.message ?: "storage I/O error"}"
             )
+        } catch (t: kotlinx.coroutines.CancellationException) {
+            // Don't swallow coroutine cancellation — propagate to preserve
+            // structured concurrency (e.g. if ViewModel was cleared mid-import).
+            _progress.value = BackupProgress.Idle
+            throw t
         } catch (t: Throwable) {
             Timber.e(t, "BackupManager: unexpected error during import")
             _progress.value = BackupProgress.Idle
             // Most DB errors are caught above; if we get here, it's likely a DB error
-            // that already rolled back
+            // that already rolled back (e.g. SQLiteConstraintException from a
+            // NOT NULL violation when the backup JSON was missing a required field).
             val msg = t.message ?: t.javaClass.simpleName
             BackupResult.Error.DatabaseError(
                 "Database restore failed (rolled back): $msg"
@@ -327,29 +352,92 @@ class BackupManager(private val context: Context) {
     }
 
     private fun writeJsonToUri(uri: Uri, json: String) {
-        val resolver = context.contentResolver
-        var written = false
-        try {
-            resolver.openOutputStream(uri, "wt")?.use { outputStream ->
-                // "wt" = truncate + write — replaces any existing content
-                outputStream.write(json.toByteArray(Charsets.UTF_8))
-                outputStream.flush()
-                written = true
-            }
-        } catch (t: IOException) {
-            // Retry once with "w" mode (some providers don't support "wt")
+        // Try "wt" (truncate) first, then fall back to "w" — some SAF providers
+        // (Google Drive, Dropbox, OneDrive, certain OEM file managers) either
+        // throw IOException or return null for "wt" because they don't support
+        // truncate mode. We handle BOTH failure modes in a single loop so the
+        // retry actually fires when the first attempt fails.
+        val bytes = json.toByteArray(Charsets.UTF_8)
+        val modes = listOf("wt", "w")
+        var lastError: IOException? = null
+        for (mode in modes) {
+            var stream: java.io.OutputStream? = null
             try {
-                resolver.openOutputStream(uri, "w")?.use { outputStream ->
-                    outputStream.write(json.toByteArray(Charsets.UTF_8))
-                    outputStream.flush()
-                    written = true
+                stream = context.contentResolver.openOutputStream(uri, mode)
+                if (stream == null) {
+                    // Provider returned null — try next mode
+                    lastError = IOException("Provider returned null stream for mode '$mode'")
+                    continue
                 }
-            } catch (t2: IOException) {
-                throw IOException("Failed to write backup: ${t2.message}", t2)
+                stream.use { os ->
+                    os.write(bytes)
+                    os.flush()
+                }
+                return  // success
+            } catch (t: IOException) {
+                lastError = t
+                // try next mode
+            } catch (t: SecurityException) {
+                // Some providers throw SecurityException if the URI was revoked
+                lastError = IOException("Permission denied for mode '$mode': ${t.message}", t)
+                // try next mode
             }
         }
-        if (!written) {
-            throw IOException("Could not open output stream for backup URI")
+        throw IOException(
+            "Could not write backup file: ${lastError?.message ?: "all write modes failed"}",
+            lastError
+        )
+    }
+
+    /**
+     * Verify the persisted file size matches the expected byte count.
+     *
+     * Catches truncated writes (disk full, provider quota, network drop on
+     * cloud providers) that would otherwise report success but leave a
+     * corrupt file on disk.
+     *
+     * On API 26+ we prefer [DocumentsContract.getDocumentMetadata] which
+     * returns the canonical size without reading the file. On older APIs
+     * (or providers that don't support metadata), we open the input stream
+     * and count bytes.
+     */
+    private fun verifyWrittenSize(uri: Uri, expectedSize: Int) {
+        // Try DocumentsContract.getDocumentMetadata first (API 26+, cheap).
+        // The returned Bundle may contain COLUMN_SIZE if the provider
+        // publishes it; otherwise we fall back to byte-counting.
+        val actualSize: Int = try {
+            val meta = android.provider.DocumentsContract.getDocumentMetadata(
+                context.contentResolver,
+                uri
+            )
+            meta?.getLong(android.provider.DocumentsContract.Document.COLUMN_SIZE)?.toInt() ?: -1
+        } catch (t: Throwable) {
+            -1  // fall through to byte-counting
+        }
+        if (actualSize >= 0) {
+            if (actualSize != expectedSize) {
+                throw IOException(
+                    "Backup file size mismatch: expected $expectedSize bytes, got $actualSize bytes. " +
+                        "The file may be corrupt or the storage is full."
+                )
+            }
+            return
+        }
+        // Fall back: open input stream and count bytes
+        var counted = 0
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                counted += read
+            }
+        } ?: throw IOException("Could not re-open URI to verify backup size")
+        if (counted != expectedSize) {
+            throw IOException(
+                "Backup file size mismatch: expected $expectedSize bytes, got $counted bytes. " +
+                    "The file may be corrupt or the storage is full."
+            )
         }
     }
 
@@ -359,12 +447,16 @@ class BackupManager(private val context: Context) {
         val resolver = context.contentResolver
         return try {
             resolver.openInputStream(uri)?.use { inputStream ->
-                inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
-                    reader.readText()
-                }
+                // Use a buffer to read fully — readText() reads the whole stream
+                // but on some providers (Google Drive) the stream may be lazy
+                // and the buffered reader may not consume it correctly.
+                inputStream.readBytes().toString(Charsets.UTF_8)
             }
         } catch (t: IOException) {
             Timber.w(t, "Failed to read from URI $uri")
+            null
+        } catch (t: SecurityException) {
+            Timber.w(t, "Permission denied reading from URI $uri")
             null
         }
     }
@@ -372,6 +464,12 @@ class BackupManager(private val context: Context) {
     /**
      * Restore all tables inside an existing Room transaction.
      * Throws on any failure — caller's transaction will be rolled back.
+     *
+     * Each list is sanitised before insert: missing/null fields from old,
+     * partial, or hand-edited backups are coerced to safe defaults so we
+     * don't trip SQLite NOT NULL constraints or Kotlin NPEs. Rows with
+     * an empty/blank primary key are skipped (Room would crash on insert
+     * with an empty PK for String-keyed tables).
      */
     private suspend fun restoreAllTables(tables: BackupTables): RestoredCounts {
         // Clear all tables first (so restore is a clean replace, not a merge)
@@ -397,75 +495,176 @@ class BackupManager(private val context: Context) {
         var streakDatesCount = 0
         var vpnCustomDnsCount = 0
 
-        // switch_status
-        tables.switchStatus?.let {
-            if (it.isNotEmpty()) {
-                db.switchStatusDao().upsertAll(it)
-                switchCount = it.size
+        // switch_status — PK: key (String, required)
+        tables.switchStatus?.let { list ->
+            if (list.isNotEmpty()) {
+                val sanitized = list.mapNotNull { item ->
+                    val key = item.key ?: return@mapNotNull null
+                    if (key.isBlank()) return@mapNotNull null
+                    item.copy(
+                        key = key,
+                        value = item.value ?: "",
+                        type = item.type ?: "boolean"
+                    )
+                }
+                if (sanitized.isNotEmpty()) {
+                    db.switchStatusDao().upsertAll(sanitized)
+                    switchCount = sanitized.size
+                }
             }
         }
 
-        // selected_keyword_table
-        tables.selectedKeywords?.let {
-            if (it.isNotEmpty()) {
-                db.selectedKeywordDao().upsertAll(it)
-                keywordCount = it.size
+        // selected_keyword_table — PK: key (String, required)
+        tables.selectedKeywords?.let { list ->
+            if (list.isNotEmpty()) {
+                val sanitized = list.mapNotNull { item ->
+                    val key = item.key ?: return@mapNotNull null
+                    if (key.isBlank()) return@mapNotNull null
+                    item.copy(
+                        key = key,
+                        keyword = item.keyword ?: "",
+                        identifier = item.identifier ?: "",
+                        isSelected = item.isSelected  // Boolean defaults to false in JVM
+                    )
+                }
+                if (sanitized.isNotEmpty()) {
+                    db.selectedKeywordDao().upsertAll(sanitized)
+                    keywordCount = sanitized.size
+                }
             }
         }
 
-        // selected_apps_table
-        tables.selectedApps?.let {
-            if (it.isNotEmpty()) {
-                db.selectedAppsListDao().upsertAll(it)
-                appCount = it.size
+        // selected_apps_table — PK: key (String, required)
+        tables.selectedApps?.let { list ->
+            if (list.isNotEmpty()) {
+                val sanitized = list.mapNotNull { item ->
+                    val key = item.key ?: return@mapNotNull null
+                    if (key.isBlank()) return@mapNotNull null
+                    item.copy(
+                        key = key,
+                        packageName = item.packageName ?: "",
+                        appName = item.appName ?: "",
+                        identifier = item.identifier ?: "",
+                        isSelected = item.isSelected
+                    )
+                }
+                if (sanitized.isNotEmpty()) {
+                    db.selectedAppsListDao().upsertAll(sanitized)
+                    appCount = sanitized.size
+                }
             }
         }
 
-        // block_screen_count_table
-        tables.blockScreenCount?.let {
-            if (it.isNotEmpty()) {
-                db.blockScreenCountDao().upsertAll(it)
-                blockScreenCount = it.size
+        // block_screen_count_table — PK: key (Int, default 0) — all-default entity, safe
+        tables.blockScreenCount?.let { list ->
+            if (list.isNotEmpty()) {
+                db.blockScreenCountDao().upsertAll(list)
+                blockScreenCount = list.size
             }
         }
 
-        // partner_pending_request_table
-        tables.pendingRequests?.let {
-            if (it.isNotEmpty()) {
-                db.pendingRequestDao().upsertAll(it)
-                pendingRequestCount = it.size
+        // partner_pending_request_table — PK: key (String, required)
+        tables.pendingRequests?.let { list ->
+            if (list.isNotEmpty()) {
+                val sanitized = list.mapNotNull { item ->
+                    val key = item.key ?: return@mapNotNull null
+                    if (key.isBlank()) return@mapNotNull null
+                    item.copy(
+                        key = key,
+                        requestIdentifier = item.requestIdentifier ?: "",
+                        appName = item.appName ?: "",
+                        keyWord = item.keyWord ?: "",
+                        packageName = item.packageName ?: "",
+                        switchNumber = item.switchNumber,
+                        itemKey = item.itemKey ?: "",
+                        itemType = item.itemType ?: "",
+                        requestDisplayMessage = item.requestDisplayMessage ?: "",
+                        requestSubmitTime = item.requestSubmitTime,
+                        requestOffTime = item.requestOffTime,
+                        apType = item.apType,
+                        approvalType = item.approvalType
+                    )
+                }
+                if (sanitized.isNotEmpty()) {
+                    db.pendingRequestDao().upsertAll(sanitized)
+                    pendingRequestCount = sanitized.size
+                }
             }
         }
 
-        // stop_me_duration_table
-        tables.stopMeDuration?.let {
-            if (it.isNotEmpty()) {
-                db.stopMeDurationDao().upsertAll(it)
-                stopMeDurationCount = it.size
+        // stop_me_duration_table — PK: key (String, required)
+        tables.stopMeDuration?.let { list ->
+            if (list.isNotEmpty()) {
+                val sanitized = list.mapNotNull { item ->
+                    val key = item.key ?: return@mapNotNull null
+                    if (key.isBlank()) return@mapNotNull null
+                    item.copy(
+                        key = key,
+                        duration = item.duration,
+                        endTime = item.endTime,
+                        days = item.days,
+                        startTime = item.startTime,
+                        startTimeDayMillis = item.startTimeDayMillis
+                    )
+                }
+                if (sanitized.isNotEmpty()) {
+                    db.stopMeDurationDao().upsertAll(sanitized)
+                    stopMeDurationCount = sanitized.size
+                }
             }
         }
 
-        // stop_me_session_count_table
-        tables.stopMeSessionCount?.let {
-            if (it.isNotEmpty()) {
-                db.stopMeSessionCountDao().upsertAll(it)
-                stopMeSessionCount = it.size
+        // stop_me_session_count_table — PK: key (Int, default 0) — all-default entity, safe
+        tables.stopMeSessionCount?.let { list ->
+            if (list.isNotEmpty()) {
+                db.stopMeSessionCountDao().upsertAll(list)
+                stopMeSessionCount = list.size
             }
         }
 
-        // streak_dates_table
-        tables.streakDates?.let {
-            if (it.isNotEmpty()) {
-                db.streakDatesDao().upsertAll(it)
-                streakDatesCount = it.size
+        // streak_dates_table — PK: startTime (Long, required)
+        tables.streakDates?.let { list ->
+            if (list.isNotEmpty()) {
+                val sanitized = list.filter { item ->
+                    // startTime is a Long — can't be null in JVM after Gson (defaults to 0L)
+                    // but we keep the filter for symmetry + future-proofing
+                    true
+                }.map { item ->
+                    item.copy(
+                        startTime = item.startTime,
+                        endTime = item.endTime,
+                        type = item.type ?: "",
+                        freeText = item.freeText ?: ""
+                    )
+                }
+                if (sanitized.isNotEmpty()) {
+                    db.streakDatesDao().upsertAll(sanitized)
+                    streakDatesCount = sanitized.size
+                }
             }
         }
 
-        // vpn_custom_dns
-        tables.vpnCustomDns?.let {
-            if (it.isNotEmpty()) {
-                db.vpnCustomDnsDao().upsertAll(it)
-                vpnCustomDnsCount = it.size
+        // vpn_custom_dns — PK: key (String, required)
+        // IMPORTANT: displayName is nullable in the entity but the DB column is
+        // NOT NULL DEFAULT '' (see AppDatabase.MIGRATION_8_9). Coerce null → ""
+        // so SQLite doesn't reject the insert.
+        tables.vpnCustomDns?.let { list ->
+            if (list.isNotEmpty()) {
+                val sanitized = list.mapNotNull { item ->
+                    val key = item.key ?: return@mapNotNull null
+                    if (key.isBlank()) return@mapNotNull null
+                    item.copy(
+                        key = key,
+                        displayName = item.displayName ?: "",
+                        firstDns = item.firstDns ?: "",
+                        secondDns = item.secondDns ?: "",
+                        isSelected = item.isSelected
+                    )
+                }
+                if (sanitized.isNotEmpty()) {
+                    db.vpnCustomDnsDao().upsertAll(sanitized)
+                    vpnCustomDnsCount = sanitized.size
+                }
             }
         }
 

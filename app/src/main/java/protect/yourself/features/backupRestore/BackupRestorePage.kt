@@ -45,7 +45,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,7 +53,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.launch
 import protect.yourself.theme.BrandOrange
 
 /**
@@ -82,24 +80,35 @@ fun BackupRestorePage(
     )
     val state by viewModel.state.collectAsState()
     val progress by viewModel.progress.collectAsState()
-    val scope = rememberCoroutineScope()
 
     // SAF launcher for export — CreateDocument("application/json")
     val createDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri: Uri? ->
         if (uri != null) {
-            scope.launch { viewModel.exportToUri(uri) }
+            // viewModel.exportToUri internally launches on viewModelScope —
+            // no need for an outer scope.launch here.
+            viewModel.exportToUri(uri)
+        } else {
+            // User backed out of the picker without picking a file.
+            // Surface a Cancelled dialog so the user knows nothing happened.
+            viewModel.reportCancelled()
         }
     }
 
-    // SAF launcher for import — OpenDocument (JSON files only)
+    // SAF launcher for import — OpenDocument (JSON files only).
+    // Use application/json + application/octet-stream (some providers label
+    // .json files as octet-stream). We deliberately do NOT add "*/*" because
+    // it makes the other MIME types redundant and can cause some OEM pickers
+    // to show every file on the device, hiding the JSON filter.
     val openDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
             // Show confirmation dialog before importing (destructive — overwrites current data)
             viewModel.showImportConfirmation(uri)
+        } else {
+            viewModel.reportCancelled()
         }
     }
 
@@ -218,7 +227,7 @@ fun BackupRestorePage(
                 enabled = !state.isOperating,
                 isDestructive = true,
                 onClick = {
-                    openDocumentLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*"))
+                    openDocumentLauncher.launch(arrayOf("application/json", "application/octet-stream"))
                 }
             )
 
@@ -251,7 +260,9 @@ fun BackupRestorePage(
                     onClick = {
                         val uri = state.pendingImportUri!!
                         viewModel.cancelImportConfirmation()
-                        scope.launch { viewModel.importFromUri(uri) }
+                        // viewModel.importFromUri internally launches on
+                        // viewModelScope — no need for an outer scope.launch.
+                        viewModel.importFromUri(uri)
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) {

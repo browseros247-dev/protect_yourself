@@ -134,6 +134,18 @@ class BackupRestoreViewModel(
     }
 
     /**
+     * Report that the user cancelled a SAF picker (CreateDocument or
+     * OpenDocument) by backing out without picking a file. Surfaces a
+     * non-fatal "Cancelled" dialog so the user knows the operation was
+     * not silently ignored.
+     */
+    fun reportCancelled() {
+        _state.update {
+            it.copy(lastResult = BackupResult.Error.Cancelled)
+        }
+    }
+
+    /**
      * Clear the last result (after UI has shown it).
      */
     fun clearResult() {
