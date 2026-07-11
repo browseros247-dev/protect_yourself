@@ -88,8 +88,10 @@ class StopMePageViewModel(
         viewModelScope.launch {
             try {
                 stopMeManager.startInstantSession(durationMillis)
-                // Refresh accessibility service so it starts blocking non-whitelisted apps
-                MyAccessibilityService.instance?.setStopMeRunning(true)
+                // AB-01 fix: StopMeManager.startInstantSession now calls
+                // setStopMeEndTime(endTime) internally, so we don't need to
+                // call setStopMeRunning here. The accessibility service picks
+                // up the end-time via the manager's notifyAccessibilityServiceStart.
             } catch (t: Throwable) {
                 Timber.e(t, "Failed to start instant session")
             } finally {
