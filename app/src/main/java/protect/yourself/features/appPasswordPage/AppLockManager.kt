@@ -1,6 +1,7 @@
 package protect.yourself.features.appPasswordPage
 
 import android.content.Context
+import timber.log.Timber
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.switchStatus.SwitchIdentifier
 import protect.yourself.database.switchStatus.SwitchStatusValues
@@ -83,15 +84,32 @@ class AppLockManager(private val context: Context) {
      * Uses constant-time comparison to prevent timing side-channel attacks.
      */
     suspend fun verify(input: String): Boolean {
-        val stored = db.switchStatusDao().get("app_lock_stored_hash")?.asString()
-        if (stored.isNullOrBlank()) return false
-        val parts = stored.split(":")
-        if (parts.size != 2) return false
-        val salt = parts[0]
-        val expectedHash = parts[1]
-        val actualHash = hashPassword(input, salt)
-        // Constant-time comparison to prevent timing attacks
-        return constantTimeEquals(actualHash, expectedHash)
+        return try {
+            val stored = db.switchStatusDao().get("app_lock_stored_hash")?.asString()
+            if (stored.isNullOrBlank()) return false
+            val parts = stored.split(":")
+            if (parts.size != 2) return false
+            val salt = parts[0]
+            val expectedHash = parts[1]
+            // CRASH FIX: validate salt is valid hex before calling hexToBytes().
+            // A corrupted salt (from manual DB edit, partial backup restore,
+            // or migration glitch) would cause NumberFormatException in
+            // hexToBytes() → uncaught in the calling coroutine → app crash
+            // on the lock screen → infinite crash loop.
+            if (!salt.matches(Regex("^[0-9a-fA-F]+$")) || salt.length % 2 != 0) {
+                Timber.e("Corrupted salt in app_lock_stored_hash — returning false")
+                return false
+            }
+            val actualHash = hashPassword(input, salt)
+            // Constant-time comparison to prevent timing attacks
+            constantTimeEquals(actualHash, expectedHash)
+        } catch (t: Throwable) {
+            // Any exception (DB read failure, NumberFormatException, NPE)
+            // returns false instead of crashing. This is the lock screen —
+            // a crash here causes an infinite crash loop.
+            Timber.e(t, "verify() failed — returning false to prevent crash loop")
+            false
+        }
     }
 
     /**
