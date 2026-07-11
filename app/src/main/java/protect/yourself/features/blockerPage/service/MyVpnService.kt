@@ -27,6 +27,7 @@ import protect.yourself.features.blockerPage.utils.BlockerPageUtils
 import protect.yourself.features.blockerPage.utils.DefaultDnsPresets
 import protect.yourself.features.mainActivityPage.MainActivity
 import timber.log.Timber
+import java.net.InetAddress
 
 /**
  * MyVpnService — DNS-filtering VPN service (NopoX-style).
@@ -206,9 +207,13 @@ class MyVpnService : VpnService() {
                 // No addRoute, no FileInputStream, no DatagramSocket, no protect().
                 val builder = Builder()
                     .setSession(getString(R.string.app_name))
-                    .addAddress(VPN_ADDRESS, VPN_PREFIX_LENGTH)
-                    .addDnsServer(firstDns)
-                    .addDnsServer(secondDns)
+                    .addAddress(InetAddress.getByName(VPN_ADDRESS), VPN_PREFIX_LENGTH)
+                    // NopoX adds multiple private addresses — we match its pattern.
+                    .addAddress(InetAddress.getByName("10.0.2.16"), VPN_PREFIX_LENGTH)
+                    .addAddress(InetAddress.getByName("10.0.2.17"), VPN_PREFIX_LENGTH)
+                    .addAddress(InetAddress.getByName("10.0.2.18"), VPN_PREFIX_LENGTH)
+                    .addDnsServer(InetAddress.getByName(firstDns))
+                    .addDnsServer(InetAddress.getByName(secondDns))
                     .setMtu(VPN_MTU)
                     .allowBypass()
 
@@ -229,7 +234,22 @@ class MyVpnService : VpnService() {
                     Timber.w(t, "Failed to allow self from VPN")
                 }
 
-                // 7. Establish the VPN interface
+                // 7. Set configure intent — opens MainActivity when user taps
+                //    the VPN gear icon in system VPN settings. NopoX does this too.
+                try {
+                    val configIntent = Intent(this@MyVpnService, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    }
+                    val configPending = PendingIntent.getActivity(
+                        this@MyVpnService, 0, configIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    builder.setConfigureIntent(configPending)
+                } catch (t: Throwable) {
+                    Timber.w(t, "Failed to set configure intent")
+                }
+
+                // 8. Establish the VPN interface
                 vpnInterface = builder.establish()
                 if (vpnInterface == null) {
                     Timber.e("Failed to establish VPN interface — user may have revoked permission")
