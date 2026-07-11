@@ -17,8 +17,8 @@ android {
         applicationId = "protect.yourself"
         minSdk = 26
         targetSdk = 35
-        versionCode = 38
-        versionName = "1.0.38"
+        versionCode = 39
+        versionName = "1.0.39"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
