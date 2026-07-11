@@ -30,6 +30,16 @@ class AppSystemActionReceiverAllTime : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         Timber.i("AllTime action: ${intent.action}")
+        // Mirror NopoX: attempt self-heal on EVERY system event we receive.
+        // This is the cheapest possible insurance — if WRITE_SECURE_SETTINGS
+        // is granted, the call is a few-millisecond Settings.Secure write;
+        // if not, it's a no-op. Either way, the service gets re-armed as
+        // early as possible after boot/screen-on/user-present.
+        try {
+            protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(context)
+        } catch (t: Throwable) {
+            Timber.w(t, "selfHealSafe in AllTime receiver failed")
+        }
         val pendingResult = goAsync()
 
         scope.launch {

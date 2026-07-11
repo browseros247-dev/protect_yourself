@@ -83,8 +83,15 @@ class ProtectYourselfApp : Application(), LifecycleObserver, Configuration.Provi
         }
 
         // 7. Accessibility self-heal + guard
+        //    PackageManagerProvider MUST be initialised before this step
+        //    because AccessibilityPersistUtils.ownComponentFlat calls
+        //    PackageManagerProvider.getPackageName() lazily.
         safeInit("AccessibilityGuard") {
-            protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe()
+            // Ensure PackageManagerProvider is initialised even if step 6 failed
+            try {
+                protect.yourself.commons.utils.PackageManagerProvider.init(this)
+            } catch (_: Throwable) {}
+            protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this)
             protect.yourself.features.protectedApps.AccessibilityGuard.getInstance()
                 .startWatching(this)
         }

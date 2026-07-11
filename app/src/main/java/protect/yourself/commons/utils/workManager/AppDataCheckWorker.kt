@@ -86,6 +86,17 @@ class AppDataCheckWorker(
             protect.yourself.features.blockerPage.service.MyAccessibilityService.instance
                 ?.refreshBlockingConfig()
 
+            // 4. Self-heal accessibility service. This is the periodic safety
+            //    net — even if the user never opens the app, the 24h worker
+            //    re-arms the accessibility service. No-op if WRITE_SECURE_SETTINGS
+            //    isn't granted.
+            try {
+                protect.yourself.features.protectedApps.AccessibilityPersistUtils
+                    .selfHealSafe(applicationContext)
+            } catch (t: Throwable) {
+                Timber.w(t, "AppDataCheckWorker: selfHealSafe failed")
+            }
+
             Timber.i("AppDataCheckWorker completed successfully")
             Result.success()
         } catch (t: Throwable) {

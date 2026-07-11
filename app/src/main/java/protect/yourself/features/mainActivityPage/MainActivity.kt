@@ -139,6 +139,15 @@ class MainActivity : FragmentActivity() {
      */
     override fun onResume() {
         super.onResume()
+        // Mirror NopoX: attempt self-heal every time the app comes to the
+        // foreground. This is the highest-value call site — if the service
+        // was killed while the app was backgrounded, this re-arms it the
+        // instant the user opens the app again.
+        try {
+            protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this)
+        } catch (t: Throwable) {
+            Timber.w(t, "selfHealSafe in onResume failed")
+        }
         // Only re-lock if the app was previously in MAIN state (i.e. the user
         // was inside the app). Don't re-lock during initial launch (LOADING)
         // or during onboarding.
