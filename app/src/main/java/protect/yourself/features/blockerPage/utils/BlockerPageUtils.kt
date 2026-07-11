@@ -347,17 +347,39 @@ class BlockerPageUtils {
             // Strip trailing dot from host (DNS allows trailing dots, e.g.
             // "www.google.com." is equivalent to "www.google.com")
             val host = uri.host?.lowercase()?.trimEnd('.') ?: return null
-            val safeHost = SAFE_SEARCH_HOST_MAP[host] ?: return null
+            val safeHost = SAFE_SEARCH_HOST_MAP[host]
+            if (safeHost != null) {
+                // Build safe URL preserving path + query + fragment
+                val path = uri.path ?: ""
+                val query = uri.query ?: ""
+                val fragment = uri.fragment ?: ""
+                val safeUrl = StringBuilder("https://$safeHost")
+                if (path.isNotBlank()) safeUrl.append(path)
+                if (query.isNotBlank()) safeUrl.append("?").append(query)
+                if (fragment.isNotBlank()) safeUrl.append("#").append(fragment)
+                return safeUrl.toString()
+            }
 
-            // Build safe URL preserving path + query + fragment
-            val path = uri.path ?: ""
-            val query = uri.query ?: ""
-            val fragment = uri.fragment ?: ""
-            val safeUrl = StringBuilder("https://$safeHost")
-            if (path.isNotBlank()) safeUrl.append(path)
-            if (query.isNotBlank()) safeUrl.append("?").append(query)
-            if (fragment.isNotBlank()) safeUrl.append("#").append(fragment)
-            return safeUrl.toString()
+            // Parameter-based safe search (Yahoo → vm=r, Yandex → family=1)
+            val safeParam = SAFE_SEARCH_PARAM_MAP[host]
+            if (safeParam != null) {
+                val path = uri.path ?: ""
+                val existingQuery = uri.query ?: ""
+                val fragment = uri.fragment ?: ""
+                val safeUrl = StringBuilder("https://$host")
+                if (path.isNotBlank()) safeUrl.append(path)
+                // Inject the safe search parameter, appending to existing query
+                val newQuery = if (existingQuery.isNotBlank()) {
+                    "$existingQuery&$safeParam"
+                } else {
+                    safeParam
+                }
+                safeUrl.append("?").append(newQuery)
+                if (fragment.isNotBlank()) safeUrl.append("#").append(fragment)
+                return safeUrl.toString()
+            }
+
+            return null
         } catch (t: Throwable) {
             return null
         }
@@ -378,6 +400,9 @@ class BlockerPageUtils {
         val lower = url.lowercase(Locale.ROOT)
         return lower.contains("safe=active") ||
             lower.contains("safe=strict") ||
+            lower.contains("adlt=strict") ||
+            lower.contains("vm=r") ||
+            lower.contains("family=1") ||
             lower.contains("forcesafesearch.google.com") ||
             lower.contains("strict.bing.com") ||
             lower.contains("restrict.youtube.com") ||
@@ -392,7 +417,11 @@ class BlockerPageUtils {
         return lower.contains("google.com") ||
             lower.contains("bing.com") ||
             lower.contains("youtube.com") ||
-            lower.contains("duckduckgo.com")
+            lower.contains("duckduckgo.com") ||
+            lower.contains("search.yahoo.com") ||
+            lower.contains("yahoo.com") ||
+            lower.contains("yandex.com") ||
+            lower.contains("ya.ru")
     }
 
     companion object {
@@ -482,6 +511,25 @@ class BlockerPageUtils {
             // DuckDuckGo
             "duckduckgo.com" to "safe.duckduckgo.com",
             "www.duckduckgo.com" to "safe.duckduckgo.com"
+        )
+
+        /**
+         * Search engine host → SafeSearch parameter mapping.
+         *
+         * For search engines that don't have a dedicated SafeSearch host
+         * (unlike Google/Bing/YouTube/DuckDuckGo), SafeSearch is enforced
+         * via a URL query parameter on the same host.
+         *
+         *  - search.yahoo.com     → vm=r      (Yahoo SafeSearch)
+         *  - yandex.com           → family=1  (Yandex Family Search)
+         *  - ya.ru                → family=1  (Yandex Russia, Family Search)
+         */
+        val SAFE_SEARCH_PARAM_MAP: Map<String, String> = mapOf(
+            // Yahoo — enforce via vm=r parameter
+            "search.yahoo.com" to "vm=r",
+            // Yandex — enforce via family=1 parameter
+            "yandex.com" to "family=1",
+            "ya.ru" to "family=1"
         )
 
         /**
