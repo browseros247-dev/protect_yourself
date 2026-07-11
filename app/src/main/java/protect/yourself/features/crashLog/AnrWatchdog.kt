@@ -112,8 +112,25 @@ class AnrWatchdog(
                 val timeSinceTick = now - lastTick
 
                 if (timeSinceTick > thresholdMs && anrReported.compareAndSet(false, true)) {
-                    // Main thread is blocked — log an ANR entry
-                    reportAnr(postedAt, timeSinceTick)
+                    // Main thread hasn't processed the tick within threshold.
+                    // Before reporting an ANR, check if the main thread is
+                    // actually BLOCKED or just IDLE (nativePollOnce).
+                    //
+                    // Crash log crash_20260711_124503_0010 (v1.0.46, vivo V2206)
+                    // showed a false-positive ANR: the main thread stack trace
+                    // was `nativePollOnce → Looper.loop → ActivityThread.main`
+                    // — i.e. the main thread was IDLE (waiting for messages),
+                    // not BLOCKED. This happens when the app is backgrounded
+                    // and the system throttles the main Looper (common on
+                    // Chinese OEMs: vivo, OPPO, Xiaomi, Huawei).
+                    if (isMainThreadActuallyBlocked()) {
+                        reportAnr(postedAt, timeSinceTick)
+                    } else {
+                        // Main thread is idle (nativePollOnce) — not a real ANR.
+                        // Log at DEBUG level so we can see it in diagnostics but
+                        // don't create a FATAL crash entry.
+                        Timber.d("ANR watchdog: main thread idle (nativePollOnce) for ${timeSinceTick}ms — not a real ANR, skipping")
+                    }
                 }
             } catch (_: InterruptedException) {
                 // stop() was called — exit the loop
@@ -126,6 +143,50 @@ class AnrWatchdog(
             }
         }
         Timber.i("ANR watchdog stopped")
+    }
+
+    /**
+     * Check if the main thread is actually blocked (doing real work) vs
+     * idle (sitting in nativePollOnce waiting for messages).
+     *
+     * When the main thread is idle, its top stack frame is:
+     *   `android.os.MessageQueue.nativePollOnce(Native Method)`
+     *
+     * This is NOT an ANR — the main thread is perfectly healthy, just
+     * waiting for something to do. This happens when:
+     *   - The app is backgrounded
+     *   - The system throttles the main Looper on some OEMs (vivo, OPPO, etc.)
+     *   - There's simply no user interaction
+     *
+     * A real ANR has the main thread doing actual work:
+     *   - `Database.execSQL` (DB I/O on main thread)
+     *   - `File.readText` / `File.writeText` (disk I/O on main thread)
+     *   - `Object.wait` / `synchronized` (lock contention)
+     *   - `Thread.sleep` (explicit block)
+     *   - Heavy computation
+     */
+    private fun isMainThreadActuallyBlocked(): Boolean {
+        return try {
+            val mainThread = Looper.getMainLooper().thread
+            val stackTrace = mainThread.stackTrace
+            if (stackTrace.isEmpty()) return true // Can't tell — assume blocked
+
+            val topFrame = stackTrace[0]
+            val className = topFrame.className
+            val methodName = topFrame.methodName
+
+            // If the top frame is nativePollOnce, the main thread is IDLE
+            // (waiting for messages in the Looper), not BLOCKED.
+            val isIdle = (className == "android.os.MessageQueue" && methodName == "nativePollOnce") ||
+                (className == "android.os.MessageQueue" && methodName == "next") ||
+                (className == "android.os.Looper" && methodName == "loopOnce") ||
+                (className == "android.os.Looper" && methodName == "loop")
+
+            !isIdle
+        } catch (_: Throwable) {
+            // Can't determine — assume blocked (safer to report than to miss)
+            true
+        }
     }
 
     /**

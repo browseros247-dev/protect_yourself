@@ -1171,11 +1171,27 @@ class MyAccessibilityService : AccessibilityService() {
                     Timber.i("Block overlay shown for pkg=$packageName messageKey=$messageResKey keyword=$matchedKeyword")
                     return
                 }
-                Timber.w("Overlay manager returned false — falling back to Activity")
+                // Use OncePerSessionLogger to prevent log spam — without this,
+                // every block attempt logs the same warning. Crash log analysis
+                // (v1.0.46, vivo V2206) showed 14 identical WARN entries in 20
+                // minutes, one per block. Logging once per session is sufficient
+                // — the user already knows from the first warning.
+                protect.yourself.commons.utils.OncePerSessionLogger.warn(
+                    key = "overlay_show_failed",
+                    message = "Overlay manager returned false — falling back to Activity"
+                )
             } else {
-                Timber.w("SYSTEM_ALERT_WINDOW not granted — falling back to Activity. " +
-                    "User should grant it via Settings → Apps → Protect Yourself → " +
-                    "Display over other apps.")
+                // Use OncePerSessionLogger to prevent log spam — without this,
+                // every block attempt logs the same warning. Crash log analysis
+                // (v1.0.46, vivo V2206) showed 14 identical WARN entries in 20
+                // minutes, one per block. Logging once per session is sufficient
+                // — the user already knows from the first warning.
+                protect.yourself.commons.utils.OncePerSessionLogger.warn(
+                    key = "overlay_permission_missing",
+                    message = "SYSTEM_ALERT_WINDOW not granted — falling back to Activity. " +
+                        "User should grant it via Settings → Apps → Protect Yourself → " +
+                        "Display over other apps."
+                )
                 // Log to CrashLogger so the user can see the recommendation
                 protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
                     "BlockFallback",

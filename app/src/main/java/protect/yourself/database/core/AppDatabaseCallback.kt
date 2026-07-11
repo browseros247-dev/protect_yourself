@@ -37,6 +37,21 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
         Timber.i("AppDatabase created — pre-populating default data via execSQL")
 
         try {
+            // === 0. Defensive schema repair ===
+            // On some upgrade paths (especially v8→v9 where the migration was
+            // interrupted or the DB was partially corrupted), Room may call
+            // onCreate even though the tables already exist from a previous
+            // install. The CREATE TABLE statements in Room's generated code
+            // use "CREATE TABLE IF NOT EXISTS", so they silently succeed even
+            // if the table exists with an OLD schema. This leaves the table
+            // missing columns that the new entity expects (e.g. display_name
+            // on vpn_custom_dns).
+            //
+            // We proactively check and repair the vpn_custom_dns table here
+            // so the insertDnsPresets() call below doesn't crash with
+            // "table vpn_custom_dns has no column named display_name".
+            ensureVpnCustomDnsSchema(db)
+
             // === 1. Block screen count (single row, key=0, count=0) ===
             db.execSQL(
                 "INSERT OR REPLACE INTO block_screen_count_table (`key`, count) VALUES (0, 0)"
@@ -81,6 +96,78 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
             }
         } catch (t: Throwable) {
             Timber.e(t, "Failed to pre-populate database (critical)")
+        }
+    }
+
+    /**
+     * Defensive schema repair for vpn_custom_dns table.
+     *
+     * # Why this exists
+     *
+     * Crash log `crash_20260711_123555_0001` (v1.0.46, vivo V2206) shows:
+     * `SQLiteException: table vpn_custom_dns has no column named display_name`
+     * during `AppDatabaseCallback.onCreate → insertDnsPresets`.
+     *
+     * The user upgraded from an older version (DB schema v8, where
+     * vpn_custom_dns had no display_name column) to v1.0.46 (DB schema v9).
+     * The MIGRATION_8_9 migration should have added the column, but in some
+     * upgrade paths (interrupted migration, partial corruption, or Room's
+     * fallbackToDestructiveMigration not fully dropping the table), the table
+     * ends up at v9 version but v8 structure — missing the display_name column.
+     *
+     * Room's generated `CREATE TABLE IF NOT EXISTS` silently succeeds when the
+     * table already exists, so the column is never added. Then
+     * `INSERT INTO vpn_custom_dns (..., display_name, ...)` crashes.
+     *
+     * # What this does
+     *
+     * 1. Queries `PRAGMA table_info(vpn_custom_dns)` to check if the
+     *    `display_name` column exists.
+     * 2. If missing, runs `ALTER TABLE ... ADD COLUMN display_name TEXT NOT
+     *    NULL DEFAULT ''` (same as MIGRATION_8_9).
+     * 3. Backfills display_name for known preset keys.
+     *
+     * Idempotent — safe to call even if the column already exists.
+     */
+    private fun ensureVpnCustomDnsSchema(db: SupportSQLiteDatabase) {
+        try {
+            // Check if display_name column exists via PRAGMA table_info
+            val cursor = db.query("PRAGMA table_info(vpn_custom_dns)")
+            val hasDisplayName = cursor.use { c ->
+                var found = false
+                while (c.moveToNext()) {
+                    val nameIndex = c.getColumnIndex("name")
+                    if (nameIndex >= 0 && c.getString(nameIndex) == "display_name") {
+                        found = true
+                        break
+                    }
+                }
+                found
+            }
+
+            if (!hasDisplayName) {
+                Timber.w("vpn_custom_dns missing display_name column — adding it defensively")
+                db.execSQL(
+                    "ALTER TABLE vpn_custom_dns ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"
+                )
+                // Backfill display names for known preset keys
+                for (preset in DefaultDnsPresets.ALL) {
+                    try {
+                        db.execSQL(
+                            "UPDATE vpn_custom_dns SET display_name = ? WHERE `key` = ?",
+                            arrayOf(preset.displayName, preset.key)
+                        )
+                    } catch (_: Throwable) {
+                        // Non-critical — the row may not exist yet
+                    }
+                }
+                Timber.i("Defensively added display_name column to vpn_custom_dns")
+            }
+        } catch (t: Throwable) {
+            // If the table doesn't exist yet (fresh install), PRAGMA table_info
+            // returns an empty cursor and we skip the ALTER. If the ALTER fails
+            // because the column already exists, log and continue.
+            Timber.w(t, "ensureVpnCustomDnsSchema: defensive check failed (non-critical)")
         }
     }
 
