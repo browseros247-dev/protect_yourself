@@ -192,31 +192,46 @@ class AppLockSetupViewModel(
 
     fun toggleTouchId(enabled: Boolean) {
         viewModelScope.launch {
-            manager.setTouchIdEnabled(enabled)
-            _state.update { it.copy(touchIdEnabled = enabled) }
+            try {
+                manager.setTouchIdEnabled(enabled)
+                _state.update { it.copy(touchIdEnabled = enabled) }
+            } catch (t: Throwable) {
+                Timber.e(t, "toggleTouchId failed")
+                _state.update { it.copy(error = "Failed to update Touch ID setting") }
+            }
         }
     }
 
     fun toggleForgotPasswordDisabled(disabled: Boolean) {
         viewModelScope.launch {
-            manager.setForgotPasswordDisabled(disabled)
-            _state.update { it.copy(forgotPasswordDisabled = disabled) }
+            try {
+                manager.setForgotPasswordDisabled(disabled)
+                _state.update { it.copy(forgotPasswordDisabled = disabled) }
+            } catch (t: Throwable) {
+                Timber.e(t, "toggleForgotPasswordDisabled failed")
+                _state.update { it.copy(error = "Failed to update setting") }
+            }
         }
     }
 
     fun disableLock() {
         viewModelScope.launch {
-            manager.disableLock()
-            _state.update {
-                it.copy(
-                    currentLockType = AppLockType.OFF,
-                    selectedLockType = null,
-                    setupStep = SetupStep.NONE,
-                    firstEntry = "",
-                    secondEntry = "",
-                    error = null,
-                    toastMessage = "App lock disabled"
-                )
+            try {
+                manager.disableLock()
+                _state.update {
+                    it.copy(
+                        currentLockType = AppLockType.OFF,
+                        selectedLockType = null,
+                        setupStep = SetupStep.NONE,
+                        firstEntry = "",
+                        secondEntry = "",
+                        error = null,
+                        toastMessage = "App lock disabled"
+                    )
+                }
+            } catch (t: Throwable) {
+                Timber.e(t, "disableLock failed")
+                _state.update { it.copy(error = "Failed to disable app lock") }
             }
         }
     }

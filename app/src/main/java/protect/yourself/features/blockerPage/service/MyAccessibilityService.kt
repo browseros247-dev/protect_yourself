@@ -1110,12 +1110,20 @@ class MyAccessibilityService : AccessibilityService() {
          * Check if this accessibility service is enabled (system setting).
          */
         fun isEnabled(context: android.content.Context): Boolean {
-            val expectedComponent = context.packageName + "/" + MyAccessibilityService::class.java.name
-            val enabledServices = Settings.Secure.getString(
-                context.contentResolver,
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            ) ?: return false
-            return enabledServices.contains(expectedComponent)
+            // CRASH FIX: wrap in try/catch — some restricted profiles (work
+            // profile, secondary user, kiosk mode) throw SecurityException
+            // when reading ENABLED_ACCESSIBILITY_SERVICES.
+            return try {
+                val expectedComponent = context.packageName + "/" + MyAccessibilityService::class.java.name
+                val enabledServices = Settings.Secure.getString(
+                    context.contentResolver,
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                ) ?: return false
+                enabledServices.contains(expectedComponent)
+            } catch (t: Throwable) {
+                Timber.w(t, "isEnabled: failed to read ENABLED_ACCESSIBILITY_SERVICES")
+                false
+            }
         }
     }
 }

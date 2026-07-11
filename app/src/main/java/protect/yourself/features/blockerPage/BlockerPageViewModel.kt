@@ -85,12 +85,31 @@ class BlockerPageViewModel(
     private val _navigation = MutableSharedFlow<BlockerPageNavigation>(extraBufferCapacity = 5)
     val navigation: SharedFlow<BlockerPageNavigation> = _navigation.asSharedFlow()
 
+    /**
+     * CRASH FIX: Safe coroutine launcher that catches all exceptions and
+     * emits a user-visible toast instead of crashing. Used for all DB-write
+     * operations that could fail due to locked DB, disk-full, constraint
+     * violations, or migration glitches.
+     */
+    private fun safeLaunch(block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit) {
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (t: Throwable) {
+                Timber.e(t, "safeLaunch: uncaught exception in ViewModel coroutine")
+                try {
+                    _navigation.emit(BlockerPageNavigation.ShowToast("Operation failed: ${t.message ?: "unknown error"}"))
+                } catch (_: Throwable) {}
+            }
+        }
+    }
+
     init {
         loadSettingItems()
     }
 
     fun loadSettingItems() {
-        viewModelScope.launch {
+        safeLaunch {
             val items = buildSettingItems()
 
             // Load current switch values + dynamic action labels
@@ -179,7 +198,7 @@ class BlockerPageViewModel(
         val switchKey = item.switchKey ?: return
         val newValue = !item.switchValue
 
-        viewModelScope.launch {
+        safeLaunch {
             // PM-01 fix: Time Delay enforcement. If Time Delay is the active
             // protective mode and the user is trying to TURN OFF a switch
             // (not ON — enabling is always allowed), show a countdown dialog.
@@ -204,7 +223,7 @@ class BlockerPageViewModel(
                     val delaySeconds = switchValues.getTimeDelayCustomDurationSeconds()
                     Timber.i("PM-01: Time Delay active — deferring toggle of $switchKey for ${delaySeconds}s")
                     _navigation.emit(BlockerPageNavigation.RequestTimeDelay(delaySeconds, item))
-                    return@launch
+                    return@safeLaunch
                 }
             }
 
@@ -213,7 +232,7 @@ class BlockerPageViewModel(
                 if (newValue) {
                     // Request VPN permission before enabling
                     _navigation.emit(BlockerPageNavigation.RequestVpnPermission)
-                    return@launch
+                    return@safeLaunch
                 } else {
                     // Stopping VPN — emit event for UI to stop the service
                     switchValues.storeSwitchStatus(switchKey, newValue)
@@ -226,20 +245,20 @@ class BlockerPageViewModel(
                             }
                         )
                     }
-                    return@launch
+                    return@safeLaunch
                 }
             }
 
             // TOUCH_ID and DISABLE_FORGOT_PASSWORD should open App Lock setup
             if (switchKey == SwitchIdentifier.TOUCH_ID_SWITCH || switchKey == SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH) {
                 _navigation.emit(BlockerPageNavigation.OpenAppLockSetup)
-                return@launch
+                return@safeLaunch
             }
 
             // SET_APP_LOCK ON → open App Lock setup page
             if (switchKey == SwitchIdentifier.SET_APP_LOCK_SWITCH && newValue) {
                 _navigation.emit(BlockerPageNavigation.OpenAppLockSetup)
-                return@launch
+                return@safeLaunch
             }
 
             // SET_APP_LOCK OFF → disable lock entirely (clears hash + type + touch ID)
@@ -254,7 +273,7 @@ class BlockerPageViewModel(
                 switchValues.storeSwitchStatus(SwitchIdentifier.TOUCH_ID_SWITCH, false)
                 _navigation.emit(BlockerPageNavigation.ShowToast("App lock disabled"))
                 // Return here — don't fall through to normal toggle
-                return@launch
+                return@safeLaunch
             }
 
             // PREVENT_UNINSTALL ON → request Device Admin
@@ -262,7 +281,7 @@ class BlockerPageViewModel(
                 _navigation.emit(BlockerPageNavigation.RequestDeviceAdmin)
                 // Don't toggle yet — wait for user to grant Device Admin
                 // The UI will check if admin was granted and then persist
-                return@launch
+                return@safeLaunch
             }
 
             // Protective mode switches — only one can be active at a time
@@ -353,13 +372,13 @@ class BlockerPageViewModel(
      * that the user tried to toggle.
      */
     fun confirmToggleAfterDelay(item: SettingPageItemModel) {
-        viewModelScope.launch {
+        safeLaunch {
             Timber.i("PM-01: Time Delay completed — proceeding with toggle of ${item.switchKey}")
             // Re-run toggleSwitch but bypass the Time Delay check by calling
             // the internal toggle logic directly. We can't call toggleSwitch()
             // again because it would re-trigger the Time Delay check.
             // Instead, we perform the toggle directly here.
-            val switchKey = item.switchKey ?: return@launch
+            val switchKey = item.switchKey ?: return@safeLaunch
             val newValue = !item.switchValue
 
             // Skip VPN, App Lock, and protective-mode special handling —
@@ -391,7 +410,7 @@ class BlockerPageViewModel(
      * Called after VPN permission is granted — actually start the VPN + persist switch.
      */
     fun onVpnPermissionGranted() {
-        viewModelScope.launch {
+        safeLaunch {
             switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, true)
             _state.update { state ->
                 state.copy(
@@ -412,7 +431,7 @@ class BlockerPageViewModel(
      * If admin was NOT granted (user cancelled) → ensure switch stays OFF + show toast.
      */
     fun onDeviceAdminResult(granted: Boolean) {
-        viewModelScope.launch {
+        safeLaunch {
             if (granted) {
                 switchValues.storeSwitchStatus(SwitchIdentifier.PREVENT_UNINSTALL_SWITCH, true)
                 _state.update { state ->
@@ -449,7 +468,7 @@ class BlockerPageViewModel(
      * Save a text field value (from edit dialog).
      */
     fun saveTextField(switchKey: String, value: String) {
-        viewModelScope.launch {
+        safeLaunch {
             // Special handling: setting page title input → insert as keyword
             if (switchKey == SwitchIdentifier.BLOCK_SETTING_TITLE_INPUT) {
                 if (value.isNotBlank()) {
@@ -467,7 +486,7 @@ class BlockerPageViewModel(
                     _navigation.emit(BlockerPageNavigation.ShowToast("Title '$value' will be blocked in Settings"))
                 }
                 loadSettingItems()
-                return@launch
+                return@safeLaunch
             }
 
             // NEW: Package + Intent name blocking input
@@ -502,7 +521,7 @@ class BlockerPageViewModel(
                     MyAccessibilityService.instance?.refreshBlockingConfig()
                 }
                 loadSettingItems()
-                return@launch
+                return@safeLaunch
             }
 
             switchValues.storeSwitchStatus(switchKey, value)
@@ -552,7 +571,7 @@ class BlockerPageViewModel(
                             protect.yourself.R.string.vpn_notification_changes_applied_toast
                         )
                     )
-                    return@launch
+                    return@safeLaunch
                 }
             }
             _navigation.emit(BlockerPageNavigation.ShowToast("Saved"))
@@ -563,7 +582,7 @@ class BlockerPageViewModel(
      * Save a number field value (from edit dialog).
      */
     fun saveNumberField(switchKey: String, value: Int) {
-        viewModelScope.launch {
+        safeLaunch {
             switchValues.storeSwitchStatus(switchKey, value)
             loadSettingItems()
             _navigation.emit(BlockerPageNavigation.ShowToast("Saved: $value"))
@@ -572,7 +591,7 @@ class BlockerPageViewModel(
 
     fun onActionClick(item: SettingPageItemModel) {
         Timber.d("Action clicked: ${item.identifier}")
-        viewModelScope.launch {
+        safeLaunch {
             val nav = when (item.identifier) {
                 // Permissions
                 SettingPageItemIdentifiers.ACCESSIBILITY_PERMISSION -> BlockerPageNavigation.OpenAccessibilitySettings
@@ -714,7 +733,7 @@ class BlockerPageViewModel(
      * call is performed by the UI layer (which has the Context).
      */
     fun toggleVpnOff() {
-        viewModelScope.launch {
+        safeLaunch {
             switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
             loadVpnManagementState()
             loadSettingItems()
@@ -728,7 +747,7 @@ class BlockerPageViewModel(
      * user would have to manually restart the VPN to see the change).
      */
     fun setVpnNotificationHidden(hidden: Boolean) {
-        viewModelScope.launch {
+        safeLaunch {
             switchValues.storeSwitchStatus(SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH, hidden)
             loadVpnManagementState()
             loadSettingItems()
@@ -755,7 +774,7 @@ class BlockerPageViewModel(
      * while the new data loads in the background.
      */
     fun loadVpnManagementState() {
-        viewModelScope.launch {
+        safeLaunch {
             val vpnOn = switchValues.isVpnSwitchOn()
             val mode = switchValues.getVpnConnectionType()
             val presets = db.vpnCustomDnsDao().getAll()
@@ -791,12 +810,12 @@ class BlockerPageViewModel(
      * English, and pick the right string based on whether a restart will happen.
      */
     fun setVpnMode(mode: VpnConnectionTypeIdentifiers) {
-        viewModelScope.launch {
+        safeLaunch {
             // VPN-06 fix: no-op if the mode is unchanged.
             val currentMode = switchValues.getVpnConnectionType()
             if (currentMode == mode) {
                 Timber.d("setVpnMode: mode unchanged ($mode) — no-op")
-                return@launch
+                return@safeLaunch
             }
 
             switchValues.storeVpnConnectionType(mode)
@@ -843,7 +862,7 @@ class BlockerPageViewModel(
      * VPN-14 fix: use string resources for the toast instead of hardcoded English.
      */
     fun selectCustomDnsPreset(presetKey: String) {
-        viewModelScope.launch {
+        safeLaunch {
             db.vpnCustomDnsDao().setSelected(presetKey)
 
             loadVpnManagementState()
@@ -899,7 +918,7 @@ class BlockerPageViewModel(
         val trimmedFirst = firstDns.trim()
         val trimmedSecond = secondDns.trim()
         if (trimmedName.isBlank()) {
-            viewModelScope.launch {
+            safeLaunch {
                 _navigation.emit(
                     BlockerPageNavigation.ShowToastRes(
                         protect.yourself.R.string.dns_name_empty_error
@@ -909,7 +928,7 @@ class BlockerPageViewModel(
             return false
         }
         if (!utils.isValidDNS(trimmedFirst)) {
-            viewModelScope.launch {
+            safeLaunch {
                 _navigation.emit(
                     BlockerPageNavigation.ShowToastRes(
                         protect.yourself.R.string.dns_1_empty_error
@@ -919,7 +938,7 @@ class BlockerPageViewModel(
             return false
         }
         if (!utils.isValidDNS(trimmedSecond)) {
-            viewModelScope.launch {
+            safeLaunch {
                 _navigation.emit(
                     BlockerPageNavigation.ShowToastRes(
                         protect.yourself.R.string.dns_2_empty_error
@@ -929,7 +948,7 @@ class BlockerPageViewModel(
             return false
         }
 
-        viewModelScope.launch {
+        safeLaunch {
             // Generate a unique key — use timestamp to avoid collisions with
             // the default preset keys ("preset_cloudflare_family" etc.).
             val key = "user_${System.currentTimeMillis()}"
@@ -966,14 +985,14 @@ class BlockerPageViewModel(
      * should hide the delete affordance for them, but we also guard here.
      */
     fun deleteCustomDnsPreset(presetKey: String) {
-        viewModelScope.launch {
+        safeLaunch {
             if (presetKey.startsWith("preset_")) {
                 _navigation.emit(
                     BlockerPageNavigation.ShowToastRes(
                         protect.yourself.R.string.vpn_custom_dns_cannot_delete_default
                     )
                 )
-                return@launch
+                return@safeLaunch
             }
             val selected = db.vpnCustomDnsDao().getSelected()
             db.vpnCustomDnsDao().deleteByKey(presetKey)

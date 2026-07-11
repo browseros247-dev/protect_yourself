@@ -134,17 +134,31 @@ class AppLockViewModel(
         if (input.isBlank()) return
 
         viewModelScope.launch {
-            val success = manager.verify(input)
-            if (success) {
-                _state.update { it.copy(isUnlocked = true, error = null) }
-                onUnlocked()
-            } else {
-                val attempts = _state.value.attempts + 1
+            try {
+                val success = manager.verify(input)
+                if (success) {
+                    _state.update { it.copy(isUnlocked = true, error = null) }
+                    onUnlocked()
+                } else {
+                    val attempts = _state.value.attempts + 1
+                    _state.update {
+                        it.copy(
+                            error = "Incorrect. Attempt #$attempts",
+                            input = "",
+                            attempts = attempts
+                        )
+                    }
+                }
+            } catch (t: Throwable) {
+                // CRASH FIX: uncaught exception on the lock screen causes
+                // an infinite crash loop. Catch everything, show error,
+                // reset input — never crash here.
+                Timber.e(t, "tryUnlock failed")
                 _state.update {
                     it.copy(
-                        error = "Incorrect. Attempt #$attempts",
+                        error = "Unlock failed. Please try again.",
                         input = "",
-                        attempts = attempts
+                        attempts = it.attempts + 1
                     )
                 }
             }
@@ -163,17 +177,29 @@ class AppLockViewModel(
         _state.update { it.copy(input = input, error = null) }
 
         viewModelScope.launch {
-            val success = manager.verify(input)
-            if (success) {
-                _state.update { it.copy(isUnlocked = true, error = null) }
-                onUnlocked()
-            } else {
-                val attempts = _state.value.attempts + 1
+            try {
+                val success = manager.verify(input)
+                if (success) {
+                    _state.update { it.copy(isUnlocked = true, error = null) }
+                    onUnlocked()
+                } else {
+                    val attempts = _state.value.attempts + 1
+                    _state.update {
+                        it.copy(
+                            error = "Incorrect. Attempt #$attempts",
+                            input = "",
+                            attempts = attempts
+                        )
+                    }
+                }
+            } catch (t: Throwable) {
+                // CRASH FIX: same as tryUnlock — never crash on the lock screen.
+                Timber.e(t, "tryUnlockWithInput failed")
                 _state.update {
                     it.copy(
-                        error = "Incorrect. Attempt #$attempts",
+                        error = "Unlock failed. Please try again.",
                         input = "",
-                        attempts = attempts
+                        attempts = it.attempts + 1
                     )
                 }
             }

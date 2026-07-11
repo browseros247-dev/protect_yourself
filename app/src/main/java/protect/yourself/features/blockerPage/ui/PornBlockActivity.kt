@@ -140,7 +140,24 @@ class PornBlockActivity : AppCompatActivity() {
                 if (!imagePath.isNullOrBlank()) {
                     val imageFile = File(imagePath)
                     if (imageFile.exists()) {
-                        val bitmap = BitmapFactory.decodeFile(imagePath)
+                        // CRASH FIX: use inSampleSize to downsample large images
+                        // before decoding, preventing OutOfMemoryError on devices
+                        // with limited heap. The block screen is shown frequently,
+                        // so repeated full-resolution decoding exhausts the heap.
+                        val boundsOptions = BitmapFactory.Options().apply {
+                            inJustDecodeBounds = true
+                        }
+                        BitmapFactory.decodeFile(imagePath, boundsOptions)
+                        val targetSize = 512  // max width/height in pixels
+                        var sampleSize = 1
+                        while (boundsOptions.outWidth / sampleSize > targetSize ||
+                               boundsOptions.outHeight / sampleSize > targetSize) {
+                            sampleSize *= 2
+                        }
+                        val decodeOptions = BitmapFactory.Options().apply {
+                            inSampleSize = sampleSize
+                        }
+                        val bitmap = BitmapFactory.decodeFile(imagePath, decodeOptions)
                         if (bitmap != null) {
                             uiScope.launch {
                                 imgMotivation.setImageBitmap(bitmap)
