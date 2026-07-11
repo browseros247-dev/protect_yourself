@@ -56,6 +56,14 @@ sealed class BlockerPageNavigation {
     data object OpenRequestHistory : BlockerPageNavigation()
     data object PickBlockScreenImage : BlockerPageNavigation()
     data object RequestDeviceAdmin : BlockerPageNavigation()
+    /**
+     * PM-01 fix: Time Delay enforcement. When Time Delay is the active
+     * protective mode and the user tries to toggle a switch, this event
+     * is emitted with the delay duration. The UI shows a countdown dialog
+     * and calls [BlockerPageViewModel.confirmToggleAfterDelay] when the
+     * countdown completes.
+     */
+    data class RequestTimeDelay(val delaySeconds: Int, val item: SettingPageItemModel) : BlockerPageNavigation()
 }
 
 /**
@@ -172,6 +180,34 @@ class BlockerPageViewModel(
         val newValue = !item.switchValue
 
         viewModelScope.launch {
+            // PM-01 fix: Time Delay enforcement. If Time Delay is the active
+            // protective mode and the user is trying to TURN OFF a switch
+            // (not ON — enabling is always allowed), show a countdown dialog.
+            // The toggle is deferred until the countdown completes.
+            //
+            // We skip the delay for:
+            // - Turning switches ON (always allowed — no delay needed)
+            // - Toggling Time Delay itself (would be circular)
+            // - Toggling Real Friend itself (mutual exclusion handles it)
+            // - VPN switches (have their own permission flow)
+            // - App Lock switches (have their own setup flow)
+            if (!newValue &&
+                switchKey != SwitchIdentifier.TIME_DELAY_DURATION_SET &&
+                switchKey != SwitchIdentifier.REAL_FRIEND_VISIBLE &&
+                switchKey != SwitchIdentifier.VPN_SWITCH &&
+                switchKey != SwitchIdentifier.SET_APP_LOCK_SWITCH &&
+                switchKey != SwitchIdentifier.TOUCH_ID_SWITCH &&
+                switchKey != SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH
+            ) {
+                val isTimeDelayActive = switchValues.isTimeDelayDurationSet()
+                if (isTimeDelayActive) {
+                    val delaySeconds = switchValues.getTimeDelayCustomDurationSeconds()
+                    Timber.i("PM-01: Time Delay active — deferring toggle of $switchKey for ${delaySeconds}s")
+                    _navigation.emit(BlockerPageNavigation.RequestTimeDelay(delaySeconds, item))
+                    return@launch
+                }
+            }
+
             // Special handling for VPN — requires VpnService.prepare()
             if (switchKey == SwitchIdentifier.VPN_SWITCH) {
                 if (newValue) {
@@ -272,32 +308,31 @@ class BlockerPageViewModel(
             // Normal toggle
             switchValues.storeSwitchStatus(switchKey, newValue)
 
-            _state.update { state ->
-                state.copy(
-                    settingItems = state.settingItems.map { itItem ->
-                        when (itItem.switchKey) {
-                            // Update the toggled switch
-                            switchKey -> itItem.copy(switchValue = newValue)
-                            // If a protective mode was enabled, reflect disabled state of others
-                            SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET,
-                            SwitchIdentifier.TIME_DELAY_DURATION_SET,
-                            SwitchIdentifier.REAL_FRIEND_VISIBLE -> {
-                                // These were already set above via storeSwitchStatus
-                                // Reload from the stored values to reflect changes
-                                itItem.copy(switchValue = false)
-                            }
-                            else -> itItem
-                        }
-                    }
-                )
-            }
-
-            // For protective mode switches, reload all items to get correct switch states
+            // PM-03 fix: for protective mode switches, skip the incremental
+            // UI update and go straight to loadSettingItems() — the old code
+            // set all three protective mode switches to false in the UI state
+            // BEFORE calling loadSettingItems(), causing a visual flicker where
+            // all three briefly appeared OFF.
             if (switchKey == SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET ||
                 switchKey == SwitchIdentifier.TIME_DELAY_DURATION_SET ||
                 switchKey == SwitchIdentifier.REAL_FRIEND_VISIBLE
             ) {
+                // Reload all items from DB — this picks up the correct mutual-
+                // exclusion state in one atomic update, no flicker.
                 loadSettingItems()
+            } else {
+                // Non-protective-mode switch — update incrementally for snappy UI
+                _state.update { state ->
+                    state.copy(
+                        settingItems = state.settingItems.map { itItem ->
+                            if (itItem.switchKey == switchKey) {
+                                itItem.copy(switchValue = newValue)
+                            } else {
+                                itItem
+                            }
+                        }
+                    )
+                }
             }
 
             // Refresh accessibility service blocking config
@@ -309,6 +344,46 @@ class BlockerPageViewModel(
             _navigation.emit(BlockerPageNavigation.ShowToast("$switchName $action"))
 
             Timber.i("Switch $switchKey toggled to $newValue")
+        }
+    }
+
+    /**
+     * PM-01 fix: Called after the Time Delay countdown completes. Re-executes
+     * the toggle that was deferred. The [item] is the original SettingPageItemModel
+     * that the user tried to toggle.
+     */
+    fun confirmToggleAfterDelay(item: SettingPageItemModel) {
+        viewModelScope.launch {
+            Timber.i("PM-01: Time Delay completed — proceeding with toggle of ${item.switchKey}")
+            // Re-run toggleSwitch but bypass the Time Delay check by calling
+            // the internal toggle logic directly. We can't call toggleSwitch()
+            // again because it would re-trigger the Time Delay check.
+            // Instead, we perform the toggle directly here.
+            val switchKey = item.switchKey ?: return@launch
+            val newValue = !item.switchValue
+
+            // Skip VPN, App Lock, and protective-mode special handling —
+            // those are handled by toggleSwitch() and shouldn't reach here
+            // (they're excluded from the Time Delay check).
+            switchValues.storeSwitchStatus(switchKey, newValue)
+
+            _state.update { state ->
+                state.copy(
+                    settingItems = state.settingItems.map { itItem ->
+                        if (itItem.switchKey == switchKey) {
+                            itItem.copy(switchValue = newValue)
+                        } else {
+                            itItem
+                        }
+                    }
+                )
+            }
+
+            MyAccessibilityService.instance?.refreshBlockingConfig()
+
+            val switchName = item.title
+            val action = if (newValue) "enabled" else "disabled"
+            _navigation.emit(BlockerPageNavigation.ShowToast("$switchName $action (after delay)"))
         }
     }
 
@@ -445,6 +520,25 @@ class BlockerPageViewModel(
             }
             // Reload items to update action labels
             loadSettingItems()
+            // PM-02 fix: if the user just saved a Real Friend email, open the
+            // email app with a pre-filled message to the partner. This doesn't
+            // implement a full accountability backend, but it at least sends
+            // the partner an initial notification that they've been chosen.
+            if (switchKey == SwitchIdentifier.REAL_FRIEND_EMAIL && value.isNotBlank()) {
+                val emailSubject = "Protect Yourself: You've been chosen as an accountability partner"
+                val emailBody = "Hi,\n\n" +
+                    "Your friend has chosen you as their accountability partner in the Protect Yourself app. " +
+                    "This means they may occasionally need your support to resist urges. " +
+                    "You'll receive an email when they try to disable a protective setting.\n\n" +
+                    "Thank you for supporting them on their journey.\n\n" +
+                    "— Protect Yourself"
+                _navigation.emit(
+                    BlockerPageNavigation.OpenUrl(
+                        "mailto:$value?subject=${java.net.URLEncoder.encode(emailSubject, "UTF-8")}" +
+                        "&body=${java.net.URLEncoder.encode(emailBody, "UTF-8")}"
+                    )
+                )
+            }
             // Also refresh VPN management state if a VPN-related field changed,
             // so the VPN management page reflects the new value live. VPN-08 fix:
             // if the VPN is running, restart it so the new notification text

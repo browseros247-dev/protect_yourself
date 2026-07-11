@@ -60,12 +60,21 @@ class StopMeWidget : AppWidgetProvider() {
                                 Toast.makeText(context, "Stop Me: Session stopped", Toast.LENGTH_SHORT).show()
                             }
                         } else {
-                            // No session → start 25min
+                            // No session → start with the last-used duration.
+                            // PM-07 fix: was hardcoded 25 min. Now reads the
+                            // most recent completed session's duration from DB.
+                            // Falls back to 25 min if no history.
+                            val recentSession = db.stopMeDurationDao().getAll()
+                                .filter { it.days == 0 }
+                                .maxByOrNull { it.endTime }
+                            val duration = recentSession?.duration
+                                ?: TimeUnit.MINUTES.toMillis(25)
+                            val mins = TimeUnit.MILLISECONDS.toMinutes(duration)
                             StopMeManager.getInstance(context).startInstantSession(
-                                durationMillis = TimeUnit.MINUTES.toMillis(25)
+                                durationMillis = duration
                             )
                             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                Toast.makeText(context, "Stop Me: 25 min session started", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Stop Me: ${mins}min session started", Toast.LENGTH_SHORT).show()
                             }
                         }
 
