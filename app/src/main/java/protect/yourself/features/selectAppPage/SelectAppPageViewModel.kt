@@ -6,8 +6,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -15,6 +18,8 @@ import kotlinx.coroutines.withContext
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedApps.SelectedAppItemModel
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
+import protect.yourself.database.switchStatus.SwitchStatusValues
+import protect.yourself.features.blockerPage.service.MyVpnService
 import protect.yourself.features.selectAppPage.data.DisplayAppsItemModel
 import timber.log.Timber
 
@@ -28,11 +33,16 @@ import timber.log.Timber
  */
 class SelectAppPageViewModel(
     private val db: AppDatabase,
-    private val identifier: SelectedAppListIdentifier
+    private val identifier: SelectedAppListIdentifier,
+    private val appContext: android.content.Context
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SelectAppPageState())
     val state: StateFlow<SelectAppPageState> = _state.asStateFlow()
+
+    /** Navigation events (toast messages, etc.) emitted to the UI. */
+    private val _navigation = MutableSharedFlow<String>(extraBufferCapacity = 5)
+    val navigation: SharedFlow<String> = _navigation.asSharedFlow()
 
     init {
         loadApps()
@@ -122,17 +132,37 @@ class SelectAppPageViewModel(
                 db.selectedAppsListDao().deleteByIdentifierAndPackage(identifier.value, app.packageName)
             }
             Timber.d("App ${app.packageName} selection toggled to $newSelected")
+
+            // VPN whitelist fix: if the user just changed the VPN whitelist
+            // and the VPN is currently running, restart it so the new
+            // addDisallowedApplication set takes effect immediately.
+            // Without this, the VPN keeps using the old whitelist until the
+            // user manually toggles it off/on.
+            if (identifier == SelectedAppListIdentifier.VPN_WHITELIST_APPS) {
+                val switchValues = SwitchStatusValues(db.switchStatusDao())
+                if (switchValues.isVpnSwitchOn()) {
+                    Timber.i("VPN whitelist changed — restarting VPN to apply new whitelist")
+                    try {
+                        MyVpnService.restart(appContext)
+                        _navigation.emit("VPN whitelist updated. Restarting VPN…")
+                    } catch (t: Throwable) {
+                        Timber.w(t, "Failed to restart VPN after whitelist change")
+                        _navigation.emit("VPN whitelist saved. Toggle VPN off/on to apply.")
+                    }
+                }
+            }
         }
     }
 
     companion object {
         fun factory(
             db: AppDatabase,
-            identifier: SelectedAppListIdentifier
+            identifier: SelectedAppListIdentifier,
+            appContext: android.content.Context
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return SelectAppPageViewModel(db, identifier) as T
+                return SelectAppPageViewModel(db, identifier, appContext) as T
             }
         }
     }

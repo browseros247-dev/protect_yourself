@@ -65,12 +65,20 @@ fun SelectAppPage(
     val viewModel: SelectAppPageViewModel = viewModel(
         factory = SelectAppPageViewModel.factory(
             AppDatabase.getInstance(context),
-            identifier
+            identifier,
+            context.applicationContext
         )
     )
     val state by viewModel.state.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var showSelectedOnly by remember { mutableStateOf(false) }
+
+    // Collect toast messages from the ViewModel (e.g. VPN restart notifications)
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        viewModel.navigation.collect { message ->
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
 
     val selectedCount = state.allApps.count { it.isSelected }
     val displayedApps = if (showSelectedOnly) state.filteredApps.filter { it.isSelected }
