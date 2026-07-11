@@ -103,7 +103,8 @@ fun StreakPage() {
         item {
             StatsCard(
                 activeDays = state.activeDayCount,
-                relapseCount = state.relapseCount
+                relapseCount = state.relapseCount,
+                bestStreak = state.bestStreakDays
             )
         }
 
@@ -318,7 +319,7 @@ private fun AchievementCard(achievement: StreakAchievement) {
 }
 
 @Composable
-private fun StatsCard(activeDays: Int, relapseCount: Int) {
+private fun StatsCard(activeDays: Int, relapseCount: Int, bestStreak: Int) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -332,6 +333,19 @@ private fun StatsCard(activeDays: Int, relapseCount: Int) {
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = bestStreak.toString(),
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = BrandOrange
+                )
+                Text(
+                    text = "best streak",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = activeDays.toString(),

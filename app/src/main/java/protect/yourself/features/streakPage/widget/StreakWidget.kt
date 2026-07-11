@@ -9,7 +9,6 @@ import android.widget.RemoteViews
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import protect.yourself.R
 import protect.yourself.features.mainActivityPage.MainActivity
@@ -51,10 +50,12 @@ class StreakWidget : AppWidgetProvider() {
         scope.launch {
             try {
                 val db = protect.yourself.database.core.AppDatabase.getInstance(context)
-                val allData = db.streakDatesDao().observeAll()
 
-                // Get synchronous snapshot
-                val items = db.streakDatesDao().observeAll().first()
+                // BUG FIX: Use getAll() (suspend) directly instead of creating
+                // a Flow and then calling .first() on it. The original code
+                // created a Flow on line 54 but never used it, then re-created
+                // it on line 57 with .first(). This was wasteful + confusing.
+                val items = db.streakDatesDao().getAll()
 
                 val currentStreak = calculateConsecutiveStreak(items)
                 views.setTextViewText(R.id.txtStreakCount, currentStreak.toString())
