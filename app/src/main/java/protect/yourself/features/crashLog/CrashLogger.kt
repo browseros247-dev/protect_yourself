@@ -1,12 +1,13 @@
 package protect.yourself.features.crashLog
 
 import android.app.ActivityManager
+import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.os.Build
 import android.os.Process
 import android.os.StatFs
+import android.provider.Settings
 import android.util.Log
-import androidx.core.content.edit
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,6 +22,7 @@ import java.io.StringWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -33,13 +35,21 @@ import java.util.concurrent.atomic.AtomicLong
  *  - Captures: timestamp, severity, thread info, stack trace, message,
  *    device info (model, manufacturer, Android version, SDK), app version,
  *    available memory, available disk, current activity (best-effort),
- *    logcat tail (last 200 lines), and custom context tags.
+ *    logcat tail (last 200 lines, FATAL only), and custom context tags.
+ *  - Service state capture: accessibility/VPN/device-admin status — critical
+ *    for diagnosing why blocking failed in this app.
  *  - Severity levels: VERBOSE, DEBUG, INFO, WARN, ERROR, FATAL, ASSERT
  *  - File rotation: keeps most recent N crash entries (default 50).
  *    Oldest entries are auto-pruned.
  *  - Each entry persisted as individual file (crash_YYYYMMDD_HHmmss_<n>.json)
- *    for easy sharing + atomic writes.
- *  - Index file (crash_index.json) maintains entry ordering + metadata.
+ *    via atomic write (temp + rename) — survives process kill mid-write.
+ *  - Index file (crash_index.json) maintains entry ordering + metadata,
+ *    also written atomically. Reconciled against actual files on init.
+ *  - Disk-backed breadcrumb ring buffer — survives hard crashes (SIGSEGV,
+ *    SIGKILL, OOM-before-persist) that defeat the previous in-memory buffer.
+ *  - Crash grouping/deduplication: identical crashes within 5 minutes are
+ *    merged into a single entry with a `count` field — prevents a single
+ *    recurring crash from evicting all other crash history.
  *  - Timber tree integration: all Timber.e()/Timber.w() calls are captured.
  *  - Global uncaught exception handler integration.
  *  - Manual API: logThrowable(), logMessage(), logBreadcrumb() for tracing.
@@ -47,12 +57,15 @@ import java.util.concurrent.atomic.AtomicLong
  *  - Export to single JSON file via SAF (all entries bundled).
  *  - Clear all entries (for user-initiated cleanup).
  *  - Thread-safe: all writes synchronised on the CrashLogger instance.
+ *  - OOM-resilient: if Gson serialisation OOMs, falls back to a minimal
+ *    hand-built JSON stub so the crash record is never lost.
  *
  * Storage layout:
  *   <filesDir>/crashlogs/
- *     crash_index.json                         — ordered list of entry IDs + summaries
+ *     crash_index.json                         — ordered list of entry IDs
  *     crash_20260710_123456_001.json           — full entry 1
  *     crash_20260710_123456_002.json           — full entry 2
+ *     breadcrumbs.json                         — disk-backed ring buffer
  *     ...
  *
  * No Firebase, no network. Everything stays on device.
@@ -64,18 +77,48 @@ class CrashLogger private constructor(private val context: Context) {
         File(context.filesDir, "crashlogs").apply { if (!exists()) mkdirs() }
     }
     private val indexFile: File by lazy { File(crashDir, "crash_index.json") }
+    private val breadcrumbFile: File by lazy { File(crashDir, "breadcrumbs.json") }
 
     private val sequenceCounter = AtomicLong(0L)
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
     private val fileDateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
 
+    /**
+     * Re-entrancy guard for the uncaught exception handler — if logging a
+     * FATAL crash itself throws, we must NOT re-enter logThrowable (infinite
+     * recursion). The handler checks this flag and skips CrashLogger if true.
+     */
+    private val inCrashHandler = AtomicBoolean(false)
+
     private val _entryCount = MutableStateFlow(0)
     val entryCount: StateFlow<Int> = _entryCount.asStateFlow()
 
+    /**
+     * Cached device info — immutable for the process lifetime, so we only
+     * capture it once. Saves ~5–10 ms per entry vs. reading Build.* on
+     * every log call.
+     */
+    private val cachedDeviceInfo: DeviceInfo by lazy { captureDeviceInfo() }
+
+    /**
+     * Cached memory/disk info with a short TTL — these change slowly, so we
+     * cache for 1 second to avoid hammering ActivityManager + StatFs on
+     * every WARN+ Timber log.
+     */
+    @Volatile private var cachedMemoryInfo: MemoryInfo? = null
+    @Volatile private var cachedMemoryInfoAtMs: Long = 0L
+    @Volatile private var cachedDiskInfo: DiskInfo? = null
+    @Volatile private var cachedDiskInfoAtMs: Long = 0L
+
     init {
+        // Reconcile index against actual files on disk — recovers from
+        // interrupted writes (process killed mid-save leaves orphan files).
+        reconcileIndex()
         // Restore sequence counter from existing entries
         sequenceCounter.set(loadMaxSequence())
         _entryCount.value = countEntries()
+        // Load disk-backed breadcrumbs
+        loadBreadcrumbsFromDisk()
     }
 
     // ===== Public API =====
@@ -96,8 +139,23 @@ class CrashLogger private constructor(private val context: Context) {
         message: String = "",
         extraContext: Map<String, String> = emptyMap()
     ): String {
+        // Re-entrancy guard — if we're already inside the uncaught exception
+        // handler and logging itself throws, bail out to prevent infinite
+        // recursion. The uncaught handler sets this flag before calling us.
+        if (inCrashHandler.get()) {
+            Log.e(TAG, "Re-entrant logThrowable call suppressed — original throwable: ${throwable.javaClass.name}")
+            return ""
+        }
+
         val stackTrace = getStackTrace(throwable)
         val causeChain = getCauseChain(throwable)
+
+        // Compute dedup hash — if the most recent entry has the same hash and
+        // is within 5 minutes, we increment its count instead of creating a
+        // new entry. This prevents a recurring crash (e.g. accessibility event
+        // loop hitting the same NPE every event) from evicting all other
+        // crash history.
+        val dedupHash = computeDedupHash(throwable, stackTrace, tag)
 
         val entry = CrashLogEntry(
             id = generateId(),
@@ -112,16 +170,20 @@ class CrashLogger private constructor(private val context: Context) {
             threadName = Thread.currentThread().name,
             threadId = Thread.currentThread().id,
             processId = Process.myPid(),
-            deviceInfo = captureDeviceInfo(),
+            isMainThread = Thread.currentThread() === android.os.Looper.getMainLooper().thread,
+            deviceInfo = cachedDeviceInfo,
             appInfo = captureAppInfo(),
-            memoryInfo = captureMemoryInfo(),
-            diskInfo = captureDiskInfo(),
-            logcatTail = captureLogcatTail(),
+            memoryInfo = captureMemoryInfoCached(),
+            diskInfo = captureDiskInfoCached(),
+            serviceState = captureServiceState(),
+            logcatTail = if (severity == CrashSeverity.FATAL) captureLogcatTail() else "",
             breadcrumbs = getRecentBreadcrumbs(),
-            extraContext = extraContext
+            extraContext = extraContext,
+            dedupHash = dedupHash,
+            count = 1
         )
 
-        persistEntry(entry)
+        persistEntryWithDedup(entry)
         return entry.id
     }
 
@@ -148,13 +210,20 @@ class CrashLogger private constructor(private val context: Context) {
             threadName = Thread.currentThread().name,
             threadId = Thread.currentThread().id,
             processId = Process.myPid(),
-            deviceInfo = captureDeviceInfo(),
+            isMainThread = Thread.currentThread() === android.os.Looper.getMainLooper().thread,
+            deviceInfo = cachedDeviceInfo,
             appInfo = captureAppInfo(),
-            memoryInfo = captureMemoryInfo(),
-            diskInfo = captureDiskInfo(),
-            logcatTail = if (severity >= CrashSeverity.WARN) captureLogcatTail() else "",
+            memoryInfo = captureMemoryInfoCached(),
+            diskInfo = captureDiskInfoCached(),
+            serviceState = captureServiceState(),
+            // Logcat capture is expensive (subprocess) — only do it for FATAL.
+            // For WARN/ERROR, the Timber log already went to logcat; the user
+            // can re-read logcat if needed.
+            logcatTail = if (severity == CrashSeverity.FATAL) captureLogcatTail() else "",
             breadcrumbs = getRecentBreadcrumbs(),
-            extraContext = extraContext
+            extraContext = extraContext,
+            dedupHash = 0,
+            count = 1
         )
 
         persistEntry(entry)
@@ -165,6 +234,14 @@ class CrashLogger private constructor(private val context: Context) {
      * Drop a breadcrumb — a lightweight tracing event stored in a ring buffer.
      * When a crash happens later, the most recent N breadcrumbs are attached
      * to the crash entry, helping reconstruct what the app was doing before.
+     *
+     * The buffer is **disk-backed** (breadcrumbs.json) so it survives hard
+     * crashes (SIGSEGV, SIGKILL, OOM-before-persist) that defeat the previous
+     * in-memory-only buffer. Without disk persistence, breadcrumbs are lost
+     * on the exact crashes they're meant to diagnose.
+     *
+     * The in-memory cache is the primary read path (fast); the disk file is
+     * the durability path. Writes to disk are atomic (temp + rename).
      */
     fun logBreadcrumb(category: String, message: String, data: Map<String, String> = emptyMap()) {
         val breadcrumb = Breadcrumb(
@@ -179,6 +256,8 @@ class CrashLogger private constructor(private val context: Context) {
             while (breadcrumbBuffer.size > MAX_BREADCRUMBS) {
                 breadcrumbBuffer.removeAt(0)
             }
+            // Persist to disk so breadcrumbs survive hard crashes
+            persistBreadcrumbs()
         }
     }
 
@@ -309,15 +388,198 @@ class CrashLogger private constructor(private val context: Context) {
         synchronized(this) {
             try {
                 val file = File(crashDir, "${entry.id}.json")
-                file.writeText(gson.toJson(entry), Charsets.UTF_8)
+                writeAtomic(file, gson.toJson(entry))
                 addToIndex(entry.id)
                 pruneOldEntries()
                 _entryCount.value = countEntries()
                 Log.i(TAG, "Crash entry persisted: ${entry.id} (${entry.severity}/${entry.tag.ifBlank { "untagged" }})")
+            } catch (oom: OutOfMemoryError) {
+                // The crash entry itself (logcat tail + breadcrumbs + device info)
+                // can be 20–50 KB. If the crash was OOM, gson.toJson may OOM
+                // again and we'd lose the crash record entirely. Fall back to a
+                // minimal hand-built JSON stub (no Gson) so at least the basic
+                // crash info is persisted.
+                Log.e(TAG, "OOM persisting crash entry — writing minimal stub", oom)
+                writeMinimalStub(entry)
             } catch (t: Throwable) {
                 // Last-resort: try to write to logcat at least
                 Log.e(TAG, "FAILED to persist crash entry: ${entry.id}", t)
+                writeMinimalStub(entry)
             }
+        }
+    }
+
+    /**
+     * Persist with crash grouping/deduplication. If the most recent entry has
+     * the same dedup hash and is within 5 minutes, increment its count instead
+     * of creating a new entry. This prevents a recurring crash (e.g.
+     * accessibility event loop hitting the same NPE every event) from evicting
+     * all other crash history.
+     */
+    private fun persistEntryWithDedup(entry: CrashLogEntry) {
+        synchronized(this) {
+            try {
+                // Check if the most recent entry matches the dedup hash
+                val index = loadIndex()
+                if (index.isNotEmpty() && entry.dedupHash != 0) {
+                    val mostRecentId = index.last()
+                    val mostRecentFile = File(crashDir, "$mostRecentId.json")
+                    if (mostRecentFile.exists()) {
+                        try {
+                            val recentJson = mostRecentFile.readText(Charsets.UTF_8)
+                            val recent = gson.fromJson(recentJson, CrashLogEntry::class.java)
+                            if (recent != null &&
+                                recent.dedupHash == entry.dedupHash &&
+                                entry.timestamp - recent.timestamp < DEDUP_WINDOW_MS
+                            ) {
+                                // Same crash within the dedup window — increment count
+                                // and update timestamp. Re-save under the SAME id so
+                                // the entry's position in the index is preserved.
+                                val merged = recent.copy(
+                                    count = recent.count + 1,
+                                    timestamp = entry.timestamp,
+                                    timestampFormatted = entry.timestampFormatted,
+                                    // Keep the freshest breadcrumbs + memory/disk state
+                                    breadcrumbs = entry.breadcrumbs,
+                                    memoryInfo = entry.memoryInfo,
+                                    diskInfo = entry.diskInfo,
+                                    serviceState = entry.serviceState
+                                )
+                                writeAtomic(mostRecentFile, gson.toJson(merged))
+                                _entryCount.value = countEntries()
+                                Log.i(TAG, "Crash entry deduplicated: ${entry.id} merged into $mostRecentId (count=${merged.count})")
+                                return
+                            }
+                        } catch (t: Throwable) {
+                            // Fall through to normal persist
+                        }
+                    }
+                }
+                // No dedup match — persist as new entry
+                val file = File(crashDir, "${entry.id}.json")
+                writeAtomic(file, gson.toJson(entry))
+                addToIndex(entry.id)
+                pruneOldEntries()
+                _entryCount.value = countEntries()
+                Log.i(TAG, "Crash entry persisted: ${entry.id} (${entry.severity}/${entry.tag.ifBlank { "untagged" }})")
+            } catch (oom: OutOfMemoryError) {
+                Log.e(TAG, "OOM persisting crash entry — writing minimal stub", oom)
+                writeMinimalStub(entry)
+            } catch (t: Throwable) {
+                Log.e(TAG, "FAILED to persist crash entry: ${entry.id}", t)
+                writeMinimalStub(entry)
+            }
+        }
+    }
+
+    /**
+     * Compute a dedup hash for a throwable. Entries with the same hash are
+     * considered the same crash for dedup purposes.
+     */
+    private fun computeDedupHash(throwable: Throwable, stackTrace: String, tag: String): Int {
+        return (throwable.javaClass.name + "|" + tag + "|" + stackTrace.take(2000)).hashCode()
+    }
+
+    /**
+     * Write a minimal hand-built JSON stub for an entry. Used as a fallback
+     * when Gson serialisation OOMs or fails. No logcat, no breadcrumbs, no
+     * device info — just the essentials to know what crashed.
+     */
+    private fun writeMinimalStub(entry: CrashLogEntry) {
+        try {
+            val stub = buildString {
+                append('{')
+                append("\"id\":\"").append(escapeJson(entry.id)).append('"').append(',')
+                append("\"timestamp\":").append(entry.timestamp).append(',')
+                append("\"timestampFormatted\":\"").append(escapeJson(entry.timestampFormatted)).append('"').append(',')
+                append("\"severity\":\"").append(entry.severity.name).append('"').append(',')
+                append("\"tag\":\"").append(escapeJson(entry.tag)).append('"').append(',')
+                append("\"message\":\"").append(escapeJson(entry.message.take(500))).append('"').append(',')
+                append("\"throwableClass\":\"").append(escapeJson(entry.throwableClass)).append('"').append(',')
+                append("\"threadName\":\"").append(escapeJson(entry.threadName)).append('"').append(',')
+                append("\"isMainThread\":").append(entry.isMainThread).append(',')
+                append("\"stackTrace\":\"").append(escapeJson(entry.stackTrace.take(2000))).append('"').append(',')
+                append("\"count\":").append(entry.count).append(',')
+                append("\"oomStub\":true")
+                append('}')
+            }
+            val file = File(crashDir, "${entry.id}.json")
+            writeAtomic(file, stub)
+            addToIndex(entry.id)
+            _entryCount.value = countEntries()
+        } catch (_: Throwable) {
+            // Truly nothing more we can do
+        }
+    }
+
+    private fun escapeJson(s: String): String {
+        val sb = StringBuilder(s.length + 8)
+        for (c in s) {
+            when (c) {
+                '"' -> sb.append("\\\"")
+                '\\' -> sb.append("\\\\")
+                '\n' -> sb.append("\\n")
+                '\r' -> sb.append("\\r")
+                '\t' -> sb.append("\\t")
+                else -> if (c.code < 0x20) {
+                    sb.append("\\u").append("%04x".format(c.code))
+                } else {
+                    sb.append(c)
+                }
+            }
+        }
+        return sb.toString()
+    }
+
+    /**
+     * Write a file atomically: write to `<name>.tmp`, then rename to `<name>`.
+     * Rename is atomic on POSIX filesystems, so the destination file is
+     * never in a partially-written state — survives process kill mid-write.
+     */
+    private fun writeAtomic(file: File, content: String) {
+        val tmp = File(file.parentFile, "${file.name}.tmp")
+        try {
+            tmp.writeText(content, Charsets.UTF_8)
+            // renameTo is atomic on POSIX filesystems
+            if (!tmp.renameTo(file)) {
+                // Fallback: delete target then rename (less atomic, but works
+                // on some providers that don't support atomic rename)
+                if (file.exists()) file.delete()
+                tmp.renameTo(file)
+            }
+        } catch (t: Throwable) {
+            // Best-effort cleanup
+            try { if (tmp.exists()) tmp.delete() } catch (_: Throwable) {}
+            throw t
+        }
+    }
+
+    /**
+     * Reconcile the index against actual files on disk. Called on init to
+     * recover from interrupted writes (process killed mid-save can leave
+     * orphan entry files that aren't in the index, or vice versa).
+     *
+     * - Scans crashDir for `crash_*.json` files
+     * - Rebuilds the index from file names sorted by embedded timestamp+sequence
+     * - Deletes orphan `.tmp` files
+     */
+    private fun reconcileIndex() {
+        try {
+            val files = crashDir.listFiles { f ->
+                f.name.startsWith("crash_") && f.name.endsWith(".json")
+            } ?: emptyArray()
+
+            // Delete orphan .tmp files from interrupted writes
+            crashDir.listFiles { f -> f.name.endsWith(".tmp") }?.forEach { tmp ->
+                try { tmp.delete() } catch (_: Throwable) {}
+            }
+
+            // Extract IDs from file names (strip ".json")
+            val ids = files.map { it.nameWithoutExtension }.sorted()
+            saveIndex(ids)
+            Log.i(TAG, "Reconciled crash index: ${ids.size} entries")
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to reconcile crash index", t)
         }
     }
 
@@ -350,7 +612,7 @@ class CrashLogger private constructor(private val context: Context) {
 
     private fun saveIndex(ids: List<String>) {
         try {
-            indexFile.writeText(gson.toJson(ids), Charsets.UTF_8)
+            writeAtomic(indexFile, gson.toJson(ids))
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to save crash index", t)
         }
@@ -439,6 +701,87 @@ class CrashLogger private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Memory info with 1-second TTL cache — avoids hammering ActivityManager
+     * on every WARN+ Timber log.
+     */
+    private fun captureMemoryInfoCached(): MemoryInfo {
+        val now = System.currentTimeMillis()
+        val cached = cachedMemoryInfo
+        if (cached != null && now - cachedMemoryInfoAtMs < MEM_CACHE_TTL_MS) {
+            return cached
+        }
+        val fresh = captureMemoryInfo()
+        cachedMemoryInfo = fresh
+        cachedMemoryInfoAtMs = now
+        return fresh
+    }
+
+    /**
+     * Disk info with 1-second TTL cache.
+     */
+    private fun captureDiskInfoCached(): DiskInfo {
+        val now = System.currentTimeMillis()
+        val cached = cachedDiskInfo
+        if (cached != null && now - cachedDiskInfoAtMs < DISK_CACHE_TTL_MS) {
+            return cached
+        }
+        val fresh = captureDiskInfo()
+        cachedDiskInfo = fresh
+        cachedDiskInfoAtMs = now
+        return fresh
+    }
+
+    /**
+     * Capture the status of the app's critical services — accessibility,
+     * VPN, device admin. These are the #1 diagnostic questions when a user
+     * reports "blocking stopped working" — having them in the crash entry
+     * saves a round-trip of "is your accessibility service enabled?" emails.
+     */
+    private fun captureServiceState(): ServiceStateInfo {
+        return try {
+            ServiceStateInfo(
+                accessibilityEnabled = isAccessibilityServiceEnabled(),
+                vpnActive = isVpnServiceActive(),
+                deviceAdminActive = isDeviceAdminActive()
+            )
+        } catch (t: Throwable) {
+            ServiceStateInfo()
+        }
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        return try {
+            val enabledServices = Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: return false
+            val componentName = "${context.packageName}/protect.yourself.features.blockerPage.service.MyAccessibilityService"
+            enabledServices.contains(componentName)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun isVpnServiceActive(): Boolean {
+        return try {
+            protect.yourself.features.blockerPage.service.MyVpnService.isRunning()
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun isDeviceAdminActive(): Boolean {
+        return try {
+            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
+                ?: return false
+            val adminComponent = protect.yourself.features.blockerPage.utils.DeviceAdminUtils.getComponentName(context)
+            dpm.isAdminActive(adminComponent)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     private fun captureMemoryInfo(): MemoryInfo {
         return try {
             val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
@@ -477,6 +820,9 @@ class CrashLogger private constructor(private val context: Context) {
     /**
      * Capture the last 200 lines of logcat (this process only).
      * Best-effort — may fail on some devices or with permission restrictions.
+     *
+     * Only called for FATAL entries — capturing logcat spawns a subprocess
+     * (5–50 ms) which is too expensive for every WARN+ Timber log.
      */
     private fun captureLogcatTail(): String {
         return try {
@@ -552,10 +898,68 @@ class CrashLogger private constructor(private val context: Context) {
 
     private val breadcrumbBuffer = mutableListOf<Breadcrumb>()
 
+    /**
+     * Persist the in-memory breadcrumb buffer to breadcrumbs.json atomically.
+     * Called inside synchronized(breadcrumbBuffer) — no concurrent access.
+     */
+    private fun persistBreadcrumbs() {
+        try {
+            val json = gson.toJson(breadcrumbBuffer)
+            writeAtomic(breadcrumbFile, json)
+        } catch (t: Throwable) {
+            // Best-effort — breadcrumbs are diagnostic, not critical
+            Log.w(TAG, "Failed to persist breadcrumbs", t)
+        }
+    }
+
+    /**
+     * Load breadcrumbs from breadcrumbs.json into the in-memory buffer.
+     * Called once on init.
+     */
+    private fun loadBreadcrumbsFromDisk() {
+        try {
+            if (!breadcrumbFile.exists()) return
+            val json = breadcrumbFile.readText(Charsets.UTF_8)
+            val type = object : TypeToken<List<Breadcrumb>>() {}.type
+            val loaded: List<Breadcrumb>? = gson.fromJson(json, type)
+            if (loaded != null) {
+                synchronized(breadcrumbBuffer) {
+                    breadcrumbBuffer.clear()
+                    breadcrumbBuffer.addAll(loaded.takeLast(MAX_BREADCRUMBS))
+                }
+                Log.i(TAG, "Loaded ${loaded.size} breadcrumbs from disk")
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to load breadcrumbs from disk", t)
+        }
+    }
+
+    /**
+     * Clear the breadcrumb buffer (in-memory + disk). Useful for testing.
+     */
+    fun clearBreadcrumbs() {
+        synchronized(breadcrumbBuffer) {
+            breadcrumbBuffer.clear()
+            try { breadcrumbFile.delete() } catch (_: Throwable) {}
+        }
+    }
+
+    /**
+     * Set the re-entrancy flag — called by the uncaught exception handler
+     * before invoking logThrowable, to prevent infinite recursion if logging
+     * itself throws.
+     */
+    internal fun setInCrashHandler(value: Boolean) {
+        inCrashHandler.set(value)
+    }
+
     companion object {
         private const val TAG = "CrashLogger"
         private const val MAX_ENTRIES = 50  // keep most recent 50 crash entries
         private const val MAX_BREADCRUMBS = 30  // ring buffer for breadcrumbs
+        private const val DEDUP_WINDOW_MS = 5 * 60 * 1000L  // 5 minutes
+        private const val MEM_CACHE_TTL_MS = 1000L  // 1 second
+        private const val DISK_CACHE_TTL_MS = 1000L  // 1 second
 
         @Volatile
         private var instance: CrashLogger? = null
@@ -591,12 +995,33 @@ class CrashLogger private constructor(private val context: Context) {
 
 // ===== Data classes =====
 
-enum class CrashSeverity {
-    VERBOSE, DEBUG, INFO, WARN, ERROR, FATAL, ASSERT
+/**
+ * Severity levels ordered from least to most severe. The [level] property
+ * gives an explicit numeric value for safe comparison — do NOT rely on
+ * `ordinal` (reordering the enum would silently break comparisons).
+ */
+enum class CrashSeverity(val level: Int) {
+    VERBOSE(2),
+    DEBUG(3),
+    INFO(4),
+    WARN(5),
+    ERROR(6),
+    FATAL(7),
+    ASSERT(8)
 }
 
 /**
  * Full crash log entry. Serialised to JSON + persisted as individual file.
+ *
+ * New fields added in this enhancement:
+ *  - [isMainThread] — distinguishes main-thread crashes (UI jank/ANR risk)
+ *    from background-thread crashes.
+ *  - [serviceState] — captures accessibility/VPN/device-admin status at the
+ *    time of the crash. Critical for this app — most "blocking stopped
+ *    working" reports come down to the accessibility service being disabled.
+ *  - [dedupHash] — used by [CrashLogger.persistEntryWithDedup] to merge
+ *    consecutive identical crashes into a single entry with [count] > 1.
+ *  - [count] — number of times this crash occurred within the dedup window.
  */
 data class CrashLogEntry(
     val id: String,
@@ -611,13 +1036,29 @@ data class CrashLogEntry(
     val threadName: String,
     val threadId: Long,
     val processId: Int,
+    val isMainThread: Boolean = false,
     val deviceInfo: DeviceInfo,
     val appInfo: AppInfo,
     val memoryInfo: MemoryInfo,
     val diskInfo: DiskInfo,
+    val serviceState: ServiceStateInfo = ServiceStateInfo(),
     val logcatTail: String,
     val breadcrumbs: List<Breadcrumb>,
-    val extraContext: Map<String, String>
+    val extraContext: Map<String, String>,
+    val dedupHash: Int = 0,
+    val count: Int = 1
+)
+
+/**
+ * Status of the app's critical services at the time of a crash. These three
+ * flags are the #1 diagnostic questions when a user reports "blocking
+ * stopped working" — having them in the crash entry saves a round-trip
+ * of "is your accessibility service enabled?" emails.
+ */
+data class ServiceStateInfo(
+    val accessibilityEnabled: Boolean = false,
+    val vpnActive: Boolean = false,
+    val deviceAdminActive: Boolean = false
 )
 
 data class DeviceInfo(

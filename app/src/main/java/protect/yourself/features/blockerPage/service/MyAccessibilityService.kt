@@ -9,11 +9,9 @@ import android.os.Build
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import protect.yourself.core.appCoroutineScope
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
 import protect.yourself.database.selectedKeywords.SelectedKeywordIdentifier
@@ -41,7 +39,11 @@ import java.util.Locale
  */
 class MyAccessibilityService : AccessibilityService() {
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val serviceScope = appCoroutineScope(
+        scopeName = "MyAccessibilityService",
+        dispatcher = kotlinx.coroutines.Dispatchers.Default,
+        context = this
+    )
 
     // Cached blocking config (refreshed periodically)
     private var cachedBlockKeywords: List<String> = emptyList()

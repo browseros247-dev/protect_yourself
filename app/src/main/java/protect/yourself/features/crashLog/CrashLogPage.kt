@@ -342,6 +342,17 @@ private fun CrashEntryRow(
                     maxLines = 2,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
+                // Show dedup count if this crash occurred multiple times
+                // within the dedup window (see CrashLogger.persistEntryWithDedup).
+                if (entry.count > 1) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "× ${entry.count} (last: ${entry.timestampFormatted})",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
                 if (entry.throwableClass.isNotBlank()) {
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
@@ -474,6 +485,17 @@ private fun CrashEntryDetailDialog(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Service state — critical for diagnosing "blocking stopped working"
+                Text("Service state:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                Text(
+                    text = "Accessibility: ${if (entry.serviceState.accessibilityEnabled) "✓ enabled" else "✗ disabled"}\n" +
+                        "VPN: ${if (entry.serviceState.vpnActive) "✓ active" else "✗ inactive"}\n" +
+                        "Device admin: ${if (entry.serviceState.deviceAdminActive) "✓ active" else "✗ inactive"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
                 if (entry.breadcrumbs.isNotEmpty()) {
                     Text("Breadcrumbs (most recent):", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
                     entry.breadcrumbs.reversed().take(10).forEach { crumb ->
@@ -548,6 +570,17 @@ class CrashLogViewModel(
 
     init {
         loadEntries()
+        // Observe CrashLogger.entryCount so the list live-updates when new
+        // crash entries are logged while the page is open (e.g. a background
+        // service throws an ERROR via Timber.e → CrashLoggingTree →
+        // CrashLogger.logMessage → entryCount increments → we reload).
+        viewModelScope.launch {
+            crashLogger.entryCount.collect { count ->
+                if (count != _state.value.entries.size) {
+                    loadEntries()
+                }
+            }
+        }
     }
 
     fun loadEntries() {
@@ -581,43 +614,59 @@ class CrashLogViewModel(
         }
     }
 
+    /**
+     * Export all crash log entries to the user-picked SAF URI.
+     *
+     * Uses the shared [protect.yourself.commons.utils.SafUtils.writeJsonToUri]
+     * helper — handles null return, IOException, and SecurityException across
+     * both "wt" and "w" modes, plus post-write size verification. This is the
+     * same fix applied to BackupManager in commit a1ec981.
+     *
+     * Re-throws CancellationException to preserve structured concurrency.
+     */
     fun exportToUri(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val json = crashLogger.exportAllToJson()
-                val resolver = getApplication<android.app.Application>().contentResolver
-                var written = false
-                try {
-                    resolver.openOutputStream(uri, "wt")?.use { os ->
-                        os.write(json.toByteArray(Charsets.UTF_8))
-                        os.flush()
-                        written = true
-                    }
-                } catch (_: java.io.IOException) {
-                    resolver.openOutputStream(uri, "w")?.use { os ->
-                        os.write(json.toByteArray(Charsets.UTF_8))
-                        os.flush()
-                        written = true
-                    }
-                }
-                if (written) {
-                    val sizeKb = json.toByteArray(Charsets.UTF_8).size / 1024.0
-                    _state.value = _state.value.copy(
-                        exportResult = Result.success(
-                            "Exported ${crashLogger.readEntries().size} crash logs (${
-                                String.format(java.util.Locale.US, "%.1f KB", sizeKb)
-                            }) to file."
-                        )
+                val export = crashLogger.exportAllToJson()
+                val bytesWritten = protect.yourself.commons.utils.SafUtils.writeJsonToUri(
+                    getApplication<android.app.Application>().contentResolver,
+                    uri,
+                    export
+                )
+                val sizeKb = bytesWritten / 1024.0
+                // Use the entry count from the export itself — avoids re-reading
+                // all entry files from disk just to count them (the original
+                // code called crashLogger.readEntries().size which re-read 100
+                // JSON files). Parse the count from the export — simpler than
+                // changing exportAllToJson's signature.
+                val entryCount = countEntriesInExport(export)
+                _state.value = _state.value.copy(
+                    exportResult = Result.success(
+                        "Exported $entryCount crash logs (${
+                            String.format(java.util.Locale.US, "%.1f KB", sizeKb)
+                        }) to file."
                     )
-                } else {
-                    _state.value = _state.value.copy(
-                        exportResult = Result.failure(java.io.IOException("Could not open output stream"))
-                    )
-                }
+                )
+            } catch (t: kotlinx.coroutines.CancellationException) {
+                // Don't swallow coroutine cancellation — propagate to preserve
+                // structured concurrency (e.g. if user navigates away mid-export).
+                throw t
             } catch (t: Throwable) {
                 _state.value = _state.value.copy(exportResult = Result.failure(t))
             }
         }
+    }
+
+    /**
+     * Extract the `entryCount` field from the exported JSON without re-reading
+     * all entry files. Uses Gson to parse just the top-level envelope.
+     */
+    private fun countEntriesInExport(json: String): Int {
+        return try {
+            val type = object : com.google.gson.reflect.TypeToken<protect.yourself.features.crashLog.CrashLogExport>() {}.type
+            val export = com.google.gson.Gson().fromJson<protect.yourself.features.crashLog.CrashLogExport>(json, type)
+            export?.entryCount ?: 0
+        } catch (_: Throwable) { 0 }
     }
 
     fun clearExportResult() {

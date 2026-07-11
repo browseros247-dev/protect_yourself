@@ -327,30 +327,11 @@ class BackupManager(private val context: Context) {
     }
 
     private fun writeJsonToUri(uri: Uri, json: String) {
-        val resolver = context.contentResolver
-        var written = false
-        try {
-            resolver.openOutputStream(uri, "wt")?.use { outputStream ->
-                // "wt" = truncate + write — replaces any existing content
-                outputStream.write(json.toByteArray(Charsets.UTF_8))
-                outputStream.flush()
-                written = true
-            }
-        } catch (t: IOException) {
-            // Retry once with "w" mode (some providers don't support "wt")
-            try {
-                resolver.openOutputStream(uri, "w")?.use { outputStream ->
-                    outputStream.write(json.toByteArray(Charsets.UTF_8))
-                    outputStream.flush()
-                    written = true
-                }
-            } catch (t2: IOException) {
-                throw IOException("Failed to write backup: ${t2.message}", t2)
-            }
-        }
-        if (!written) {
-            throw IOException("Could not open output stream for backup URI")
-        }
+        // Delegate to shared SafUtils helper — handles null return, IOException,
+        // and SecurityException across both "wt" and "w" modes, plus post-write
+        // size verification. See SafUtils for why this is needed (cloud SAF
+        // providers like Google Drive return null for "wt" mode).
+        protect.yourself.commons.utils.SafUtils.writeJsonToUri(context.contentResolver, uri, json)
     }
 
     // ===== Import helpers =====

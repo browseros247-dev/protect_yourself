@@ -65,7 +65,14 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
             // These are too many to insert synchronously during onCreate.
             // Launch a background coroutine that runs AFTER onCreate returns
             // and the DB transaction is committed.
-            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            //
+            // Uses appCoroutineScope so uncaught exceptions are routed to
+            // CrashLogger with scope context (instead of being silently lost
+            // if the coroutine throws outside the try/catch).
+            protect.yourself.core.appCoroutineScope(
+                scopeName = "AppDatabaseCallback",
+                dispatcher = Dispatchers.IO
+            ).launch {
                 try {
                     insertPresetKeywords()
                 } catch (t: Throwable) {

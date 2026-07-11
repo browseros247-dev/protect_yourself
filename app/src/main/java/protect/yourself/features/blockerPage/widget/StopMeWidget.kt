@@ -8,13 +8,11 @@ import android.content.Intent
 import android.widget.RemoteViews
 import android.widget.Toast
 import protect.yourself.R
+import protect.yourself.core.appCoroutineScope
 import protect.yourself.features.blockerPage.utils.StopMeManager
 import protect.yourself.features.mainActivityPage.MainActivity
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
@@ -27,7 +25,10 @@ import kotlinx.coroutines.launch
  */
 class StopMeWidget : AppWidgetProvider() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = appCoroutineScope(
+        scopeName = "StopMeWidget",
+        dispatcher = kotlinx.coroutines.Dispatchers.IO
+    )
 
     override fun onUpdate(
         context: Context,

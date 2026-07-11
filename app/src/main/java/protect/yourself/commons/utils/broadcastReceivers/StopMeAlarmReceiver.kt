@@ -3,10 +3,8 @@ package protect.yourself.commons.utils.broadcastReceivers
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import protect.yourself.core.appCoroutineScope
 import protect.yourself.features.blockerPage.utils.StopMeManager
 import timber.log.Timber
 
@@ -19,7 +17,10 @@ import timber.log.Timber
  */
 class StopMeAlarmReceiver : BroadcastReceiver() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = appCoroutineScope(
+        scopeName = "StopMeAlarmReceiver",
+        dispatcher = kotlinx.coroutines.Dispatchers.IO
+    )
 
     override fun onReceive(context: Context, intent: Intent) {
         val sessionKey = intent.getStringExtra(EXTRA_SESSION_KEY) ?: return
