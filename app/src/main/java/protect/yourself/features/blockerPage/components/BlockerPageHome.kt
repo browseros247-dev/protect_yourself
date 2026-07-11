@@ -71,7 +71,7 @@ import protect.yourself.theme.BrandOrange
 fun BlockerPageHome() {
     val context = LocalContext.current
     val viewModel: BlockerPageViewModel = viewModel(
-        factory = BlockerPageViewModel.factory(AppDatabase.getInstance(context))
+        factory = BlockerPageViewModel.factory(context.applicationContext as android.app.Application, AppDatabase.getInstance(context))
     )
     val state by viewModel.state.collectAsState()
 
