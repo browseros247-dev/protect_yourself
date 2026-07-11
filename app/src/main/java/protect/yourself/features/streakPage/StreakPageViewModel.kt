@@ -35,6 +35,53 @@ class StreakPageViewModel(
 
     init {
         observeStreakData()
+        ensureTodayActiveDay()
+    }
+
+    /**
+     * BUG FIX: Auto-create an active day entry for today if none exists.
+     *
+     * NopoX does this automatically — every time the app opens, it inserts
+     * an active day record (type = "") for today. Without this, the streak
+     * counter stays at 0 forever because there's no data to count from.
+     *
+     * Uses OnConflictStrategy.REPLACE so if today's entry already exists
+     * (either as active day or relapse), it won't duplicate.
+     * However, we first CHECK if today already has a relapse — if so,
+     * we don't overwrite it.
+     */
+    private fun ensureTodayActiveDay() {
+        viewModelScope.launch {
+            try {
+                val now = System.currentTimeMillis()
+                val cal = Calendar.getInstance().apply {
+                    timeInMillis = now
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val dayStart = cal.timeInMillis
+
+                // Check if today already has an entry
+                val allData = db.streakDatesDao().getAll()
+                val todayEntry = allData.find { it.startTime == dayStart }
+
+                if (todayEntry == null) {
+                    // No entry for today — create an active day
+                    val item = StreakDatesItemModel(
+                        startTime = dayStart,
+                        endTime = now,
+                        type = "",
+                        freeText = ""
+                    )
+                    db.streakDatesDao().upsert(item)
+                    Timber.i("Auto-created active day entry for today: $dayStart")
+                }
+            } catch (t: Throwable) {
+                Timber.w(t, "Failed to ensure today's active day")
+            }
+        }
     }
 
     /**
@@ -52,6 +99,9 @@ class StreakPageViewModel(
                     // Calculate current streak (consecutive days since last relapse)
                     val currentStreak = calculateConsecutiveStreak(sorted)
 
+                    // BUG FIX: Calculate best (longest) streak ever
+                    val bestStreak = calculateBestStreak(sorted)
+
                     // Calculate achievements
                     val nextAchievement = StreakAchievement.values()
                         .firstOrNull { it.daysRequired > currentStreak }
@@ -61,6 +111,7 @@ class StreakPageViewModel(
                     _state.update {
                         it.copy(
                             currentStreakDays = currentStreak,
+                            bestStreakDays = bestStreak,
                             streakHistory = sorted,
                             relapseCount = relapses.size,
                             activeDayCount = activeDays.size,
@@ -143,7 +194,68 @@ class StreakPageViewModel(
     }
 
     /**
+     * BUG FIX: Calculate the best (longest) streak ever achieved.
+     *
+     * Iterates through the history, splitting on relapses, and finds
+     * the longest gap between two relapses (or from first active day
+     * to most recent relapse).
+     *
+     * NopoX tracks this as "best streak" — shown alongside current streak.
+     */
+    private fun calculateBestStreak(items: List<StreakDatesItemModel>): Int {
+        if (items.isEmpty()) return 0
+
+        val sorted = items.sortedBy { it.startTime }
+        var bestStreak = 0
+        var streakStart: Long? = null
+
+        for (item in sorted) {
+            if (item.type.isBlank()) {
+                // Active day — start streak if not already started
+                if (streakStart == null) {
+                    streakStart = item.startTime
+                }
+            } else {
+                // Relapse — end the current streak
+                if (streakStart != null) {
+                    val cal1 = Calendar.getInstance().apply {
+                        timeInMillis = streakStart
+                        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                    }
+                    val cal2 = Calendar.getInstance().apply {
+                        timeInMillis = item.startTime
+                        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                    }
+                    val diffMs = cal2.timeInMillis - cal1.timeInMillis
+                    if (diffMs > 0) {
+                        val days = TimeUnit.MILLISECONDS.toDays(diffMs).toInt()
+                        if (days > bestStreak) bestStreak = days
+                    }
+                    streakStart = null
+                }
+            }
+        }
+
+        // If streak is still active (no relapse after last active day), count up to today
+        if (streakStart != null) {
+            val current = calculateConsecutiveStreak(items)
+            if (current > bestStreak) bestStreak = current
+        }
+
+        return bestStreak
+    }
+
+    /**
      * Record a relapse.
+     *
+     * BUG FIX: If an active day entry already exists for today (startTime = dayStart),
+     * we UPDATE it to mark it as a relapse instead of inserting a new record.
+     * The original code used OnConflictStrategy.REPLACE which would work, but
+     * only if the startTime matches exactly. We also preserve the original
+     * startTime to maintain the primary key.
+     *
      * The Flow collector will auto-update the UI — no need to call loadStreakData().
      */
     fun recordRelapse(type: RelapseTypeIdentifiers, note: String) {
@@ -159,12 +271,27 @@ class StreakPageViewModel(
                 }
                 val dayStart = cal.timeInMillis
 
-                val item = StreakDatesItemModel(
-                    startTime = dayStart,
-                    endTime = now,
-                    type = type.storageValue,
-                    freeText = note
-                )
+                // Check if today already has an entry (active day or relapse)
+                val allData = db.streakDatesDao().getAll()
+                val todayEntry = allData.find { it.startTime == dayStart }
+
+                val item = if (todayEntry != null) {
+                    // Update existing entry — preserve startTime (PK)
+                    StreakDatesItemModel(
+                        startTime = todayEntry.startTime,
+                        endTime = now,
+                        type = type.storageValue,
+                        freeText = note
+                    )
+                } else {
+                    // No entry for today — create new relapse entry
+                    StreakDatesItemModel(
+                        startTime = dayStart,
+                        endTime = now,
+                        type = type.storageValue,
+                        freeText = note
+                    )
+                }
                 db.streakDatesDao().upsert(item)
                 Timber.i("Relapse recorded: type=${type.storageValue} note=$note")
                 // Flow collector will auto-update state — no manual reload needed
@@ -188,6 +315,7 @@ class StreakPageViewModel(
 
 data class StreakPageState(
     val currentStreakDays: Int = 0,
+    val bestStreakDays: Int = 0,
     val streakHistory: List<StreakDatesItemModel> = emptyList(),
     val relapseCount: Int = 0,
     val activeDayCount: Int = 0,
