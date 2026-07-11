@@ -7,12 +7,18 @@ This directory contains the **latest** pre-built, signed APK of **Protect Yourse
 - **Only the latest version** is kept here. When a new version is built, the previous APKs are removed.
 - Each version has two files: `*-debug.apk` (debug build with logging) and `*-release.apk` (production build, recommended).
 
-## Current Version: 1.0.35 (versionCode 35)
+## Current Version: 1.0.45 (versionCode 45)
 
 | File | Size | Build Type | Description |
 |---|---|---|---|
-| `protect.yourself-v1.0.35-release.apk` | ~15 MB | Release | **Recommended for installation.** Merges Future-Brand VPN improvements (VPN internet-disconnect fix, redesigned VPN management UI with Balanced/Strict/Custom mode picker, DB v9 with display_name column) + main branch cleanup (removed Supported Browsers, reorganized categories). |
-| `protect.yourself-v1.0.35-debug.apk` | ~22 MB | Debug | Debug build with logging enabled. Larger due to unstripped debug info. |
+| `protect.yourself-v1.0.45-release.apk` | ~16 MB | Release | **Recommended for installation.** Merges crash-logging-enhancements branch: new AnrWatchdog (ANR detection), AppCoroutineExceptionHandler (routes uncaught coroutine exceptions to CrashLogger across 8+ scopes), disk-backed breadcrumbs (survive hard crashes), atomic file persistence, crash deduplication, service state capture (accessibility/VPN/device-admin status at crash time), OOM-resilient persistence, crash-detected notification on next launch, crash count badge on Profile menu, fixed exportToUri null-return bug (shared SafUtils helper). Also includes all prior fixes from v1.0.44 (uninstall prevention overlay + kill timer) and v1.0.40-v1.0.43 (backup import/export fixes, streak fixes, protective mode fixes, VPN DNS/modes/whitelist fixes). |
+| `protect.yourself-v1.0.44-release.apk` | ~16 MB | Release | Previous release — uninstall prevention overlay + 500ms kill timer + error handling. |
+| `protect.yourself-v1.0.43-release.apk` | ~16 MB | Release | VPN modes UI fix + accessibility WRITE_SECURE_SETTINGS self-heal. |
+| `protect.yourself-v1.0.42-release.apk` | ~16 MB | Release | VPN modes + UI/UX refinement. |
+| `protect.yourself-v1.0.41-release.apk` | ~15 MB | Release | VPN app whitelist fix. |
+| `protect.yourself-v1.0.40-release.apk` | ~15 MB | Release | Streak fixes + protective mode fixes + analysis docs. |
+| `protect.yourself-v1.0.39-release-uninstall-fix.apk` | ~15 MB | Release | Uninstall prevention fix. |
+| `protect.yourself-v1.0.38-release-accessibility-fix.apk` | ~15 MB | Release | Accessibility fix. |
 
 ## Build Targets
 
