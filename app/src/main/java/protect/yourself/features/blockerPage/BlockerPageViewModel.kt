@@ -1,9 +1,10 @@
 package protect.yourself.features.blockerPage
 
+import android.app.Application
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -70,8 +71,9 @@ sealed class BlockerPageNavigation {
  * BlockerPageViewModel — manages state for the Blocker (Home) tab.
  */
 class BlockerPageViewModel(
+    application: Application,
     private val db: AppDatabase
-) : ViewModel() {
+) : AndroidViewModel(application) {
 
     private val switchValues = SwitchStatusValues(db.switchStatusDao())
 
@@ -281,6 +283,25 @@ class BlockerPageViewModel(
                 _navigation.emit(BlockerPageNavigation.RequestDeviceAdmin)
                 // Don't toggle yet — wait for user to grant Device Admin
                 // The UI will check if admin was granted and then persist
+                return@safeLaunch
+            }
+
+            // PREVENT_UNINSTALL OFF → deactivate Device Admin
+            if (switchKey == SwitchIdentifier.PREVENT_UNINSTALL_SWITCH && !newValue) {
+                // Deactivate Device Admin so the app can be uninstalled
+                protect.yourself.features.blockerPage.utils.DeviceAdminUtils.removeActive(getApplication())
+                switchValues.storeSwitchStatus(switchKey, false)
+                _state.update { state ->
+                    state.copy(
+                        settingItems = state.settingItems.map {
+                            if (it.switchKey == switchKey) it.copy(switchValue = false)
+                            else it
+                        }
+                    )
+                }
+                MyAccessibilityService.instance?.refreshBlockingConfig()
+                _navigation.emit(BlockerPageNavigation.ShowToast("Prevent uninstall disabled — Device Admin deactivated"))
+                Timber.i("Prevent uninstall disabled (Device Admin removed)")
                 return@safeLaunch
             }
 
@@ -703,8 +724,8 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS, "Manage blocked titles", info = "View and remove blocked titles", actionLabel = "Manage"))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_ADVANCE_FEATURE, "Advanced feature", isSection = true))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS, "Block unsupported browsers", info = "Block any browser that isn't in your supported list or whitelist", switchKey = SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Whitelist unsupported browsers", info = "Allow specific browsers to bypass the unsupported-browser block", actionLabel = "Manage"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS, "Block unsupported browsers", info = "Block obscure/unknown browsers. Major browsers (Chrome, Firefox, Edge, etc.) are always allowed. Use the whitelist to let additional rare browsers through.", switchKey = SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER, "Whitelist unsupported browsers", info = "Allow specific rare/unknown browsers to bypass the block. Add browsers you trust that are not automatically allowed.", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_PACKAGE_INTENT, "Package + Intent Blocking", info = "Block apps by package name (e.g. com.example.app) or intent/class name", switchKey = SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.ADD_PACKAGE_INTENT_TO_BLOCK, "Manage blocked packages/intents", info = "Add, view, and remove package + intent entries", actionLabel = "Manage"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN, "VPN (DNS blocking)", info = "Block adult content at network level. Tap Manage to choose a filtering mode.", switchKey = SwitchIdentifier.VPN_SWITCH))
@@ -1028,11 +1049,11 @@ class BlockerPageViewModel(
     }
 
     companion object {
-        fun factory(db: AppDatabase): ViewModelProvider.Factory =
+        fun factory(application: Application, db: AppDatabase): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return BlockerPageViewModel(db) as T
+                    return BlockerPageViewModel(application, db) as T
                 }
             }
     }

@@ -151,6 +151,17 @@ class SelectAppPageViewModel(
                     }
                 }
             }
+            } else if (identifier == SelectedAppListIdentifier.WHITELIST_UNSUPPORTED_BROWSER) {
+                // Unsupported browser whitelist fix: when the user changes the
+                // whitelist, refresh the accessibility service so the service
+                // reloads cachedUnsupportedBrowserWhitelist from the DB.
+                Timber.i("Unsupported browser whitelist changed — refreshing blocking config")
+                try {
+                    MyAccessibilityService.instance?.refreshBlockingConfig()
+                } catch (t: Throwable) {
+                    Timber.w(t, "Failed to refresh blocking config after whitelist change")
+                }
+            }
         }
     }
 

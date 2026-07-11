@@ -360,10 +360,18 @@ class MyAccessibilityService : AccessibilityService() {
         // A "browser" is defined as an app that handles http/https URLs (via intent filter)
         // OR matches known browser package signatures.
         if (isBlockUnsupportedBrowsersOn && isBrowserPackageDetected(packageName)) {
-            val isWhitelisted = cachedUnsupportedBrowserWhitelist.contains(packageName)
-            if (!isWhitelisted) {
-                launchBlockActivity(packageName, "block_page_default_unsupported_browser_message")
-                return
+            // Skip major known browsers — they're "supported" and should not be blocked.
+            // Only block truly unknown/obscure browsers that are NOT in the whitelist.
+            if (SUPPORTED_BROWSERS.contains(packageName)) {
+                Timber.v("Skipping supported browser: $packageName")
+                // Still allow the service to scrape URLs from this browser
+            } else {
+                val isWhitelisted = cachedUnsupportedBrowserWhitelist.contains(packageName)
+                if (!isWhitelisted) {
+                    Timber.i("Blocking unsupported browser: $packageName")
+                    launchBlockActivity(packageName, "block_page_default_unsupported_browser_message")
+                    return
+                }
             }
         }
 
@@ -1452,6 +1460,30 @@ class MyAccessibilityService : AccessibilityService() {
         // on deeply nested view trees.
         private const val MAX_NODE_DEPTH = 50
 
+
+        // Known major browsers that are considered "supported".
+        // These are NEVER blocked by the "Block Unsupported Browsers" toggle.
+        // The toggle only blocks truly unknown/obscure browsers not in this list.
+        private val SUPPORTED_BROWSERS = setOf(
+            "com.android.chrome",
+            "org.mozilla.firefox",
+            "org.mozilla.firefox_beta",
+            "com.microsoft.emmx",           // Microsoft Edge
+            "com.sec.android.app.sbrowser", // Samsung Internet
+            "com.brave.browser",
+            "com.opera.browser",
+            "com.opera.mini.native",
+            "com.vivaldi.browser",
+            "com.duckduckgo.mobile.android",
+            "com.mi.globalbrowser",
+            "com.chrome.beta",
+            "com.chrome.dev",
+            "org.bromite.bromite",
+            "org.torproject.torbrowser",
+            "com.kiwibrowser.browser",
+            "mark.via",
+            "com.junkboat.brave"
+        )
         @Volatile
         var instance: MyAccessibilityService? = null
             private set
