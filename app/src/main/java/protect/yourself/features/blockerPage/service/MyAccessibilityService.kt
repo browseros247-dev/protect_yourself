@@ -66,7 +66,14 @@ class MyAccessibilityService : AccessibilityService() {
     private var cachedBlockedPackageNames: Set<String> = emptySet()
     private var cachedBlockedIntentNames: Set<String> = emptySet()
     private var isBlockPackageIntentOn = false
-    private var isStopMeRunning = false
+    // AB-01 fix: Stop Me state is now a persisted end-time timestamp, not an
+    // in-memory boolean. This survives process death (reboot, force-stop, OEM
+    // killing the service). On every event we check
+    // `System.currentTimeMillis() < stopMeEndTime`. NopoX uses the same pattern
+    // (`private static long stopMeEndTime`).
+    // When stopMeEndTime == 0L, no session is active.
+    @Volatile
+    private var stopMeEndTime: Long = 0L
 
     // KB-22 fix: PackageManager-level browser detection cache. Uses
     // ConcurrentHashMap instead of mutableMapOf because onAccessibilityEvent
@@ -221,8 +228,12 @@ class MyAccessibilityService : AccessibilityService() {
             return
         }
 
-        // Block apps (blocklist)
-        if (isPornBlockerOn && cachedBlockApps.contains(packageName)) {
+        // Block apps (blocklist).
+        // AB-02 fix: removed the `isPornBlockerOn` gate. Blocklist apps should
+        // work independently of the Porn Blocker switch — the user explicitly
+        // added these apps to the blocklist, so they should be blocked
+        // regardless of whether URL keyword matching is enabled.
+        if (cachedBlockApps.contains(packageName)) {
             launchBlockActivity(packageName, "block_page_default_block_apps_message")
             return
         }
@@ -255,10 +266,17 @@ class MyAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Stop Me: block apps not in whitelist
-        if (isStopMeRunning && !cachedStopMeWhitelist.contains(packageName)) {
+        // Stop Me: block apps not in whitelist.
+        // AB-01 fix: check persisted end-time instead of in-memory boolean.
+        // This survives process death — if the service is killed and
+        // reconnected, loadAllConfig reloads stopMeEndTime from the DB.
+        val now = System.currentTimeMillis()
+        if (stopMeEndTime > 0 && now < stopMeEndTime && !cachedStopMeWhitelist.contains(packageName)) {
             launchBlockActivity(packageName, "block_page_default_stop_me_message")
             return
+        } else if (stopMeEndTime > 0 && now >= stopMeEndTime) {
+            // Session has expired — clear the timestamp to avoid re-checking.
+            stopMeEndTime = 0L
         }
     }
 
@@ -622,6 +640,10 @@ class MyAccessibilityService : AccessibilityService() {
         // indicates an app info page. Without this guard, the method would
         // match ANY settings page that mentions "Protect Yourself" (accessibility
         // settings, notification settings, etc.), locking the user out.
+        // AB-03 fix: also move the device-admin text matching inside this guard.
+        // Previously it ran unconditionally, matching any settings page that
+        // mentioned "admin" or "deactivate" — locking users out of unrelated
+        // pages like "Administrator settings" or "Deactivate account".
         if (lowerClass.contains("appinfo") || lowerClass.contains("appdetails") ||
             lowerClass.contains("appinfodashboard") || lowerClass.contains("installedappdetails")) {
             try {
@@ -630,13 +652,14 @@ class MyAccessibilityService : AccessibilityService() {
                     return true
                 }
             } catch (_: Throwable) {}
-        }
 
-        // Check against device admin text patterns (localized)
-        val deviceAdminTexts = BlockerPageUtils.DEVICE_ADMIN_TEXTS_TO_MATCH
-        for (matchText in deviceAdminTexts) {
-            if (lower.contains(matchText.lowercase(Locale.ROOT))) {
-                return true
+            // Check against device admin text patterns (localized) — ONLY on
+            // app-info pages, not on any settings page.
+            val deviceAdminTexts = BlockerPageUtils.DEVICE_ADMIN_TEXTS_TO_MATCH
+            for (matchText in deviceAdminTexts) {
+                if (lower.contains(matchText.lowercase(Locale.ROOT))) {
+                    return true
+                }
             }
         }
 
@@ -664,11 +687,20 @@ class MyAccessibilityService : AccessibilityService() {
             return true
         }
 
-        // Detect power menu by package name (OEM-specific power dialog packages)
-        if (lowerPkg.contains("shutdown") ||
-            lowerPkg.contains("powermenu") ||
-            lowerPkg.contains("globalactions")
-        ) {
+        // Detect power menu by package name (OEM-specific power dialog packages).
+        // AB-04 fix: use exact package-name matching instead of substring.
+        // The old `contains("shutdown")` matched `com.example.shutdown.helper`
+        // (not a power menu) as a false positive.
+        val knownPowerMenuPackages = setOf(
+            "com.android.server",          // Android system global actions
+            "com.miui.powermanager",       // Xiaomi power manager
+            "com.huawei.systemmanager",    // Huawei power manager
+            "com.samsung.android.app.powermain", // Samsung power menu
+            "com.oppo.powermanager",       // OPPO power manager
+            "com.coloros.powermanager",    // ColorOS power manager
+            "com.android.settings"         // Settings can show shutdown intent
+        )
+        if (lowerPkg in knownPowerMenuPackages.map { it.lowercase(Locale.ROOT) }.toSet()) {
             return true
         }
 
@@ -831,6 +863,14 @@ class MyAccessibilityService : AccessibilityService() {
         try {
             startActivity(intent)
             Timber.i("Block screen launched for pkg=$packageName messageKey=$messageResKey keyword=$matchedKeyword")
+            // AB-05 fix: press HOME after a short delay to move the offending
+            // app to the background. The delay lets the block activity appear
+            // first so HOME doesn't dismiss it. Without this, the offending app
+            // stays in the back stack and the user returns to it after Close.
+            serviceScope.launch {
+                kotlinx.coroutines.delay(200)
+                try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Throwable) {}
+            }
         } catch (t: Throwable) {
             Timber.e(t, "Failed to launch PornBlockActivity")
             // Fallback: if we can't launch the block activity, press HOME to
@@ -952,6 +992,13 @@ class MyAccessibilityService : AccessibilityService() {
             cachedStopMeWhitelist = db.selectedAppsListDao()
                 .getSelectedByIdentifier(SelectedAppListIdentifier.WHITELIST_STOP_ME_APPS.value)
                 .map { it.packageName }.toSet()
+            // AB-01/AB-14 fix: restore active Stop Me session from DB so it
+            // survives process death (reboot, force-stop, OEM killing service).
+            val activeStopMe = db.stopMeDurationDao().getActiveInstantSession(System.currentTimeMillis())
+            stopMeEndTime = activeStopMe?.endTime ?: 0L
+            if (stopMeEndTime > 0) {
+                Timber.i("AB-01: Restored active Stop Me session (endTime=$stopMeEndTime)")
+            }
             cachedVpnWhitelist = db.selectedAppsListDao()
                 .getSelectedByIdentifier(SelectedAppListIdentifier.VPN_WHITELIST_APPS.value)
                 .map { it.packageName }.toSet()
@@ -977,11 +1024,22 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Called when a Stop Me session starts/stops — accessibility blocks non-whitelisted apps.
+     * Called when a Stop Me session starts/stops.
+     * AB-01 fix: accepts an end-time timestamp instead of a boolean.
+     * Pass `endTime` = the wall-clock time when the session should end.
+     * Pass 0 to stop the session.
+     * The accessibility service checks `System.currentTimeMillis() < stopMeEndTime`
+     * on every event, so the state survives process death as long as
+     * `loadAllConfig` reloads it from the DB.
      */
-    fun setStopMeRunning(running: Boolean) {
-        isStopMeRunning = running
-        Timber.i("Stop Me running state: $running")
+    fun setStopMeEndTime(endTime: Long) {
+        stopMeEndTime = endTime
+        Timber.i("Stop Me end time set: $endTime (active=${endTime > 0})")
+    }
+
+    /** Returns true if a Stop Me session is currently active. */
+    fun isStopMeActive(): Boolean {
+        return stopMeEndTime > 0 && System.currentTimeMillis() < stopMeEndTime
     }
 
     companion object {

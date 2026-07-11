@@ -398,9 +398,7 @@ private fun HomeWithCategories(
                 onClick = {
                     onNavigate(SubPage.CategoryPage("Uninstall Protection", setOf(
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.PREVENT_UNINSTALL_SETTINGS,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_NOTIFICATION_DRAWER,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_PHONE_REBOOT,
-                        protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_RECENT_APPS,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE_APPS,
                         protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers.BLOCK_PACKAGE_INTENT,

@@ -63,6 +63,11 @@ class AppSystemActionReceiverAllTimeWithData : BroadcastReceiver() {
                                 )
                                 db.selectedAppsListDao().upsert(item)
                                 Timber.i("New app auto-blocked: $packageName ($appName)")
+                                // AB-15 fix: refresh the accessibility service's
+                                // cached config so it knows about the new app
+                                // immediately. Without this, the new app wouldn't
+                                // be blocked until the next periodic refresh.
+                                MyAccessibilityService.instance?.refreshBlockingConfig()
                             }
                         }
                     }

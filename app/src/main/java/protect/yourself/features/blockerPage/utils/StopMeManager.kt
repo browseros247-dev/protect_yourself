@@ -58,7 +58,8 @@ class StopMeManager(private val context: Context) {
             scheduleEndAlarm(key, endTime)
 
             // Notify accessibility service to start blocking non-whitelisted apps
-            notifyAccessibilityServiceStart()
+            // AB-01 fix: pass the end-time so the service can survive process death.
+            notifyAccessibilityServiceStart(endTime)
 
             // Show toast
             val mins = TimeUnit.MILLISECONDS.toMinutes(durationMillis)
@@ -203,8 +204,10 @@ class StopMeManager(private val context: Context) {
             cal.add(Calendar.DAY_OF_YEAR, 1)
         }
 
-        // Find next selected day (max 7 days to search)
-        for (i in 0..7) {
+        // Find next selected day (max 7 days to search — AB-17 fix: was 0..7
+        // which checks 8 days; changed to 0..6 which checks exactly 7 days,
+        // one full week).
+        for (i in 0..6) {
             val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK) - 1  // 0=Sunday
             val dayBit = 1 shl dayOfWeek
             if (days and dayBit != 0) {
@@ -301,14 +304,16 @@ class StopMeManager(private val context: Context) {
         alarmManager.cancel(pending)
     }
 
-    private fun notifyAccessibilityServiceStart() {
+    private fun notifyAccessibilityServiceStart(endTime: Long) {
+        // AB-01 fix: pass the end-time timestamp, not a boolean.
         protect.yourself.features.blockerPage.service.MyAccessibilityService.instance
-            ?.setStopMeRunning(true)
+            ?.setStopMeEndTime(endTime)
     }
 
     private fun notifyAccessibilityServiceStop() {
+        // AB-01 fix: pass 0 to clear the end time.
         protect.yourself.features.blockerPage.service.MyAccessibilityService.instance
-            ?.setStopMeRunning(false)
+            ?.setStopMeEndTime(0L)
     }
 
     private fun showToast(context: Context, message: String) {

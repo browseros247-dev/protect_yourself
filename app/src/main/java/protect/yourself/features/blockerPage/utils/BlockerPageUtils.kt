@@ -623,10 +623,10 @@ class BlockerPageUtils {
             "חיסכון גבוה במיוחד",
             "ahorro de energía ultra",
             "Ultra-Stromsparen",
-            "gestion d'alimentation Ultra",
-            "you (owner)",
-            "Add user",
-            "Add guest"
+            "gestion d'alimentation Ultra"
+            // AB-20 fix: removed "you (owner)", "Add user", "Add guest" — these
+            // are multi-user detection strings, not power-saving texts. They
+            // caused false positives on the multi-user settings page.
         )
 
         /**
