@@ -262,11 +262,6 @@ class AppLockManager(private val context: Context) {
     }
 
     /**
-     * Current failed attempt count (for UI display).
-     */
-    fun getFailedAttempts(): Int = failedAttempts
-
-    /**
      * Check if app lock is enabled (any type other than OFF).
      */
     suspend fun isLockEnabled(): Boolean {

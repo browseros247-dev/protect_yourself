@@ -2,8 +2,6 @@ package protect.yourself.features.appPasswordPage
 
 import android.content.Intent
 import android.net.Uri
-import android.provider.Settings
-import androidx.activity.ComponentActivity
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
@@ -113,13 +111,6 @@ class AppLockViewModel(
 
     fun onInputChange(value: String) {
         _state.update { it.copy(input = value, error = null) }
-    }
-
-    fun addPatternDot(dot: Int) {
-        val current = _state.value.input
-        if (dot !in current.mapNotNull { it.digitToIntOrNull() }) {
-            _state.update { it.copy(input = current + dot.toString(), error = null) }
-        }
     }
 
     fun clearInput() {
@@ -578,14 +569,4 @@ fun launchBiometricPrompt(
         Timber.e(t, "Failed to launch biometric prompt")
         onFailure()
     }
-}
-
-/**
- * Check if biometric authentication is available.
- */
-fun isBiometricAvailable(context: android.content.Context): Boolean {
-    val biometricManager = BiometricManager.from(context)
-    return biometricManager.canAuthenticate(
-        BiometricManager.Authenticators.BIOMETRIC_WEAK
-    ) == BiometricManager.BIOMETRIC_SUCCESS
 }

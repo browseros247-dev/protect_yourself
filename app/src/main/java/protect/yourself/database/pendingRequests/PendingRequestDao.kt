@@ -4,13 +4,9 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PendingRequestDao {
-
-    @Query("SELECT * FROM partner_pending_request_table ORDER BY requestSubmitTime DESC")
-    fun observeAll(): Flow<List<PendingRequestItemModel>>
 
     @Query("SELECT * FROM partner_pending_request_table")
     suspend fun getAll(): List<PendingRequestItemModel>
@@ -26,9 +22,6 @@ interface PendingRequestDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(items: List<PendingRequestItemModel>)
-
-    @Query("DELETE FROM partner_pending_request_table WHERE `key` = :key")
-    suspend fun deleteByKey(key: String)
 
     @Query("DELETE FROM partner_pending_request_table")
     suspend fun deleteAll()

@@ -6,7 +6,6 @@ import android.content.Intent
 import kotlinx.coroutines.launch
 import protect.yourself.core.appCoroutineScope
 import protect.yourself.database.core.AppDatabase
-import protect.yourself.database.switchStatus.SwitchIdentifier
 import protect.yourself.database.switchStatus.SwitchStatusValues
 import protect.yourself.features.blockerPage.service.MyAccessibilityService
 import timber.log.Timber

@@ -1,9 +1,6 @@
 package protect.yourself.features.blockerPage
 
 import android.app.Application
-import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider

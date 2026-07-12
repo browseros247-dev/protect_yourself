@@ -3,12 +3,9 @@ package protect.yourself.database.core
 import android.content.Context
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
-import protect.yourself.database.selectedKeywords.SelectedKeywordIdentifier
 import protect.yourself.database.switchStatus.SwitchIdentifier
 import protect.yourself.features.blockerPage.utils.DefaultDnsPresets
 import protect.yourself.features.blockerPage.utils.DefaultKeywordData

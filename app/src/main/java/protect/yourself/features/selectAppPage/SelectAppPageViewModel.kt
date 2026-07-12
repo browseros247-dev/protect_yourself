@@ -1,7 +1,6 @@
 package protect.yourself.features.selectAppPage
 
 import android.content.pm.PackageManager
-import android.graphics.drawable.Drawable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope

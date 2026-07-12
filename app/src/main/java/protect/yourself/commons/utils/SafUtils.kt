@@ -3,7 +3,6 @@ package protect.yourself.commons.utils
 import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
-import timber.log.Timber
 import java.io.IOException
 import java.io.OutputStream
 

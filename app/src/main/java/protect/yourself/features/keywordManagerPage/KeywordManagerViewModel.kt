@@ -321,13 +321,6 @@ class KeywordManagerViewModel(
         _state.update { it.copy(searchQuery = query) }
     }
 
-    /**
-     * Switch the active tab.
-     */
-    fun setActiveTab(tab: KeywordTab) {
-        _state.update { it.copy(activeTab = tab, searchQuery = "") }
-    }
-
     private fun refreshAccessibility() {
         // KB-03 fix: use targeted refresh (only the changed list) instead of
         // full refreshBlockingConfig (which re-reads ALL 1189+ rows).

@@ -10,6 +10,9 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.features.blockerPage.identifiers.AccountabilityPartnerTypeIdentifiers
 
@@ -17,7 +20,13 @@ import protect.yourself.features.blockerPage.identifiers.AccountabilityPartnerTy
  * Unit tests for SwitchStatusDao + SwitchStatusValues.
  *
  * Uses in-memory Room database (Robolectric for context).
+ *
+ * Runs under Robolectric so [ApplicationProvider.getApplicationContext] returns
+ * a real Context (required by Room.inMemoryDatabaseBuilder). Without
+ * Robolectric, ApplicationProvider throws "No instrumentation registered".
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class SwitchStatusDaoTest {
 
     @get:Rule

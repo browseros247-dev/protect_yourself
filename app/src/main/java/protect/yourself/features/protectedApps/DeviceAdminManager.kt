@@ -3,7 +3,6 @@ package protect.yourself.features.protectedApps
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import timber.log.Timber
 import protect.yourself.features.blockerPage.utils.DeviceAdminUtils
 
@@ -28,34 +27,6 @@ class DeviceAdminManager(private val context: Context) {
     /** Returns true if device admin is currently active for this app. */
     fun isActive(): Boolean {
         return dpm.isAdminActive(adminComponent)
-    }
-
-    /**
-     * Launch system Device Admin activation screen.
-     * Caller should call this from an Activity, not a Service.
-     */
-    fun requestActive() {
-        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent)
-            putExtra(
-                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "Device Admin prevents unauthorized uninstall of protect.yourself."
-            )
-        }
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
-    }
-
-    /**
-     * Deactivate device admin (allows uninstall).
-     */
-    fun removeActive() {
-        try {
-            dpm.removeActiveAdmin(adminComponent)
-            Timber.i("Device admin removed")
-        } catch (t: Throwable) {
-            Timber.w(t, "Failed to remove device admin")
-        }
     }
 
     companion object {

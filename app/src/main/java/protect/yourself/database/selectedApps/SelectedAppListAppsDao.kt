@@ -30,9 +30,6 @@ interface SelectedAppListAppsDao {
     @Query("DELETE FROM selected_apps_table WHERE `key` = :key")
     suspend fun deleteByKey(key: String)
 
-    @Query("DELETE FROM selected_apps_table WHERE identifier = :identifier")
-    suspend fun deleteByIdentifier(identifier: String)
-
     @Query("DELETE FROM selected_apps_table WHERE identifier = :identifier AND packageName = :packageName")
     suspend fun deleteByIdentifierAndPackage(identifier: String, packageName: String)
 

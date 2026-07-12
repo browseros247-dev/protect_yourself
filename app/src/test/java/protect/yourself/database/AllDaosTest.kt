@@ -10,6 +10,9 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import protect.yourself.database.blockScreensCount.BlockScreenCountItemModel
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedApps.SelectedAppItemModel
@@ -26,7 +29,13 @@ import protect.yourself.database.vpnCustomDns.VpnCustomDnsItemModel
  *
  * Uses in-memory Room database (Robolectric for context).
  * Phase 2 covers core CRUD operations for each DAO.
+ *
+ * Runs under Robolectric so [ApplicationProvider.getApplicationContext] returns
+ * a real Context (required by Room.inMemoryDatabaseBuilder). Without
+ * Robolectric, ApplicationProvider throws "No instrumentation registered".
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class AllDaosTest {
 
     @get:Rule
@@ -108,15 +117,17 @@ class AllDaosTest {
     }
 
     @Test
-    fun `selectedAppsListDao getSelectedByIdentifier returns only selected`() = runBlocking {
-        db.selectedAppsListDao().upsertAll(listOf(
-            SelectedAppItemModel("k1", "com.app1", "App 1", SelectedAppListIdentifier.BLOCK_APPS.value, true),
-            SelectedAppItemModel("k2", "com.app2", "App 2", SelectedAppListIdentifier.BLOCK_APPS.value, false),
-            SelectedAppItemModel("k3", "com.app3", "App 3", SelectedAppListIdentifier.BLOCK_APPS.value, true)
-        ))
-        val selected = db.selectedAppsListDao().getSelectedByIdentifier(SelectedAppListIdentifier.BLOCK_APPS.value)
-        assertThat(selected).hasSize(2)
-        assertThat(selected.map { it.packageName }).containsExactly("com.app1", "com.app3")
+    fun `selectedAppsListDao getSelectedByIdentifier returns only selected`() {
+        runBlocking {
+            db.selectedAppsListDao().upsertAll(listOf(
+                SelectedAppItemModel("k1", "com.app1", "App 1", SelectedAppListIdentifier.BLOCK_APPS.value, true),
+                SelectedAppItemModel("k2", "com.app2", "App 2", SelectedAppListIdentifier.BLOCK_APPS.value, false),
+                SelectedAppItemModel("k3", "com.app3", "App 3", SelectedAppListIdentifier.BLOCK_APPS.value, true)
+            ))
+            val selected = db.selectedAppsListDao().getSelectedByIdentifier(SelectedAppListIdentifier.BLOCK_APPS.value)
+            assertThat(selected).hasSize(2)
+            assertThat(selected.map { it.packageName }).containsExactly("com.app1", "com.app3")
+        }
     }
 
     @Test

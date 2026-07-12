@@ -355,13 +355,6 @@
                 tools:node="remove" />
         </provider>
 
-        <!-- ===== Meta-data ===== -->
-
-        <!-- File provider paths (legacy) -->
-        <meta-data
-            android:name="android.support.FILE_PROVIDER_PATHS"
-            android:resource="@xml/file_paths" />
-
     </application>
 
 </manifest>

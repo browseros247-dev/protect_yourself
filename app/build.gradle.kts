@@ -120,7 +120,6 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.splashscreen)
     implementation(libs.material)
 
     // Lifecycle
@@ -129,10 +128,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.process)
-    implementation(libs.androidx.lifecycle.service)
-
-    // Navigation
-    implementation(libs.androidx.navigation.compose)
 
     // Compose
     implementation(platform(libs.androidx.compose.bom))
@@ -157,43 +152,18 @@ dependencies {
     // Biometric
     implementation(libs.androidx.biometric)
 
-    // Browser (custom tabs) — removed, not used
-    // implementation(libs.androidx.browser)
-
     // Other AndroidX
-    implementation(libs.androidx.documentfile)
     implementation(libs.androidx.fragment.ktx)
-    // implementation(libs.androidx.viewpager2)  // removed, not used
-    // implementation(libs.androidx.recyclerview)  // removed, not used
-    // implementation(libs.androidx.preference.ktx)  // removed, not used
-
-    // Firebase — ALL REMOVED
-    // FirebaseInitProvider auto-initializes Firebase BEFORE Application.onCreate()
-    // and crashes the app if the project config is invalid.
-    // The app's core features (blocking, VPN, Stop Me, Streak, widgets) don't need Firebase.
-    // Firebase (Auth, Firestore, Messaging) can be re-added later when properly configured.
-    // implementation(platform(libs.firebase.bom))
-    // implementation(libs.firebase.auth.ktx)
-    // implementation(libs.firebase.firestore.ktx)
-    // implementation(libs.firebase.messaging.ktx)
-    // implementation(libs.firebase.config.ktx)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
-    // implementation(libs.kotlinx.coroutines.play.services)  // removed with Firebase
 
     // UI libraries
     implementation(libs.lottie.compose)
-    // implementation(libs.image.cropper)  // removed, not used in code
-    // implementation(libs.ratingbar)  // removed, not used (using built-in RatingBar)
-    // implementation(libs.androidx.glance.appwidget)  // removed, using traditional widgets
-    // implementation(libs.androidx.glance.material3)  // removed
 
     // Utility
     implementation(libs.timber)
-    // Splitties removed - only available on JitPack, not used in rebuild
-    implementation(libs.joda)
     implementation(libs.gson)
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")

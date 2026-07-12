@@ -4,12 +4,10 @@ import android.content.ComponentName
 import android.content.ContentResolver
 import android.content.Context
 import android.content.pm.PackageManager
-import android.content.pm.ServiceInfo
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import protect.yourself.features.blockerPage.service.MyAccessibilityService
 import timber.log.Timber
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * AccessibilityPersistUtils — programmatic persistence of the accessibility
