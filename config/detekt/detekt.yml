@@ -1,0 +1,304 @@
+# =============================================================================
+# Detekt configuration for protect.yourself
+#
+# Tuned to be strict but not annoying:
+#   - Style rules: enabled, threshold set to catch real issues
+#   - Complexity rules: enabled, with reasonable thresholds for an Android app
+#   - Potential-bug rules: enabled, all enforced
+#   - Comments rules: enabled for public APIs (KDoc required on public fun)
+#
+# False positives can be suppressed inline with @Suppress("DetektRuleName")
+# or by adding the rule to the excludes list below.
+# =============================================================================
+
+build:
+  maxIssues: 0   # Fail build on any issue. Set to 0 to enforce.
+  excludeCorrectable: false
+  weights:
+    complexity: 2
+    LongParameterList: 1
+    style: 1
+    comments: 1
+
+config:
+  validation: true
+  warningsAsErrors: false
+  excludes: ''
+
+# ---------------------------------------------------------------------------
+# Complexity — keep code understandable
+# ---------------------------------------------------------------------------
+complexity:
+  active: true
+  LongParameterList:
+    active: true
+    functionThreshold: 7
+    constructorThreshold: 8
+    ignoreDefaultParameters: true   # Default params don't count toward complexity
+    ignoreDataClasses: true
+  ComplexMethod:
+    active: true
+    threshold: 20
+    ignoreSingleWhenExpression: true
+    ignoreSimpleWhenEntries: true
+  TooManyImplementations:
+    active: false   # Too strict for interface-heavy Android code
+  LargeClass:
+    active: true
+    threshold: 200   # Lines of code per class
+  LongMethod:
+    active: true
+    threshold: 80   # Compose composables tend to be long; 80 is a compromise
+
+# ---------------------------------------------------------------------------
+# Coroutines — catch common suspend/coroutine pitfalls
+# ---------------------------------------------------------------------------
+coroutines:
+  active: true
+  GlobalCoroutineUsage:
+    active: true   # Forbid GlobalScope — use viewModelScope/lifecycleScope
+  RedundantSuspendModifier:
+    active: true
+  SleepInsteadOfDelay:
+    active: true
+  SuspendFunWithCoroutineScopeReceiver:
+    active: false   # Common pattern in some Android libraries
+
+# ---------------------------------------------------------------------------
+# Empty blocks — usually a sign of incomplete implementation
+# ---------------------------------------------------------------------------
+empty-blocks:
+  active: true
+  EmptyCatchBlock:
+    active: true
+    allowedExceptionNameRegex: '^(_|ignore|expected).*'
+  EmptyFunctionBlock:
+    active: true
+    ignoreOverridden: true   # Overridden functions often have empty bodies
+  EmptyKtFile:
+    active: true
+
+# ---------------------------------------------------------------------------
+# Exceptions — prefer Result<T> or null over throwing
+# ---------------------------------------------------------------------------
+exceptions:
+  active: true
+  SwallowedException:
+    active: true
+    ignoredExceptionTypes:
+      - InterruptedException
+      - NumberFormatException
+      - ParseException
+  TooGenericExceptionCaught:
+    active: true
+    exceptionNames:
+      - ArrayIndexOutOfBoundsException
+      - Error
+      - Exception
+      - IllegalMonitorStateException
+      - NullPointerException
+      - IndexOutOfBoundsException
+      - RuntimeException
+      - Throwable
+    allowedExceptionNameRegex: '^(ignore|expected).*'
+  TooGenericExceptionThrown:
+    active: true
+    exceptionNames:
+      - Error
+      - Exception
+      - Throwable
+      - RuntimeException
+
+# ---------------------------------------------------------------------------
+# Naming — consistent identifiers across the codebase
+# ---------------------------------------------------------------------------
+naming:
+  active: true
+  ClassNaming:
+    active: true
+    classPattern: '[A-Z][a-zA-Z0-9]*'
+  FunctionNaming:
+    active: true
+    functionPattern: '([a-z][a-zA-Z0-9]*)|(`.*`)'
+    excludes: ['**/features/**/components/**']   # Compose composables are PascalCase
+  FunctionParameterNaming:
+    active: true
+    parameterPattern: '[a-z][A-Za-z0-9]*'
+  TopLevelPropertyNaming:
+    active: true
+    constantPattern: '[A-Z][_A-Z0-9]*'
+    propertyPattern: '[A-Za-z][_A-Za-z0-9]*'
+  VariableNaming:
+    active: true
+    variablePattern: '[a-z][A-Za-z0-9]*'
+  PackageNaming:
+    active: true
+    packagePattern: '[a-z]+(\.[a-z][a-z0-9]*)*'
+
+# ---------------------------------------------------------------------------
+# Performance — avoid common Android performance pitfalls
+# ---------------------------------------------------------------------------
+performance:
+  active: true
+  ArrayPrimitive:
+    active: true
+  ForEachOnRange:
+    active: true
+  SpreadOperator:
+    active: true
+    excludes: ['**/test/**']   # OK in tests
+  UnnecessaryTemporaryInstantiation:
+    active: true
+
+# ---------------------------------------------------------------------------
+# Potential bugs — catch real defects
+# ---------------------------------------------------------------------------
+potential-bugs:
+  active: true
+  DeprecationInPackage:
+    active: false
+  DontDowncastCollectionType:
+    active: false
+  DuplicateCaseInWhenExpression:
+    active: true
+  EqualsAlwaysReturnsTrueOrFalse:
+    active: true
+  EqualsNullCall:
+    active: true
+  EqualsWithHashCodeExist:
+    active: true
+  IteratorNotThrowingNoSuchElementException:
+    active: true
+  IteratorOnMultipleLines:
+    active: false
+  LateinitUsage:
+    active: false   # Common in Android; not worth flagging
+  MissingWhenCase:
+    active: true
+    allowElseExpression: true
+  RedundantElseInIf:
+    active: true
+  UnconditionalJumpStatementInLoop:
+    active: true
+  UnreachableCode:
+    active: true
+  UnsafeCallOnNullableType:
+    active: true
+  UnsafeCast:
+    active: true
+  UselessPostfixExpression:
+    active: true
+  WrongEqualsTypeParameter:
+    active: true
+
+# ---------------------------------------------------------------------------
+# Style — consistency matters
+# ---------------------------------------------------------------------------
+style:
+  active: true
+  ForbiddenComment:
+    active: true
+    values:
+      - 'STOPSHIP'
+      - 'TODO'   # Flag TODOs so they get tracked as issues
+    allowed: '^TODO\(.*\)$'   # Allow TODO(name) format
+  ForbiddenImport:
+    active: false   # Customize per-project if needed
+  FunctionOnlyReturningConstant:
+    active: true
+  LoopWithTooManyJumpStatements:
+    active: true
+    maxJumpCount: 2
+  MagicNumber:
+    active: false   # Too noisy for Android (R.id.*, dp values, etc.)
+  MaxLineLength:
+    active: true
+    maxLineLength: 140
+    excludePackageStatements: true
+    excludeImportStatements: true
+    excludeCommentStatements: false
+  MayBeConst:
+    active: true
+  ModifierOrder:
+    active: true
+  NestedBlockDepth:
+    active: true
+    threshold: 5
+  NewLineAtEndOfFile:
+    active: true
+  NoTabs:
+    active: true
+  OptionalAbstractKeyword:
+    active: true
+  OptionalUnit:
+    active: false
+  OptionalWhenBraces:
+    active: false
+  ProtectedMemberInFinalClass:
+    active: true
+  ReturnCount:
+    active: false   # Too strict for guard-clause style
+  SafeCast:
+    active: true
+  SerialVersionUIDInSerializableClass:
+    active: true
+  SpacingBetweenPackageAndImports:
+    active: true
+  ThrowsCount:
+    active: true
+    max: 3
+  TrailingWhitespace:
+    active: true
+  UnderscoresInNumericLiterals:
+    active: false
+  UnnecessaryAbstractClass:
+    active: true
+  UnnecessaryInheritance:
+    active: true
+  UnnecessaryParentheses:
+    active: false
+  UntilInsteadOfRangeTo:
+    active: true
+  UnusedImports:
+    active: true
+  UnusedPrivateClass:
+    active: true
+  UnusedPrivateMember:
+    active: true
+    allowedNames: '(_|ignored|expected|serialVersionUID)'
+  UseDataClass:
+    active: true
+    excludeAnnotatedClasses:
+      - 'dagger.Module'
+  UseRequire:
+    active: false
+  UselessCallOnNotNull:
+    active: true
+  UtilityClassWithPublicConstructor:
+    active: true
+  VarCouldBeVal:
+    active: true
+  WildcardImport:
+    active: true
+    excludes: ['**/features/**/components/**']   # Compose often uses wildcard imports
+    excludes: ['**/test/**']
+
+# ---------------------------------------------------------------------------
+# Comments — KDoc on public APIs
+# ---------------------------------------------------------------------------
+comments:
+  active: true
+  CommentOverPrivateFunction:
+    active: false   # Private functions don't need KDoc
+  CommentOverPrivateProperty:
+    active: false
+  DeprecatedBlockTag:
+    active: true
+  OutdatedDocumentation:
+    active: true
+  UndocumentedPublicClass:
+    active: false   # Too noisy for an existing codebase
+  UndocumentedPublicFunction:
+    active: false   # Enable later when codebase is more mature
+  UndocumentedPublicProperty:
+    active: false

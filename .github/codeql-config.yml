@@ -1,0 +1,33 @@
+# =============================================================================
+# CodeQL configuration for protect.yourself
+#
+# This file is read by the GitHub CodeQL action (security.yml workflow).
+# It specifies:
+#   - Which query suites to run (security-extended catches more issues)
+#   - Which paths to scan (exclude generated code, tests, build artifacts)
+#   - Which paths to exclude (third-party libraries, build outputs)
+# =============================================================================
+
+name: "protect.yourself CodeQL Config"
+
+# Use the extended query suite for deeper analysis.
+# Available suites:
+#   - security-and-quality  (default — recommended for most projects)
+#   - security-extended     (more queries, including experimental)
+#   - security-experimental (cutting-edge queries, may have false positives)
+queries:
+  - uses: security-extended
+
+# Paths to include in analysis. Anything not listed here is skipped.
+paths:
+  - app/src/main/java
+  - app/src/test/java
+  - app/src/androidTest/java
+
+# Paths to exclude from analysis. These take precedence over `paths`.
+paths-ignore:
+  - app/build
+  - app/src/main/java/protect/yourself/database/**  # Room-generated DAOs
+  - '**/generated/**'
+  - '**/*_Generated*.kt'
+  - '**/BuildConfig.java'
