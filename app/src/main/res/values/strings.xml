@@ -32,9 +32,44 @@
     <string name="block_recent_apps_bw_message">Recent apps is blocked to prevent force-stopping or uninstalling.</string>
 
     <!-- Block screen UI -->
-    <string name="why">Why</string>
+    <string name="why">Why am I seeing this?</string>
+    <string name="why_hide">Hide details</string>
     <string name="close">Close</string>
     <string name="play_store_rating_message">Are you finding Protect Yourself helpful? Rate us!</string>
+    <string name="block_screen_motivation_image_cd">Motivation image shown on the block screen</string>
+    <string name="block_screen_why_matched_keyword">Blocked because the URL or content matched keyword: \"%1$s\"</string>
+    <string name="block_screen_image_load_failed">Could not load your motivation image. It may have been moved or deleted.</string>
+
+    <!-- Block screen settings (Advanced Features section) -->
+    <string name="block_screen_image_title">Block screen motivation image</string>
+    <string name="block_screen_image_info">A personal picture shown on the block screen to keep you motivated.</string>
+    <string name="block_screen_image_action_choose">Choose</string>
+    <string name="block_screen_image_action_change">Change</string>
+    <string name="block_screen_image_action_remove">Remove</string>
+    <string name="block_screen_image_preview_content_description">Preview of the selected motivation image</string>
+    <string name="block_screen_image_pick_failed">Could not pick the image. Please try again.</string>
+    <string name="block_screen_image_picked_toast">Motivation image updated.</string>
+    <string name="block_screen_image_cleared_toast">Motivation image removed.</string>
+    <string name="block_screen_image_load_error_toast">The selected image could not be opened. Please choose a different image.</string>
+    <string name="block_screen_image_too_large_toast">Image is too large. Please pick an image smaller than 20 MB.</string>
+
+    <string name="block_screen_message_title">Block screen message</string>
+    <string name="block_screen_message_info">Customise the message shown when content is blocked. Leave empty to use the default.</string>
+    <string name="block_screen_message_action_default">Default</string>
+    <string name="block_screen_message_action_custom">Custom</string>
+    <string name="block_screen_message_dialog_title">Block screen message</string>
+    <string name="block_screen_message_dialog_hint">Type a message that will help you stay on track</string>
+    <string name="block_screen_message_dialog_counter">%1$d / %2$d</string>
+    <string name="block_screen_message_reset_to_default">Reset to default</string>
+    <string name="block_screen_message_saved_toast">Block screen message saved.</string>
+    <string name="block_screen_message_cleared_toast">Block screen message reset to default.</string>
+    <string name="block_screen_message_too_long_toast">Message is too long. Maximum %1$d characters.</string>
+
+    <string name="block_screen_preview_button">Preview block screen</string>
+    <string name="block_screen_preview_toast">Showing preview of your block screen</string>
+
+    <string name="block_screen_redirect_failed_toast">Could not open the redirect URL.</string>
+    <string name="block_screen_play_store_failed_toast">Could not open the Play Store.</string>
 
     <!-- Stop Me -->
     <string name="stop_me">Stop Me</string>

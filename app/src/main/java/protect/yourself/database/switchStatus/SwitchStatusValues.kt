@@ -166,6 +166,43 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
     suspend fun getBlockScreenCountDownSeconds(): Int =
         dao.get(SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET)?.asInt() ?: 0
 
+    /**
+     * Clear the persisted block-screen custom message and its "is set" flag.
+     * After this call, [getBlockScreenCustomMessage] returns null and the
+     * block screen falls back to the localized default message.
+     */
+    suspend fun clearBlockScreenCustomMessage() {
+        dao.upsert(SwitchStatusItemModel(
+            key = SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE,
+            value = "",
+            type = "string"
+        ))
+        dao.upsert(SwitchStatusItemModel(
+            key = SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE_SET,
+            value = "false",
+            type = "boolean"
+        ))
+    }
+
+    /**
+     * Clear the persisted block-screen motivation image path.
+     * After this call, [getBlockScreenStoreImagePath] returns null and the
+     * block screen does not show any motivation image.
+     *
+     * Note: callers that previously took a persistable URI permission for the
+     * old value SHOULD also release that permission via
+     * `contentResolver.releasePersistableUriPermission(...)`. We do not do it
+     * here because SwitchStatusValues does not have access to a
+     * ContentResolver.
+     */
+    suspend fun clearBlockScreenStoreImagePath() {
+        dao.upsert(SwitchStatusItemModel(
+            key = SwitchIdentifier.BLOCK_SCREEN_STORE_IMAGE_PATH,
+            value = "",
+            type = "string"
+        ))
+    }
+
     suspend fun getVpnNotificationCustomMessage(): String? =
         dao.get(SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE)?.asString()?.takeIf { it.isNotBlank() }
 
