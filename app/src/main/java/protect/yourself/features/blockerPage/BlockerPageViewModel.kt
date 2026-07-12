@@ -247,9 +247,97 @@ class BlockerPageViewModel(
                 }
             }
 
-            // TOUCH_ID and DISABLE_FORGOT_PASSWORD should open App Lock setup
-            if (switchKey == SwitchIdentifier.TOUCH_ID_SWITCH || switchKey == SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH) {
-                _navigation.emit(BlockerPageNavigation.OpenAppLockSetup)
+            // TOUCH_ID and DISABLE_FORGOT_PASSWORD toggles.
+            //
+            // DEDUP FIX (v1.0.54): Previously these switches were also rendered
+            // inside AppLockSetupPage — meaning two UIs could write to the same
+            // switch and drift out of sync. The toggles now live ONLY here on
+            // the main settings page (mirrors NopoX 1.0.53 reference behavior).
+            //
+            // Behavior:
+            //   - If turning ON and app lock is NOT set → show error toast,
+            //     do not flip the switch.
+            //   - If turning ON and app lock IS set → persist true.
+            //   - If turning OFF → persist false (always allowed).
+            //
+            // TOUCH_ID also requires biometric hardware to be available — if
+            // the user tries to enable it on a device without biometrics, show
+            // a clear error.
+            if (switchKey == SwitchIdentifier.TOUCH_ID_SWITCH) {
+                if (newValue) {
+                    // Turning ON Touch ID — require app lock first.
+                    val appLockOn = switchValues.isAppLockSwitchOn()
+                    if (!appLockOn) {
+                        Timber.w("TOUCH_ID_SWITCH on rejected — app lock is not enabled")
+                        _navigation.emit(BlockerPageNavigation.ShowToastRes(
+                            protect.yourself.R.string.touch_id_app_lock_not_set_error
+                        ))
+                        return@safeLaunch
+                    }
+                    // Optional: warn if biometric hardware is missing. We still
+                    // persist the switch (the lock screen will fall back to PIN
+                    // entry), but log + toast the user so they know why nothing
+                    // happens at unlock time.
+                    val ctx = getApplication<Application>()
+                    val biometricAvailable = try {
+                        protect.yourself.features.appPasswordPage.canUseBiometric(ctx)
+                    } catch (t: Throwable) {
+                        Timber.w(t, "Biometric availability check failed — assuming unavailable")
+                        false
+                    }
+                    if (!biometricAvailable) {
+                        Timber.w("TOUCH_ID_SWITCH enabled but biometric hardware not available/enrolled")
+                        _navigation.emit(BlockerPageNavigation.ShowToastRes(
+                            protect.yourself.R.string.lock_screen_biometric_not_available
+                        ))
+                    }
+                    switchValues.storeSwitchStatus(SwitchIdentifier.TOUCH_ID_SWITCH, true)
+                    _navigation.emit(BlockerPageNavigation.ShowToast("Touch ID enabled"))
+                    Timber.i("TOUCH_ID_SWITCH → ON")
+                } else {
+                    switchValues.storeSwitchStatus(SwitchIdentifier.TOUCH_ID_SWITCH, false)
+                    _navigation.emit(BlockerPageNavigation.ShowToast("Touch ID disabled"))
+                    Timber.i("TOUCH_ID_SWITCH → OFF")
+                }
+                // Update the local UI state so the switch reflects the new value.
+                _state.update { state ->
+                    state.copy(
+                        settingItems = state.settingItems.map {
+                            if (it.switchKey == switchKey) it.copy(switchValue = newValue)
+                            else it
+                        }
+                    )
+                }
+                return@safeLaunch
+            }
+
+            if (switchKey == SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH) {
+                if (newValue) {
+                    // Turning ON disable forgot password — require app lock first.
+                    val appLockOn = switchValues.isAppLockSwitchOn()
+                    if (!appLockOn) {
+                        Timber.w("DISABLE_FORGOT_PASSWORD_SWITCH on rejected — app lock is not enabled")
+                        _navigation.emit(BlockerPageNavigation.ShowToastRes(
+                            protect.yourself.R.string.disable_forgot_password_app_lock_not_set_error
+                        ))
+                        return@safeLaunch
+                    }
+                    switchValues.storeSwitchStatus(SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH, true)
+                    _navigation.emit(BlockerPageNavigation.ShowToast("Forgot password option disabled"))
+                    Timber.i("DISABLE_FORGOT_PASSWORD_SWITCH → ON")
+                } else {
+                    switchValues.storeSwitchStatus(SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH, false)
+                    _navigation.emit(BlockerPageNavigation.ShowToast("Forgot password option enabled"))
+                    Timber.i("DISABLE_FORGOT_PASSWORD_SWITCH → OFF")
+                }
+                _state.update { state ->
+                    state.copy(
+                        settingItems = state.settingItems.map {
+                            if (it.switchKey == switchKey) it.copy(switchValue = newValue)
+                            else it
+                        }
+                    )
+                }
                 return@safeLaunch
             }
 
@@ -720,9 +808,9 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP, "Blocklist whitelist detected apps", info = "Apps detected via accessibility events", actionLabel = "Manage"))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_APP_LOCK, "App Lock", isSection = true))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.SET_APP_LOCK, "App lock", info = "Require PIN/password/pattern to open app", switchKey = SwitchIdentifier.SET_APP_LOCK_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.TOUCH_ID, "Touch ID (biometric)", info = "Use fingerprint/face to unlock (configure in App Lock)", switchKey = SwitchIdentifier.TOUCH_ID_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.DISABLE_FORGOT_PASSWORD, "Disable Forgot Password", info = "Hide forgot password option (configure in App Lock)", switchKey = SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.SET_APP_LOCK, "Set app lock", info = "Require PIN, password, or pattern to open the app", switchKey = SwitchIdentifier.SET_APP_LOCK_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.TOUCH_ID, "Enable touch ID with app lock", info = "Use fingerprint or face to unlock the app", switchKey = SwitchIdentifier.TOUCH_ID_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.DISABLE_FORGOT_PASSWORD, "Disable the forgot password option", info = "Hide the forgot pin, password, or pattern option on the lock screen", switchKey = SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_FAQ, "Keep Protect Yourself Live", isSection = true))
         add(SettingPageItemModel(SettingPageItemIdentifiers.KEEP_NOPOX_LIVE, "How to keep app running", info = "Battery + performance tips", actionLabel = "View"))

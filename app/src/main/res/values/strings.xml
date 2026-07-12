@@ -125,4 +125,38 @@
     <string name="streak_widget_initial_text">0</string>
     <string name="streak_widget_days_label">days</string>
 
+    <!-- App Lock settings cards (mirrors NopoX 1.0.53 reference) -->
+    <string name="set_app_lock_card_title">Set app lock</string>
+    <string name="set_app_lock_card_info">Require PIN, password, or pattern to open the app</string>
+    <string name="set_app_lock_page_card_message">Choose a lock method to protect this app</string>
+    <string name="set_touch_id_card_title">Enable touch ID with app lock</string>
+    <string name="set_touch_id_card_info">Use fingerprint or face to unlock the app</string>
+    <string name="disable_forgot_password_option">Disable the forgot password option</string>
+    <string name="disable_forgot_password_option_info">The app lock page does not show the forgot pin, password, or pattern option if you have it on.</string>
+    <string name="touch_id_app_lock_not_set_error">To use touch id, you must first enable the app lock feature.</string>
+    <string name="disable_forgot_password_app_lock_not_set_error">First, you need to enable the app lock feature in order to use the disable forgot password option.</string>
+
+    <!-- App Lock screen UI -->
+    <string name="lock_screen_title">Lock screen</string>
+    <string name="lock_screen_enter_pin">Enter your PIN</string>
+    <string name="lock_screen_enter_password">Enter your password</string>
+    <string name="lock_screen_enter_pattern">Enter your pattern</string>
+    <string name="lock_screen_no_lock_enabled">No lock enabled</string>
+    <string name="lock_screen_use_touch_id">Use Touch ID</string>
+    <string name="lock_screen_use_biometric">Use Biometric</string>
+    <string name="lock_screen_forgot_pin">Forgot PIN?</string>
+    <string name="lock_screen_forgot_password">Forgot password?</string>
+    <string name="lock_screen_unlock">Unlock</string>
+    <string name="lock_screen_clear">Clear</string>
+    <string name="lock_screen_biometric_title">Unlock Protect Yourself</string>
+    <string name="lock_screen_biometric_subtitle">Use your fingerprint or face to unlock</string>
+    <string name="lock_screen_biometric_negative">Use PIN/password instead</string>
+    <string name="lock_screen_biometric_not_available">Biometric authentication is not available on this device.</string>
+    <string name="lock_screen_biometric_not_enrolled">No biometrics are enrolled. Please set up fingerprint or face unlock in your device settings first.</string>
+    <string name="lock_screen_biometric_launch_failed">Unable to start biometric unlock. Please enter your %1$s instead.</string>
+    <string name="lock_screen_incorrect_attempt">Incorrect. Attempt #%1$d</string>
+    <string name="lock_screen_unlock_failed">Unlock failed. Please try again.</string>
+    <string name="lock_screen_locked_out">Too many failed attempts. Try again in %1$s.</string>
+    <string name="lock_screen_backspace">Backspace</string>
+
 </resources>

@@ -22,8 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -392,63 +390,41 @@ private fun LockTypeSelector(
 
     Spacer(modifier = Modifier.height(24.dp))
 
-    // Touch ID toggle (only if lock is enabled)
+    // DEDUP FIX (v1.0.54):
+    // The "Touch ID (Biometric)" and "Disable Forgot Password" toggles used to
+    // live BOTH here (inside AppLockSetupPage's LockTypeSelector) AND as their
+    // own cards on the main Blocker settings page. This caused user confusion
+    // — toggling one would not visibly update the other until the page was
+    // reloaded, and the two UIs could drift out of sync.
+    //
+    // The reference APK (NopoX_1.0.53) keeps these as standalone toggle cards
+    // on the main settings page, with error toasts if the user tries to enable
+    // them without an app lock set. We now do the same: the toggles live ONLY
+    // on the Blocker settings page, and this page is used solely for picking
+    // the lock type and entering the credential.
+    //
+    // If a lock is currently enabled, show a small hint card telling the user
+    // where to find the biometric / forgot-password toggles.
     if (state.currentLockType != AppLockType.OFF) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Fingerprint,
-                    contentDescription = null,
-                    tint = BrandOrange
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Biometric & Forgot Password",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Touch ID (Biometric)", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                    Text("Use fingerprint or face to unlock", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                androidx.compose.material3.Switch(
-                    checked = state.touchIdEnabled,
-                    onCheckedChange = { viewModel.toggleTouchId(it) }
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Disable forgot password toggle
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Lock,
-                    contentDescription = null,
-                    tint = BrandOrange
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Disable Forgot Password", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                    Text("Hide the forgot password option on lock screen", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                androidx.compose.material3.Switch(
-                    checked = state.forgotPasswordDisabled,
-                    onCheckedChange = { viewModel.toggleForgotPasswordDisabled(it) }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Enable Touch ID and disable the forgot password option from the App Lock section on the settings page.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
