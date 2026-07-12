@@ -12,6 +12,9 @@ interface SelectedKeywordDao {
     @Query("SELECT * FROM selected_keyword_table WHERE identifier = :identifier ORDER BY keyword")
     fun observeByIdentifier(identifier: String): Flow<List<SelectedKeywordItemModel>>
 
+    @Query("SELECT * FROM selected_keyword_table WHERE identifier = :identifier AND isSelected = 1")
+    suspend fun getSelectedByIdentifier(identifier: String): List<SelectedKeywordItemModel>
+
     @Query("SELECT COUNT(*) FROM selected_keyword_table WHERE identifier = :identifier AND isSelected = 1")
     suspend fun countByIdentifier(identifier: String): Int
 
