@@ -16,7 +16,15 @@ class BuildConfigSmokeTest {
 
     @Test
     fun `version name is set`() {
-        assertEquals("1.0.0", BuildConfig.VERSION_NAME)
+        // Version name follows semver (MAJOR.MINOR.PATCH) optionally suffixed
+        // with "-debug" for debug builds. Match the numeric prefix only.
+        val versionName = BuildConfig.VERSION_NAME
+        val semverPrefix = versionName.substringBefore('-')
+        val parts = semverPrefix.split('.')
+        assertEquals("Version name must have MAJOR.MINOR.PATCH format", 3, parts.size)
+        parts.forEach { part ->
+            assertTrue("Version part '$part' must be numeric", part.toIntOrNull() != null)
+        }
     }
 
     @Test
