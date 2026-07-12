@@ -4,12 +4,10 @@ import android.content.ComponentName
 import android.content.ContentResolver
 import android.content.Context
 import android.content.pm.PackageManager
-import android.content.pm.ServiceInfo
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import protect.yourself.features.blockerPage.service.MyAccessibilityService
 import timber.log.Timber
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * AccessibilityPersistUtils — programmatic persistence of the accessibility
@@ -67,8 +65,6 @@ object AccessibilityPersistUtils {
 
     private val KEY_ENABLED_SERVICES = Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
     private const val KEY_ACCESSIBILITY_ENABLED = "accessibility_enabled"
-    private val URI_ENABLED_SERVICES = Settings.Secure.getUriFor(KEY_ENABLED_SERVICES)
-
     /**
      * The flat ComponentName of our accessibility service, e.g.
      * `"protect.yourself/protect.yourself.features.blockerPage.service.MyAccessibilityService"`.

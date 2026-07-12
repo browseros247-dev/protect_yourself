@@ -132,7 +132,7 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
         //     that don't throw and don't trigger the uncaught exception handler.
         safeInit("AnrWatchdog") {
             crashLogger?.let { logger ->
-                anrWatchdog = AnrWatchdog(this, logger).also { it.start() }
+                anrWatchdog = AnrWatchdog(logger).also { it.start() }
             }
         }
 

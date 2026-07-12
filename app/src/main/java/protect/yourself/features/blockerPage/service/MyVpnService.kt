@@ -420,32 +420,6 @@ class MyVpnService : VpnService() {
             .build()
     }
 
-    private fun refreshNotification() {
-        if (!isRunning && vpnState != VpnState.CONNECTING && vpnState != VpnState.FAILED) return
-        serviceScope.launch {
-            try {
-                val db = AppDatabase.getInstance(this@MyVpnService)
-                val switchValues = SwitchStatusValues(db.switchStatusDao())
-                val isHideNotification = switchValues.isVpnNotificationHideSwitchOn()
-                val customMessage = switchValues.getVpnNotificationCustomMessage()
-                val typeLabel = when (currentConnectionType) {
-                    VpnConnectionTypeIdentifiers.NORMAL -> getString(R.string.vpn_mode_balanced_label)
-                    VpnConnectionTypeIdentifiers.POWERFUL -> getString(R.string.vpn_mode_strict_label)
-                    VpnConnectionTypeIdentifiers.CUSTOM -> getString(R.string.vpn_mode_custom_label)
-                    VpnConnectionTypeIdentifiers.OFF -> ""
-                }
-                val notificationText = if (!customMessage.isNullOrBlank()) {
-                    "$customMessage ($typeLabel)"
-                } else {
-                    "${getString(R.string.vpn_notification_text)} ($typeLabel)"
-                }
-                val notification = buildNotification(notificationText, isHideNotification)
-                val nm = getSystemService(NotificationManager::class.java)
-                nm.notify(NOTIFICATION_ID, notification)
-            } catch (_: Throwable) {}
-        }
-    }
-
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(

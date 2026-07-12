@@ -14,7 +14,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.stopMeDuration.StopMeDurationItemModel
-import protect.yourself.features.blockerPage.service.MyAccessibilityService
 import protect.yourself.features.blockerPage.utils.StopMeManager
 import timber.log.Timber
 import java.util.concurrent.TimeUnit

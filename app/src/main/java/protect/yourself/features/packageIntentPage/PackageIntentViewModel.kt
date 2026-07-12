@@ -203,31 +203,6 @@ class PackageIntentViewModel(
     }
 
     /**
-     * Auto-classify and add an entry based on content (legacy convenience
-     * method, kept for backward compatibility).
-     *
-     *  - If contains "." and no spaces → treated as package name
-     *  - Otherwise → treated as intent/class name
-     *
-     * New code should prefer [addPackageEntry] / [addIntentEntry] for
-     * explicit-type validation.
-     */
-    fun addEntry(input: String) {
-        val trimmed = input.trim()
-        if (trimmed.isBlank()) {
-            viewModelScope.launch {
-                _events.emit(PackageIntentEvent.ValidationFailed(ValidationResult.Blank))
-            }
-            return
-        }
-        if (trimmed.contains(".") && !trimmed.contains(" ")) {
-            addPackageEntry(trimmed)
-        } else {
-            addIntentEntry(trimmed)
-        }
-    }
-
-    /**
      * Delete a package name entry by key.
      */
     fun deletePackage(key: String) {

@@ -1,7 +1,6 @@
 package protect.yourself.features.blockerPage.components
 
 import android.app.Activity
-import android.content.Intent
 import android.net.VpnService
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -65,9 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import protect.yourself.R
 import protect.yourself.database.core.AppDatabase
-import protect.yourself.database.selectedApps.SelectedAppListIdentifier
 import protect.yourself.database.vpnCustomDns.VpnCustomDnsItemModel
-import protect.yourself.features.blockerPage.BlockerPageNavigation
 import protect.yourself.features.blockerPage.BlockerPageViewModel
 import protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers
 import protect.yourself.features.blockerPage.service.MyVpnService

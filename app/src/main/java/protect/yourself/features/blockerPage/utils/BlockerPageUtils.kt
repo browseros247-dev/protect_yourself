@@ -2,7 +2,6 @@ package protect.yourself.features.blockerPage.utils
 
 import android.net.Uri
 import android.util.Patterns
-import timber.log.Timber
 import java.net.IDN
 import java.net.URLDecoder
 import java.text.Normalizer
@@ -312,13 +311,6 @@ class BlockerPageUtils {
     }
 
     /**
-     * Get the device brand identifier.
-     */
-    fun getDeviceBrand(): DeviceBrandIdentifiers.Brand {
-        return DeviceBrandIdentifiers.detect()
-    }
-
-    /**
      * Get the SafeSearch-enforced URL for a given search-engine URL.
      *
      * NopoX behavior: when SafeSearch switch is ON, navigating to an unsafe
@@ -407,21 +399,6 @@ class BlockerPageUtils {
             lower.contains("strict.bing.com") ||
             lower.contains("restrict.youtube.com") ||
             lower.contains("safe.duckduckgo.com")
-    }
-
-    /**
-     * Check if a URL belongs to a search engine that SafeSearch can enforce.
-     */
-    fun isSearchEngineUrl(url: String): Boolean {
-        val lower = url.lowercase(Locale.ROOT)
-        return lower.contains("google.com") ||
-            lower.contains("bing.com") ||
-            lower.contains("youtube.com") ||
-            lower.contains("duckduckgo.com") ||
-            lower.contains("search.yahoo.com") ||
-            lower.contains("yahoo.com") ||
-            lower.contains("yandex.com") ||
-            lower.contains("ya.ru")
     }
 
     companion object {
