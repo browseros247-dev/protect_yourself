@@ -74,6 +74,12 @@ class MyAccessibilityService : AccessibilityService() {
     @Volatile private var cachedNewInstallBlockApps: Set<String> = emptySet()
     @Volatile private var cachedInAppBrowserBlockApps: Set<String> = emptySet()
     @Volatile private var cachedUnsupportedBrowserWhitelist: Set<String> = emptySet()
+    // SET-01 fix: user-selected apps for "Block Settings Page by Title".
+    // The settings-by-title check now ONLY fires for packages in this set
+    // (or known settings packages). Previously it ran on ALL apps, which
+    // caused the main device Settings to be blocked whenever any keyword
+    // matched any window text.
+    @Volatile private var cachedBlockSettingPageByTitleApps: Set<String> = emptySet()
 
     @Volatile private var isPornBlockerOn = true
     @Volatile private var isSafeSearchOn = false
@@ -429,14 +435,12 @@ class MyAccessibilityService : AccessibilityService() {
 
         // ===== Content-blocking checks =====
 
-        // Settings page title blocking (NopoX-style: checks settings pages)
-        if (isBlockSettingsByTitleOn && isSettingsPage(packageName, text)) {
-            launchBlockActivity(packageName, "block_page_default_system_keyword_message")
-            return
-        }
-
-        // Title-based blocking on ANY app (NopoX-style: also checks all app titles)
-        if (isBlockSettingsByTitleOn && isAnyTitleBlocked(packageName, className, text)) {
+        // Settings page title blocking (SET-01 fix: rewritten to match NopoX
+        // 1.0.53 reference). Only fires for settings packages or user-selected
+        // apps, and only matches against the actual toolbar TITLE text — not
+        // the entire window text. This prevents the main device Settings from
+        // being blocked when a keyword happens to appear anywhere on screen.
+        if (isBlockSettingsByTitleOn && isSettingsPage(packageName, event)) {
             launchBlockActivity(packageName, "block_page_default_system_keyword_message")
             return
         }
@@ -1259,46 +1263,138 @@ class MyAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun isSettingsPage(packageName: String, text: String): Boolean {
-        if (packageName != "com.android.settings" && !packageName.contains(".settings")) return false
-        if (cachedSettingTitles.isEmpty()) return false
-        val lower = text.lowercase(Locale.ROOT)
-        return cachedSettingTitles.any { title ->
-            val t = title.lowercase(Locale.ROOT).trim()
-            t.isNotBlank() && lower.contains(t)
-        }
-    }
-
     /**
-     * NopoX-style title-based blocking on ANY app/page.
-     * Checks if the event text contains any blocked title keyword.
-     * This goes beyond settings — it blocks ANY window whose title matches.
+     * Settings page title blocking — rewritten (SET-01 fix) to match the
+     * NopoX 1.0.53 reference implementation.
      *
-     * KB-09 fix: we NO LONGER match against the className. Class names are
-     * implementation details and change between app versions. A keyword like
-     * "settings" matches almost every settings-related class name, causing
-     * false positives (e.g. blocking the user's launcher because its class is
-     * com.android.launcher3.settings.SettingsActivity). We now match against
-     * the event text only — this is what NopoX does and is the correct
-     * behaviour. The className parameter is kept in the signature for backward
-     * compatibility but is ignored.
+     * ## Root cause of the over-blocking bug
+     *
+     * The previous implementation checked the ENTIRE window text (every
+     * accessibility text on screen) against keywords, on ALL apps. When the
+     * user added even a short keyword like "settings", "storage", "battery",
+     * "apps", or "wifi", every app whose window contained that word got
+     * blocked — including the main device Settings app. This effectively
+     * locked the user out of their own device settings.
+     *
+     * ## Correct behavior (NopoX 1.0.53 reference)
+     *
+     * The reference APK's `checkSettingAppKeywordClickBlock` method:
+     *   1. Only runs on packages that are EITHER known settings packages
+     *      (com.android.settings, OEM variants) OR in the user-selected
+     *      `blockSettingPageByTitleApps` list.
+     *   2. Extracts the actual page TITLE from specific Settings-app view
+     *      IDs (collapsing toolbar / alert title), NOT the entire window
+     *      text.
+     *   3. Checks ONLY that title text against keywords.
+     *   4. Uses word-boundary matching via [BlockerPageUtils.isDetectWord],
+     *      not substring `contains`.
+     *
+     * This method now follows that pattern. The main Settings root page
+     * (whose title is just "Settings") will NOT be blocked unless the user
+     * explicitly added "settings" as a keyword — and even then, only the
+     * root page is affected, not every screen on the device.
+     *
+     * @param packageName the foreground app package name
+     * @param event the accessibility event (used to get the source node for
+     *             view-ID lookup)
+     * @return `true` if a settings sub-page title matches a blocked keyword
      */
-    private fun isAnyTitleBlocked(packageName: String, className: String, text: String): Boolean {
+    private fun isSettingsPage(packageName: String, event: AccessibilityEvent): Boolean {
         if (cachedSettingTitles.isEmpty()) return false
         // Don't block our own app
         if (packageName == this.packageName) return false
-        // Don't block system UI (would freeze the phone)
+        // Don't block system UI
         if (packageName == "com.android.systemui") return false
 
-        val lowerText = text.lowercase(Locale.ROOT)
+        // SET-01 fix: only check packages that are EITHER known settings
+        // packages OR in the user-selected blockSettingPageByTitleApps list.
+        // This prevents the check from firing on every app on the device.
+        val isSettingsPkg = isSettingsPackage(packageName)
+        val isUserSelected = cachedBlockSettingPageByTitleApps.contains(packageName)
+        if (!isSettingsPkg && !isUserSelected) return false
 
-        for (title in cachedSettingTitles) {
-            val t = title.lowercase(Locale.ROOT).trim()
-            if (t.isBlank()) continue
-            // KB-09: only check against event text — NOT class name.
-            if (lowerText.contains(t)) return true
+        // SET-02 fix: extract the actual page TITLE from specific Settings
+        // view IDs, not the entire window text. This is what NopoX does.
+        // The collapsing toolbar / extended title / alert title are the views
+        // that display the current settings page name (e.g. "Battery",
+        // "Display", "Apps"). Matching against just these views prevents
+        // false positives from other text on the page.
+        val titleText = extractSettingsPageTitle(event)
+        if (titleText.isBlank()) return false
+
+        // Use isDetectWord for word-boundary matching (NopoX pattern).
+        val utils = BlockerPageUtils.getInstance()
+        val (found, matchedKeyword) = utils.isDetectWord(titleText, cachedSettingTitles)
+        if (found) {
+            Timber.i(
+                "SET: blocking settings page pkg=$packageName — " +
+                    "title='$titleText' matched keyword='$matchedKeyword'"
+            )
+            protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                "SET-Block",
+                "pkg=$packageName title='$titleText' keyword='$matchedKeyword'"
+            )
+            return true
         }
         return false
+    }
+
+    /**
+     * Extract the actual page title text from a Settings-app window by
+     * looking up known toolbar view IDs.
+     *
+     * This mirrors the NopoX 1.0.53 reference, which looks up:
+     *   - `com.android.settings:id/collapsing_appbar_extended_title`
+     *   - `com.android.settings:id/collapsing_toolbar`
+     *   - `android:id/alertTitle`
+     *
+     * The texts from all three are concatenated (comma-separated) so that
+     * keyword matching can match against any of them.
+     */
+    private fun extractSettingsPageTitle(event: AccessibilityEvent): String {
+        val sb = StringBuilder()
+        val sourceNode: AccessibilityNodeInfo? = try {
+            event.source
+        } catch (_: Throwable) { null }
+
+        val viewIds = listOf(
+            "com.android.settings:id/collapsing_appbar_extended_title",
+            "com.android.settings:id/collapsing_toolbar",
+            "android:id/alertTitle"
+        )
+
+        for (viewId in viewIds) {
+            try {
+                val nodes = sourceNode?.findAccessibilityNodeInfosByViewId(viewId)
+                if (nodes != null) {
+                    for (node in nodes) {
+                        val t = node.text?.toString()
+                        if (!t.isNullOrBlank()) {
+                            if (sb.isNotEmpty()) sb.append(',')
+                            sb.append(t)
+                        }
+                    }
+                }
+            } catch (_: Throwable) {}
+        }
+
+        // Fallback: if no toolbar title was found via view IDs, use the
+        // event.text (the event's own text payload). This is much narrower
+        // than the previous "entire window text" approach — event.text
+        // typically contains only the title/label of the window that
+        // changed, not every piece of text on screen.
+        if (sb.isEmpty()) {
+            try {
+                event.text?.forEach { t ->
+                    if (!t.isNullOrBlank()) {
+                        if (sb.isNotEmpty()) sb.append(',')
+                        sb.append(t)
+                    }
+                }
+            } catch (_: Throwable) {}
+        }
+
+        return sb.toString()
     }
 
     /**
@@ -1888,6 +1984,12 @@ class MyAccessibilityService : AccessibilityService() {
                 .getSelectedByIdentifier(SelectedKeywordIdentifier.SETTING_KEYWORDS_LIST_WORDS.value)
                 .map { it.keyword }
                 .filter { it.isNotBlank() }
+            // SET-01 fix: load the user-selected app list for settings-by-title
+            // blocking. The check now ONLY fires for these apps (or known
+            // settings packages), not ALL apps.
+            cachedBlockSettingPageByTitleApps = db.selectedAppsListDao()
+                .getSelectedByIdentifier(SelectedAppListIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_APPS.value)
+                .map { it.packageName }.toSet()
 
             // Load package + intent name blocking data
             isBlockPackageIntentOn = switchValues.isBlockPackageIntentSwitchOn()
