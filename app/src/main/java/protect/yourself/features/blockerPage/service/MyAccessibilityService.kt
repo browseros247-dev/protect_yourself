@@ -59,6 +59,23 @@ class MyAccessibilityService : AccessibilityService() {
 
     @Volatile private var isPornBlockerOn = true
     @Volatile private var isSafeSearchOn = false
+
+    // PB-03 fix (v1.0.55): last URL processed by handleUrlDetected, used to
+    // avoid re-processing the SAME url on every accessibility event.
+    //
+    // NopoX 1.0.53 reference (decompiled MyAccessibilityService.checkPornUrlSearch):
+    //   private static String pornPreviousUrl = "";
+    //   ...
+    //   if (!Intrinsics.areEqual(pornPreviousUrl, lowerCase)) { ... }
+    //   pornPreviousUrl = lowerCase;
+    //
+    // Browsers fire TYPE_WINDOW_CONTENT_CHANGED 5-10 times per page load as
+    // the DOM renders. Without this guard, the same url is matched against
+    // 1189+ keywords on EVERY event — wasteful, and it re-launches the
+    // block overlay after the user dismisses it (because the next content
+    // change re-triggers the match). The guard is reset to "" when a block
+    // fires so the next navigation is checked fresh.
+    @Volatile private var pornPreviousUrl: String = ""
     @Volatile private var isBlockNewInstallOn = false
     @Volatile private var isBlockInAppBrowsersOn = false
     @Volatile private var isBlockUnsupportedBrowsersOn = false
@@ -411,10 +428,12 @@ class MyAccessibilityService : AccessibilityService() {
     // ===== Content change handler =====
 
     private fun handleContentChange(packageName: String, event: AccessibilityEvent) {
-        // URL scraping happens if EITHER porn blocker OR SafeSearch is on.
-        // Previously, this was gated behind isPornBlockerOn alone, which meant
-        // SafeSearch enforcement stopped working if the user turned off the
-        // Porn Blocker but left SafeSearch on.
+        // PB-01/PB-02 fix (v1.0.55): URL scraping happens if EITHER porn
+        // blocker OR SafeSearch is on. Previously, this was gated behind
+        // isPornBlockerOn alone, which meant SafeSearch enforcement stopped
+        // working if the user turned off the Porn Blocker but left SafeSearch
+        // on. The combined gate is correct — but the individual checks BELOW
+        // must each respect their own switch (see PB-01/PB-02 inline comments).
         if (!isPornBlockerOn && !isSafeSearchOn) return
 
         // Scrape URLs from any detected browser. The "supported browsers" concept
@@ -424,6 +443,13 @@ class MyAccessibilityService : AccessibilityService() {
             val url = extractUrlFromEvent(event, packageName)
             if (url != null && url.isNotBlank()) {
                 handleUrlDetected(packageName, url)
+            } else {
+                // PB-04: log when URL extraction fails for a known browser so
+                // users can diagnose "why isn't this browser being blocked?".
+                // Common causes: browser updated and changed its url bar view
+                // id, or the browser is a custom ROM variant. Verbose level so
+                // it doesn't spam release logs.
+                Timber.v("PB-04: browser pkg=$packageName detected but URL extraction returned null — url bar view id may have changed")
             }
             return  // URL scrape takes priority — don't also do content-text match
         }
@@ -434,10 +460,19 @@ class MyAccessibilityService : AccessibilityService() {
         // pornographic text in their UI (e.g. a search-results page in a
         // social app) even though we can't extract a URL.
         //
+        // PB-02 fix (v1.0.55): this check is now GATED by isPornBlockerOn.
+        // Previously it ran whenever EITHER porn blocker OR SafeSearch was on,
+        // which meant turning OFF the Porn Blocker but leaving SafeSearch ON
+        // still blocked non-browser apps based on keywords. That contradicted
+        // the user's explicit switch toggle. NopoX 1.0.53 gates this exact
+        // branch by `pornBlock` alone (decompiled checkPornClickedText line
+        // 978: `if (pornBlock) { ... }`).
+        //
         // We only do this for apps that are NOT in the supported-browser list
         // (browsers are handled by URL scraping above) and NOT system UI / our
         // own app. We also skip if the event is stale (KB-07 fix).
-        if (packageName != this.packageName &&
+        if (isPornBlockerOn &&
+            packageName != this.packageName &&
             packageName != "com.android.systemui" &&
             !isStaleEvent(event)
         ) {
@@ -446,6 +481,7 @@ class MyAccessibilityService : AccessibilityService() {
                 val utils = BlockerPageUtils.getInstance()
                 val (found, matchedKeyword) = utils.isDetectWord(text, cachedBlockKeywords)
                 if (found) {
+                    Timber.i("PB-02: content-text match for pkg=$packageName keyword=$matchedKeyword (pornBlocker ON)")
                     launchBlockActivity(
                         packageName,
                         "block_page_default_porn_blocker_message",
@@ -461,6 +497,35 @@ class MyAccessibilityService : AccessibilityService() {
     private fun handleUrlDetected(packageName: String, url: String) {
         val utils = BlockerPageUtils.getInstance()
         val decoded = utils.decodeText(url)
+
+        // PB-03 fix (v1.0.55): anti-loop guard. Browsers fire
+        // TYPE_WINDOW_CONTENT_CHANGED 5-10× per page load as the DOM renders,
+        // each carrying the SAME url. Without this guard, the same url is
+        // matched against 1189+ keywords on every event AND the block overlay
+        // re-launches after the user dismisses it (next content-change event
+        // re-triggers the match). NopoX 1.0.53 uses the exact same pattern
+        // (decompiled MyAccessibilityService.checkPornUrlSearch line 1291:
+        // `if (!Intrinsics.areEqual(pornPreviousUrl, lowerCase)) { ... }`).
+        //
+        // The guard is reset to "" in TWO places:
+        //   1. When a block fires (so the next navigation is checked fresh)
+        //   2. When refreshBlockingConfig runs (so toggling the switch takes
+        //      effect immediately for the next event)
+        if (pornPreviousUrl == decoded) {
+            // Already processed this exact URL — skip to avoid re-block loop.
+            // Verbose level because this fires on every content-change event.
+            Timber.v("PB-03: skipping duplicate url=$decoded (pornPreviousUrl match)")
+            return
+        }
+
+        // PB-03: defensive guard against absurdly long URLs (data: URIs,
+        // base64 blobs). Matching 1189 keywords against an 8MB string is slow
+        // and pointless — no real navigation URL is this long.
+        if (decoded.length > MAX_URL_LENGTH_FOR_MATCH) {
+            Timber.v("PB-03: url too long (${decoded.length} > $MAX_URL_LENGTH_FOR_MATCH) — skipping match")
+            pornPreviousUrl = decoded
+            return
+        }
 
         // ============================================================
         // SS-03 fix (v1.0.54): SafeSearch runs FIRST, BEFORE whitelist
@@ -506,8 +571,52 @@ class MyAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Whitelist check (overrides block)
+        // Whitelist check (overrides block).
+        //
+        // PB-01 note (v1.0.55): the whitelist check runs whether or not the
+        // Porn Blocker is on, because SafeSearch also respects the whitelist
+        // (a whitelisted URL should not be redirected, since the user
+        // explicitly approved it). This matches NopoX 1.0.53 behaviour:
+        // the whitelist check is INSIDE `if (pornBlock || blockAllWebsite)`
+        // in NopoX — but only because SafeSearch in NopoX does NOT continue
+        // to the whitelist check (it returns after the redirect). In our
+        // rebuild, SafeSearch does NOT return (intentionally, per SS-03),
+        // so we must run the whitelist check here even when Porn Blocker
+        // is off, to prevent SafeSearch from redirecting whitelisted URLs.
         if (utils.isSafeUrl(decoded, cachedWhitelistKeywords)) {
+            // PB-03: track the whitelisted URL so we don't re-run the
+            // (relatively expensive) isSafeUrl match on every content-change
+            // event for the same URL.
+            pornPreviousUrl = decoded
+            Timber.v("PB-01: url whitelisted, skipping block check: $decoded")
+            return
+        }
+
+        // ============================================================
+        // PB-01 fix (v1.0.55): Block keyword match is now GATED by
+        // isPornBlockerOn. Previously this ran unconditionally whenever
+        // EITHER porn blocker OR SafeSearch was on, which meant turning
+        // OFF the Porn Blocker but leaving SafeSearch ON still blocked
+        // URLs based on keywords. That contradicted the user's explicit
+        // switch toggle and is the primary root cause of "Porn Blocker
+        // setting is not functioning correctly" reports.
+        //
+        // NopoX 1.0.53 reference (decompiled checkPornUrlSearch line 1305):
+        //   if (pornBlock || blockAllWebsite) {
+        //       ... whitelist check ...
+        //       ... blockAllWebsite check ...
+        //       ... block keyword check ...
+        //   }
+        //
+        // The rebuild does not have a blockAllWebsite feature, so the
+        // gate reduces to `if (pornBlock)`. We keep the gate explicit
+        // so it's obvious that block keyword matching is porn-blocker-only.
+        // ============================================================
+        if (!isPornBlockerOn) {
+            // Porn Blocker is OFF — only SafeSearch (if on) ran above.
+            // Track the URL so we don't re-process it, then return.
+            pornPreviousUrl = decoded
+            Timber.v("PB-01: porn blocker OFF — skipping keyword match for url=$decoded")
             return
         }
 
@@ -515,6 +624,14 @@ class MyAccessibilityService : AccessibilityService() {
         // KB-19: capture the matched keyword and pass it to the block screen.
         val (found, matchedKeyword) = utils.matchKeywordInUrl(decoded, cachedBlockKeywords)
         if (found) {
+            // PB-03: RESET the previous-url tracker so the next navigation
+            // (after the user dismisses the block screen) is checked fresh.
+            // If we left it set to `decoded`, the same URL would be skipped
+            // next time — but if the user navigates AWAY and comes BACK to
+            // the same URL, we WANT to re-block it. NopoX sets
+            // `pornPreviousUrl = ""` after blocking (line 1343/1348).
+            pornPreviousUrl = ""
+            Timber.i("PB-01: block keyword match for pkg=$packageName url=$decoded keyword=$matchedKeyword (pornBlocker ON)")
             launchBlockActivity(
                 packageName,
                 "block_page_default_porn_blocker_message",
@@ -522,6 +639,12 @@ class MyAccessibilityService : AccessibilityService() {
             )
             return
         }
+
+        // PB-03: no match — track the URL so we don't re-match 1189 keywords
+        // against it on every content-change event. NopoX sets
+        // `pornPreviousUrl = lowerCase` at the end of checkPornUrlSearch
+        // (line 1354).
+        pornPreviousUrl = decoded
     }
 
     // ===== SafeSearch enforcement =====
@@ -1593,7 +1716,22 @@ class MyAccessibilityService : AccessibilityService() {
     ) {
         try {
             // Switches
+            // PB-04 fix (v1.0.55): capture the OLD porn-blocker state before
+            // overwriting it, so we can log state transitions. This is the
+            // primary diagnostic signal for "Porn Blocker not functioning"
+            // reports — the log shows exactly when the switch changed and
+            // what the new value is.
+            val oldPornBlockerOn = isPornBlockerOn
             isPornBlockerOn = switchValues.isPornBlockerSwitchOn()
+            if (oldPornBlockerOn != isPornBlockerOn) {
+                Timber.i("PB-04: porn blocker switch transition: $oldPornBlockerOn → $isPornBlockerOn — resetting pornPreviousUrl")
+                // PB-03: reset the previous-url tracker when the switch
+                // changes so the next URL is checked fresh. Otherwise, if
+                // the user toggles the switch while on the same page, the
+                // anti-loop guard would skip the URL even though the
+                // blocking decision should change.
+                pornPreviousUrl = ""
+            }
             isSafeSearchOn = switchValues.isSafeSearchSwitchOn()
             isBlockNewInstallOn = switchValues.isBlockNewInstallAppsSwitchOn()
             isBlockInAppBrowsersOn = switchValues.isBlockInAppBrowsersSwitchOn()
@@ -1661,6 +1799,7 @@ class MyAccessibilityService : AccessibilityService() {
                 "${cachedWhitelistKeywords.size} whitelist keywords, " +
                 "${cachedBlockApps.size} block apps, " +
                 "${cachedUnsupportedBrowserWhitelist.size} whitelisted browsers, " +
+                "pornBlockerOn=$isPornBlockerOn, safeSearchOn=$isSafeSearchOn, " +
                 "unsupportedBrowsersOn=$isBlockUnsupportedBrowsersOn, " +
                 "packageIntentOn=$isBlockPackageIntentOn")
         } catch (t: Throwable) {
@@ -1712,6 +1851,12 @@ class MyAccessibilityService : AccessibilityService() {
         // for the safe URL to load and trigger its own accessibility event
         // (which isSafeSearchUrl() then recognises, breaking the loop).
         private const val SAFE_SEARCH_THROTTLE_MS = 2000L
+
+        // PB-03: max length of a URL we will run keyword matching on. URLs
+        // longer than this are almost certainly not real navigation events
+        // (they tend to be data: URIs or huge base64 blobs) and matching
+        // against them is both slow and prone to false positives.
+        private const val MAX_URL_LENGTH_FOR_MATCH = 8192
 
 
         // Known major browsers that are considered "supported".
