@@ -1428,19 +1428,45 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Detect if the user is on the app info page for our package.
+     * Detect if the user is on the app info page for OUR package.
      * This is the page where the Uninstall button lives.
      *
-     * UP-04/UP-05/UP-07 fix: enhanced with:
-     *   - try/catch around every branch (NopoX pattern — safe fallback is to
-     *     not block, because a false positive on a legitimate Settings page
-     *     is worse than a false negative)
-     *   - OEM-specific class name checks (Samsung, MIUI, Huawei, OnePlus, OPLUS)
-     *   - Node-tree text traversal via [safeCollectText] as a fallback when
-     *     the event text is empty (some OEMs don't populate event.text)
-     *   - App-name text search is NO LONGER gated behind a class-name guard
-     *     (UP-18 fix) — the class-name guard defeated the purpose because
-     *     many OEMs use custom class names that don't contain "appinfo"
+     * PU-01 fix (scoped to our app only): rewritten to match the NopoX 1.0.53
+     * reference implementation. The previous implementation blocked ANY app's
+     * app-info / device-admin / accessibility page because it matched on
+     * class-name patterns ("appinfo", "appdetails") and device-admin text
+     * patterns WITHOUT requiring our app name to be present in the page text.
+     *
+     * ## Root cause of the over-blocking
+     *
+     * The old code had three independent triggers that each returned `true`
+     * without checking whether the page was actually about OUR app:
+     *   1. ClassName contains "appinfo" / "appdetails" → block (any app's info page)
+     *   2. ClassName contains "appinfo" + device-admin text → block (any app's
+     *      device admin page)
+     *   3. Force-stop text present + className contains "appinfo" → block
+     *      (any app's info page, since every info page has a Force stop button)
+     *
+     * ## Correct behavior (NopoX 1.0.53 reference)
+     *
+     * The reference's `checkPreventUninstall` method:
+     *   - Computes `appNameInText = eventText.contains(appName)` FIRST.
+     *   - For app-info / device-admin / force-stop checks, it REQUIRES
+     *     `appNameInText` to be true. If our app name is NOT in the page
+     *     text, the check does not fire — even if the className matches
+     *     "appinfo" or the text contains "device admin".
+     *   - For the accessibility-page check, it looks up our app's
+     *     accessibility service description text (a long distinctive string
+     *     from R.string.accessibility_service_description) via
+     *     `accessibilityNodeInfoByText`. This only matches the accessibility
+     *     settings page that lists OUR service, not other apps' entries.
+     *
+     * This method now follows that pattern. Every check requires our app
+     * name (or our accessibility description) to be present in the page text.
+     *
+     * UP-04/UP-05/UP-07: retained try/catch around every branch (NopoX
+     * pattern — safe fallback is to NOT block, because a false positive on
+     * a legitimate Settings page is worse than a false negative).
      */
     private fun isAppInfoPage(packageName: String, className: String, text: String): Boolean {
         return try {
@@ -1458,101 +1484,101 @@ class MyAccessibilityService : AccessibilityService() {
         val lower = text.lowercase(Locale.ROOT)
         val lowerClass = className.lowercase(Locale.ROOT)
 
-        // ===== Check 1: class name indicates an app info / installed app details page =====
-        // Covers AOSP + most OEMs
-        if (lowerClass.contains("appinfodashboard") ||
-            lowerClass.contains("installedappdetails") ||
-            lowerClass.contains("appinfoactivity") ||
-            lowerClass.contains("appinfopage") ||
-            lowerClass.contains("appinfo")
-        ) {
-            return true
-        }
+        // PU-01 fix: compute appNameInText ONCE. Every check below requires
+        // this to be true. This ensures we ONLY block pages that are actually
+        // about OUR app — never other apps' info / device-admin / accessibility
+        // pages.
+        val appName = try {
+            getString(protect.yourself.R.string.app_name).lowercase(Locale.ROOT)
+        } catch (_: Throwable) { "" }
+        val appNameInText = appName.isNotBlank() && lower.contains(appName)
 
-        // OEM-specific class names (UP-07 fix)
-        // Samsung: AppInfoDashboardActivity, InstalledAppDetailsActivity
-        // MIUI: AppInfoActivity, AppDetailsActivity
-        // Huawei: AppInfoActivity, AppDetailsActivity
-        // OnePlus/OPLUS: AppInfoActivity
-        if (lowerClass.contains("appdetails") ||
-            lowerClass.contains("appdetail") ||
-            lowerClass.contains("installedappdetails") ||
-            lowerClass.contains("appinfodashboard")
-        ) {
-            return true
-        }
-
-        // ===== Check 2: text contains our app name =====
-        // UP-18 fix: NO class-name guard. The guard was defeating the purpose
-        // because many OEMs use custom class names. The risk of false positives
-        // (matching "Protect Yourself" on an unrelated settings page) is low
-        // because our app name is distinctive.
-        // AB-03 fix (from main): to further reduce false positives, require an
-        // uninstall-related keyword in addition to the app name.
-        try {
-            val appName = getString(protect.yourself.R.string.app_name).lowercase(Locale.ROOT)
-            if (appName.isNotBlank() && lower.contains(appName)) {
-                // Additional check: the text must ALSO contain an uninstall-related
-                // keyword, to avoid matching our app name on unrelated pages
-                // (e.g. accessibility settings mentioning our app).
-                if (lower.contains("uninstall") ||
-                    lower.contains("disable") ||
-                    lower.contains("force stop") ||
-                    lower.contains("forcestop") ||
-                    lower.contains("deactivate") ||
-                    lower.contains("remove") ||
-                    lower.contains("clear data") ||
-                    lower.contains("cleardata") ||
-                    lower.contains("storage") ||
-                    lower.contains("permissions")
-                ) {
-                    return true
-                }
+        // ===== Check 1: app info page for OUR app =====
+        // NopoX reference: requires appNameInText AND (className contains
+        // "appinfo"/"appdetails" OR an uninstall-related keyword is present).
+        // We NO LONGER block solely on className — that blocked every app's
+        // info page.
+        if (appNameInText) {
+            // The className check confirms we're on an app-info-style page.
+            val isAppInfoClass = lowerClass.contains("appinfodashboard") ||
+                lowerClass.contains("installedappdetails") ||
+                lowerClass.contains("appinfoactivity") ||
+                lowerClass.contains("appinfopage") ||
+                lowerClass.contains("appinfo") ||
+                lowerClass.contains("appdetails") ||
+                lowerClass.contains("appdetail")
+            // OR the text contains an uninstall-related keyword (some OEMs
+            // use custom class names but the Uninstall button text is always
+            // present on the app info page).
+            val hasUninstallKeyword = lower.contains("uninstall") ||
+                lower.contains("disable") ||
+                lower.contains("force stop") ||
+                lower.contains("forcestop") ||
+                lower.contains("deactivate") ||
+                lower.contains("remove") ||
+                lower.contains("clear data") ||
+                lower.contains("cleardata") ||
+                lower.contains("storage") ||
+                lower.contains("permissions")
+            if (isAppInfoClass || hasUninstallKeyword) {
+                Timber.i("PU: blocking app-info page for our app (pkg=$packageName class=$className)")
+                return true
             }
-        } catch (_: Throwable) {}
+        }
 
-        // ===== Check 3: device admin text patterns =====
-        // These match the Device Admin deactivation page (which is where the
-        // user goes to deactivate our Device Admin before uninstalling).
-        // AB-03 fix (from main): gate behind app-info class-name check to avoid
-        // matching "admin"/"deactivate" on unrelated settings pages.
-        if (lowerClass.contains("appinfo") || lowerClass.contains("appdetails") ||
-            lowerClass.contains("appinfodashboard") || lowerClass.contains("installedappdetails")) {
+        // ===== Check 2: device admin deactivation page for OUR app =====
+        // NopoX reference: requires appNameInText AND device-admin text
+        // patterns. We NO LONGER block device-admin pages for other apps.
+        // The device admin deactivation page shows our app name + "deactivate"
+        // + "device admin" — all three are required.
+        if (appNameInText) {
             val deviceAdminTexts = BlockerPageUtils.DEVICE_ADMIN_TEXTS_TO_MATCH
             for (matchText in deviceAdminTexts) {
                 try {
                     if (lower.contains(matchText.lowercase(Locale.ROOT))) {
+                        Timber.i("PU: blocking device-admin page for our app (pkg=$packageName text='$matchText')")
                         return true
                     }
                 } catch (_: Throwable) {}
             }
         }
 
-        // ===== Check 4: force-stop text patterns =====
-        // The "Force stop" button appears on every app info page.
-        val forceStopTexts = BlockerPageUtils.FORCE_STOP_TEXTS_TO_MATCH
-        for (matchText in forceStopTexts) {
-            try {
-                if (lower.contains(matchText.lowercase(Locale.ROOT))) {
-                    // Force-stop text alone isn't enough — it appears on every
-                    // app info page. Only match if our app name is also present
-                    // OR if we're on a settings page with an app-info class name.
-                    try {
-                        val appName = getString(protect.yourself.R.string.app_name).lowercase(Locale.ROOT)
-                        if (appName.isNotBlank() && lower.contains(appName)) {
-                            return true
-                        }
-                    } catch (_: Throwable) {}
-                    if (lowerClass.contains("appinfo") || lowerClass.contains("appdetail")) {
+        // ===== Check 3: force-stop on OUR app's info page =====
+        // NopoX reference: force-stop text alone is NOT enough — it appears
+        // on every app info page. Only block if our app name is also present.
+        // (appNameInText is already checked here.)
+        if (appNameInText) {
+            val forceStopTexts = BlockerPageUtils.FORCE_STOP_TEXTS_TO_MATCH
+            for (matchText in forceStopTexts) {
+                try {
+                    if (lower.contains(matchText.lowercase(Locale.ROOT))) {
+                        Timber.i("PU: blocking force-stop on our app's info page (pkg=$packageName)")
                         return true
                     }
-                }
-            } catch (_: Throwable) {}
+                } catch (_: Throwable) {}
+            }
         }
+
+        // ===== Check 4: accessibility settings page for OUR service =====
+        // NopoX reference: looks up our accessibility service DESCRIPTION text
+        // (a long distinctive string from R.string.accessibility_service_description)
+        // via accessibilityNodeInfoByText. The description appears ONLY on the
+        // accessibility settings entry for OUR service — not on other apps'
+        // entries. This is the key scoped check for the accessibility page.
+        // We match the description text against the event text directly.
+        try {
+            val accDesc = getString(protect.yourself.R.string.accessibility_service_description)
+                .lowercase(Locale.ROOT)
+            if (accDesc.isNotBlank() && lower.contains(accDesc)) {
+                Timber.i("PU: blocking accessibility settings page for our service (pkg=$packageName)")
+                return true
+            }
+        } catch (_: Throwable) {}
 
         // ===== Check 5: node-tree text traversal (fallback) =====
         // Some OEMs don't populate event.text. Walk the node tree to collect
-        // text and re-check.
+        // text and re-check. STILL requires our app name — never blocks other
+        // apps' pages.
         if (lower.isBlank()) {
             try {
                 val root = rootInActiveWindow ?: return false
@@ -1560,11 +1586,19 @@ class MyAccessibilityService : AccessibilityService() {
                 safeCollectText(root, sb, 0, 5)
                 val nodeText = sb.toString().lowercase(Locale.ROOT)
                 if (nodeText.isNotBlank()) {
+                    if (appName.isNotBlank() && nodeText.contains(appName) &&
+                        (nodeText.contains("uninstall") || nodeText.contains("force stop") ||
+                            nodeText.contains("deactivate"))
+                    ) {
+                        Timber.i("PU: blocking (node-tree fallback) for our app (pkg=$packageName)")
+                        return true
+                    }
+                    // Also check accessibility description in node tree
                     try {
-                        val appName = getString(protect.yourself.R.string.app_name).lowercase(Locale.ROOT)
-                        if (appName.isNotBlank() && nodeText.contains(appName) &&
-                            (nodeText.contains("uninstall") || nodeText.contains("force stop") ||
-                                nodeText.contains("deactivate"))) {
+                        val accDesc = getString(protect.yourself.R.string.accessibility_service_description)
+                            .lowercase(Locale.ROOT)
+                        if (accDesc.isNotBlank() && nodeText.contains(accDesc)) {
+                            Timber.i("PU: blocking accessibility page (node-tree fallback) for our service (pkg=$packageName)")
                             return true
                         }
                     } catch (_: Throwable) {}
