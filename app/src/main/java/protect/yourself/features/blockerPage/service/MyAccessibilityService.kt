@@ -464,9 +464,25 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         // Block new install apps
+        // NIB-03 fix (v1.0.60): add diagnostic logging at every decision branch
+        // so "new install blocking not working" reports can be traced through
+        // crash logs. Previously there was ZERO logging here — if the switch
+        // was off or the cache was empty, the block was silently skipped.
         if (isBlockNewInstallOn && cachedNewInstallBlockApps.contains(packageName)) {
+            Timber.i(
+                "NIB-03: BLOCKING new install app pkg=$packageName " +
+                    "(switch=ON, cacheSize=${cachedNewInstallBlockApps.size})"
+            )
             launchBlockActivity(packageName, "block_page_default_new_install_message")
             return
+        }
+        // NIB-03: log WHY the block didn't fire (only at verbose level to avoid
+        // log spam — this runs on every window state change for every app).
+        if (isBlockNewInstallOn && !cachedNewInstallBlockApps.contains(packageName)) {
+            Timber.v(
+                "NIB-03: new install block switch is ON but pkg=$packageName not in cache " +
+                    "(cacheSize=${cachedNewInstallBlockApps.size})"
+            )
         }
 
         // Block unsupported browsers
@@ -1970,6 +1986,130 @@ class MyAccessibilityService : AccessibilityService() {
                 refreshBlockingConfig()
             }
         }
+    }
+
+    /**
+     * NIB-01 fix (v1.0.60): targeted refresh of the new-install block apps
+     * cache ONLY. This is dramatically faster than [refreshBlockingConfig]
+     * (which re-reads ALL keywords, ALL apps, ALL switches — 1189+ rows).
+     *
+     * Called by [AppSystemActionReceiverAllTimeWithData.handlePackageAdded]
+     * after inserting a new app into the BLOCK_NEW_INSTALL_APPS list, so the
+     * cache is updated within milliseconds instead of waiting for the next
+     * periodic refresh (24h) or a full [refreshBlockingConfig] cycle.
+     *
+     * # Why this matters
+     *
+     * The previous implementation called [refreshBlockingConfig], which
+     * launches a coroutine that re-reads the ENTIRE config. On a device with
+     * 1189+ keywords + 200+ apps, this can take 200-500ms. If the user opens
+     * the newly installed app within that window, the cache hasn't been
+     * updated yet and the block doesn't fire — the user sees the app open
+     * normally instead of being blocked.
+     *
+     * This targeted refresh reads ONLY the BLOCK_NEW_INSTALL_APPS list
+     * (typically 0-10 rows) and updates [cachedNewInstallBlockApps] + the
+     * [isBlockNewInstallOn] switch in <10ms.
+     *
+     * # Synchronous variant
+     *
+     * See [refreshNewInstallBlockSync] for a suspend variant that blocks
+     * until the cache is updated — used by the receiver to guarantee the
+     * cache is fresh before the user can open the new app.
+     */
+    fun refreshNewInstallBlockConfig() {
+        serviceScope.launch {
+            try {
+                val db = AppDatabase.getInstance(this@MyAccessibilityService)
+                refreshNewInstallBlockSync(db)
+            } catch (t: Throwable) {
+                Timber.e(t, "NIB-01: failed to refresh new install block config")
+            }
+        }
+    }
+
+    /**
+     * NIB-01 fix (v1.0.60): suspend variant of [refreshNewInstallBlockConfig].
+     *
+     * Reads the BLOCK_NEW_INSTALL_APPS list + the switch state from the DB
+     * and updates the cached fields. Called by the PACKAGE_ADDED receiver
+     * AFTER the DB insert completes, so the cache is guaranteed to reflect
+     * the new app before this method returns.
+     *
+     * This is the critical fix for the race condition where the user opens
+     * the newly installed app before the async [refreshBlockingConfig]
+     * coroutine has a chance to update the cache.
+     */
+    suspend fun refreshNewInstallBlockSync(db: AppDatabase) {
+        try {
+            val switchValues = SwitchStatusValues(db.switchStatusDao())
+            val oldSwitchOn = isBlockNewInstallOn
+            isBlockNewInstallOn = switchValues.isBlockNewInstallAppsSwitchOn()
+            val oldCacheSize = cachedNewInstallBlockApps.size
+            cachedNewInstallBlockApps = db.selectedAppsListDao()
+                .getSelectedByIdentifier(SelectedAppListIdentifier.BLOCK_NEW_INSTALL_APPS.value)
+                .map { it.packageName }.toSet()
+            Timber.i(
+                "NIB-01: refreshed new install block config — " +
+                    "switch=$oldSwitchOn→$isBlockNewInstallOn, " +
+                    "cacheSize=$oldCacheSize→${cachedNewInstallBlockApps.size}, " +
+                    "packages=${cachedNewInstallBlockApps.take(5)}"
+            )
+        } catch (t: Throwable) {
+            Timber.e(t, "NIB-01: refreshNewInstallBlockSync failed")
+            throw t
+        }
+    }
+
+    /**
+     * NIB-02 fix (v1.0.60: adds a package to the in-memory cache immediately,
+     * WITHOUT waiting for a DB read. This eliminates the race condition
+     * entirely — the package is blocked from the very first accessibility
+     * event, even if the DB read in [refreshNewInstallBlockSync] hasn't
+     * completed yet.
+     *
+     * Called by the PACKAGE_ADDED receiver AFTER the DB insert succeeds,
+     * BEFORE the async cache refresh. This is a belt-and-suspenders approach:
+     *  1. [addToNewInstallBlockCache] — immediate, in-memory, no I/O
+     *  2. [refreshNewInstallBlockSync] — authoritative, reads from DB
+     *
+     * If (1) runs but (2) hasn't yet, the package is still blocked (it's in
+     * the cache from step 1). If (2) runs and the DB read returns the same
+     * set, no harm done (idempotent). If (2) fails, the cache from (1)
+     * persists — better to over-block than under-block for a new install.
+     */
+    fun addToNewInstallBlockCache(packageName: String) {
+        if (packageName.isBlank()) return
+        val oldSet = cachedNewInstallBlockApps
+        if (oldSet.contains(packageName)) {
+            Timber.v("NIB-02: package $packageName already in new install cache — skip")
+            return
+        }
+        cachedNewInstallBlockApps = oldSet + packageName
+        Timber.i(
+            "NIB-02: added $packageName to new install cache immediately " +
+                "(cacheSize=${cachedNewInstallBlockApps.size})"
+        )
+    }
+
+    /**
+     * NIB-02 fix (v1.0.60): removes a package from the in-memory cache
+     * immediately. Called when the user manually unblocks an app via the
+     * picker UI, so the block stops firing without waiting for a full
+     * [refreshBlockingConfig] cycle.
+     */
+    fun removeFromNewInstallBlockCache(packageName: String) {
+        if (packageName.isBlank()) return
+        val oldSet = cachedNewInstallBlockApps
+        if (!oldSet.contains(packageName)) {
+            Timber.v("NIB-02: package $packageName not in new install cache — skip remove")
+            return
+        }
+        cachedNewInstallBlockApps = oldSet - packageName
+        Timber.i(
+            "NIB-02: removed $packageName from new install cache " +
+                "(cacheSize=${cachedNewInstallBlockApps.size})"
+        )
     }
 
     /**

@@ -535,8 +535,29 @@ class BlockerPageViewModel(
             }
 
             // Refresh accessibility service blocking config
-            MyAccessibilityService.instance?.refreshBlockingConfig()
-                ?: Timber.w("Switch toggle: MyAccessibilityService instance is null \u2014 config not refreshed")
+            // NIB-01 fix (v1.0.60): for the BLOCK_NEW_INSTALL_APPS_SWITCH,
+            // use the targeted refresh instead of the full refreshBlockingConfig.
+            // The targeted refresh only reads the BLOCK_NEW_INSTALL_APPS list
+            // + the switch state (<10ms) instead of re-reading ALL keywords,
+            // ALL apps, ALL switches (200-500ms). This ensures the switch
+            // state is updated in the cache immediately, so toggling the
+            // switch ON/OFF takes effect without delay.
+            val instance = MyAccessibilityService.instance
+            if (instance == null) {
+                Timber.w("Switch toggle: MyAccessibilityService instance is null — config not refreshed")
+            } else {
+                if (switchKey == SwitchIdentifier.BLOCK_NEW_INSTALL_APPS_SWITCH) {
+                    try {
+                        instance.refreshNewInstallBlockSync(db)
+                        Timber.i("NIB-01: targeted refresh of new install block config after switch toggle")
+                    } catch (t: Throwable) {
+                        Timber.w(t, "NIB-01: targeted refresh failed — falling back to full refresh")
+                        instance.refreshBlockingConfig()
+                    }
+                } else {
+                    instance.refreshBlockingConfig()
+                }
+            }
 
             // Show toast feedback
             val switchName = item.title
