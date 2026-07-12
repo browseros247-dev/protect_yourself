@@ -94,39 +94,3 @@ fun AppTheme(
         content = content
     )
 }
-
-/**
- * Brand orange gradient brush — used for primary CTA buttons + Stop Me widget.
- */
-val OrangeGradientBrush: androidx.compose.ui.graphics.Brush
-    @Composable
-    get() = androidx.compose.ui.graphics.Brush.verticalGradient(
-        colors = listOf(BrandOrangeLight, BrandOrange)
-    )
-
-/**
- * Bottom nav colors (used by Compose bottom nav).
- */
-data class BottomNavColors(
-    val active: Color,
-    val inactive: Color,
-    val divider: Color,
-)
-
-@Composable
-fun bottomNavColors(): BottomNavColors {
-    val dark = isSystemInDarkTheme()
-    return if (dark) {
-        BottomNavColors(
-            active = DarkBottomNavActive,
-            inactive = DarkBottomNavInactive,
-            divider = DarkBottomNavDivider
-        )
-    } else {
-        BottomNavColors(
-            active = LightBottomNavActive,
-            inactive = LightBottomNavInactive,
-            divider = LightBottomNavDivider
-        )
-    }
-}

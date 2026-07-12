@@ -3,9 +3,7 @@ package protect.yourself.features.blockerPage.service
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
-import android.graphics.PixelFormat
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -15,7 +13,6 @@ import protect.yourself.core.appCoroutineScope
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
 import protect.yourself.database.selectedKeywords.SelectedKeywordIdentifier
-import protect.yourself.database.switchStatus.SwitchIdentifier
 import protect.yourself.database.switchStatus.SwitchStatusValues
 import protect.yourself.features.blockerPage.utils.BlockerPageUtils
 import timber.log.Timber
@@ -1394,11 +1391,6 @@ class MyAccessibilityService : AccessibilityService() {
     fun setStopMeEndTime(endTime: Long) {
         stopMeEndTime = endTime
         Timber.i("Stop Me end time set: $endTime (active=${endTime > 0})")
-    }
-
-    /** Returns true if a Stop Me session is currently active. */
-    fun isStopMeActive(): Boolean {
-        return stopMeEndTime > 0 && System.currentTimeMillis() < stopMeEndTime
     }
 
     companion object {

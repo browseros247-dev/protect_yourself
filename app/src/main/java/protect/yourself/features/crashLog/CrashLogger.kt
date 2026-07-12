@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import protect.yourself.BuildConfig
 import timber.log.Timber
 import java.io.File
-import java.io.IOException
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.text.SimpleDateFormat

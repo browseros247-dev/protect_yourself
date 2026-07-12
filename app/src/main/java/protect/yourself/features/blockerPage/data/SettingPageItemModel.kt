@@ -14,6 +14,5 @@ data class SettingPageItemModel(
     val switchKey: String? = null,
     val switchValue: Boolean = false,
     val actionLabel: String? = null,
-    val isSection: Boolean = false,
-    val isVisible: Boolean = true
+    val isSection: Boolean = false
 )

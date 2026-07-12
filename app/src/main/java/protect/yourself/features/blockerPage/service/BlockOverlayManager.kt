@@ -4,20 +4,15 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.graphics.PixelFormat
 import android.os.Build
-import android.os.CountDownTimer
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
-import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import protect.yourself.R
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
@@ -212,11 +207,6 @@ class BlockOverlayManager(
         }
         isOverlayShowing.set(false)
     }
-
-    /**
-     * Whether the overlay is currently visible.
-     */
-    fun isShowing(): Boolean = isOverlayShowing.get()
 
     /**
      * Build the overlay view — a simple full-screen layout with:

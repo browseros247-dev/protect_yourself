@@ -10,7 +10,6 @@ import android.widget.Toast
 import protect.yourself.R
 import protect.yourself.core.appCoroutineScope
 import protect.yourself.features.blockerPage.utils.StopMeManager
-import protect.yourself.features.mainActivityPage.MainActivity
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.launch

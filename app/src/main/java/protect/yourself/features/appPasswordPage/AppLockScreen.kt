@@ -2,8 +2,6 @@ package protect.yourself.features.appPasswordPage
 
 import android.content.Intent
 import android.net.Uri
-import android.provider.Settings
-import androidx.activity.ComponentActivity
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
@@ -580,12 +578,3 @@ fun launchBiometricPrompt(
     }
 }
 
-/**
- * Check if biometric authentication is available.
- */
-fun isBiometricAvailable(context: android.content.Context): Boolean {
-    val biometricManager = BiometricManager.from(context)
-    return biometricManager.canAuthenticate(
-        BiometricManager.Authenticators.BIOMETRIC_WEAK
-    ) == BiometricManager.BIOMETRIC_SUCCESS
-}
