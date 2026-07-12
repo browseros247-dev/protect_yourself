@@ -52,6 +52,14 @@ sealed class BlockerPageNavigation {
     data object OpenFaq : BlockerPageNavigation()
     data object OpenRequestHistory : BlockerPageNavigation()
     data object PickBlockScreenImage : BlockerPageNavigation()
+    data object ClearBlockScreenImage : BlockerPageNavigation()
+    data object ClearBlockScreenMessage : BlockerPageNavigation()
+    /**
+     * Emitted when the user taps "Preview block screen". The UI layer launches
+     * PornBlockActivity with no extras (so it shows the default message) —
+     * the activity itself loads the user's custom message + image from the DB.
+     */
+    data object PreviewBlockScreen : BlockerPageNavigation()
     data object RequestDeviceAdmin : BlockerPageNavigation()
     /**
      * PM-01 fix: Time Delay enforcement. When Time Delay is the active
@@ -156,7 +164,11 @@ class BlockerPageViewModel(
             }
             SettingPageItemIdentifiers.BLOCKED_SCREEN_MESSAGE -> {
                 val msg = switchValues.getBlockScreenCustomMessage()
-                item.copy(actionLabel = if (msg.isNullOrBlank()) "Default" else "Custom")
+                val app = getApplication<Application>()
+                item.copy(actionLabel = if (msg.isNullOrBlank())
+                    app.getString(protect.yourself.R.string.block_screen_message_action_default)
+                else
+                    app.getString(protect.yourself.R.string.block_screen_message_action_custom))
             }
             SettingPageItemIdentifiers.CUSTOM_REDIRECT_URL_APP -> {
                 val url = switchValues.getBlockScreenRedirectUrl()
@@ -164,7 +176,14 @@ class BlockerPageViewModel(
             }
             SettingPageItemIdentifiers.BLOCKED_SCREEN_IMAGE -> {
                 val path = switchValues.getBlockScreenStoreImagePath()
-                item.copy(actionLabel = if (path.isNullOrBlank()) "Choose" else "Set")
+                // Use the localized action labels: "Choose" when nothing is set,
+                // "Change" once an image has been picked. The Clear button is
+                // surfaced separately by the UI card.
+                val app = getApplication<Application>()
+                item.copy(actionLabel = if (path.isNullOrBlank())
+                    app.getString(protect.yourself.R.string.block_screen_image_action_choose)
+                else
+                    app.getString(protect.yourself.R.string.block_screen_image_action_change))
             }
             else -> item
         }
@@ -611,6 +630,134 @@ class BlockerPageViewModel(
         }
     }
 
+    /**
+     * Persist the URI of a user-picked motivation image.
+     *
+     * The caller (UI layer) is responsible for taking a persistable read
+     * permission on the URI BEFORE calling this — see
+     * [BlockerPageHome.imagePickerLauncher]. We just store the string and
+     * refresh the action labels.
+     *
+     * Validates:
+     *   - URI is not null/blank
+     *   - URI looks like a content:// or file:// scheme
+     */
+    fun saveBlockScreenImageUri(uriString: String?) {
+        if (uriString.isNullOrBlank()) {
+            Timber.w("saveBlockScreenImageUri: uriString is null/blank — ignoring")
+            safeLaunch {
+                _navigation.emit(BlockerPageNavigation.ShowToastRes(
+                    protect.yourself.R.string.block_screen_image_pick_failed
+                ))
+            }
+            return
+        }
+        // Basic scheme validation. We accept content://, file://, and
+        // android.resource:// (the latter is unlikely but harmless).
+        if (!uriString.startsWith("content:") &&
+            !uriString.startsWith("file:") &&
+            !uriString.startsWith("android.resource:")) {
+            Timber.w("saveBlockScreenImageUri: unsupported scheme for %s", uriString)
+            safeLaunch {
+                _navigation.emit(BlockerPageNavigation.ShowToastRes(
+                    protect.yourself.R.string.block_screen_image_pick_failed
+                ))
+            }
+            return
+        }
+        safeLaunch {
+            switchValues.storeSwitchStatus(
+                SwitchIdentifier.BLOCK_SCREEN_STORE_IMAGE_PATH,
+                uriString
+            )
+            loadSettingItems()
+            _navigation.emit(BlockerPageNavigation.ShowToastRes(
+                protect.yourself.R.string.block_screen_image_picked_toast
+            ))
+            Timber.i("Block screen motivation image saved: %s", uriString)
+        }
+    }
+
+    /**
+     * Remove the persisted motivation image URI. The UI layer is responsible
+     * for releasing the persistable URI permission if one was taken.
+     */
+    fun clearBlockScreenImage() {
+        safeLaunch {
+            switchValues.clearBlockScreenStoreImagePath()
+            loadSettingItems()
+            _navigation.emit(BlockerPageNavigation.ShowToastRes(
+                protect.yourself.R.string.block_screen_image_cleared_toast
+            ))
+            Timber.i("Block screen motivation image cleared")
+        }
+    }
+
+    /**
+     * Reset the custom block screen message back to the localized default.
+     */
+    fun clearBlockScreenMessage() {
+        safeLaunch {
+            switchValues.clearBlockScreenCustomMessage()
+            loadSettingItems()
+            _navigation.emit(BlockerPageNavigation.ShowToastRes(
+                protect.yourself.R.string.block_screen_message_cleared_toast
+            ))
+            Timber.i("Block screen custom message cleared")
+        }
+    }
+
+    /**
+     * Save the custom block screen message with length validation.
+     * Empty / blank values are treated as "reset to default" — we clear
+     * the stored message instead of saving an empty string.
+     */
+    fun saveBlockScreenMessage(value: String) {
+        val trimmed = value.trim()
+        if (trimmed.length > MAX_BLOCK_SCREEN_MESSAGE_CHARS) {
+            Timber.w("saveBlockScreenMessage: value too long (%d chars)", trimmed.length)
+            safeLaunch {
+                _navigation.emit(BlockerPageNavigation.ShowToastRes(
+                    protect.yourself.R.string.block_screen_message_too_long_toast,
+                    listOf(MAX_BLOCK_SCREEN_MESSAGE_CHARS)
+                ))
+            }
+            return
+        }
+        safeLaunch {
+            if (trimmed.isEmpty()) {
+                switchValues.clearBlockScreenCustomMessage()
+            } else {
+                switchValues.storeSwitchStatus(
+                    SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE,
+                    trimmed
+                )
+                switchValues.storeSwitchStatus(
+                    SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE_SET,
+                    true
+                )
+            }
+            loadSettingItems()
+            _navigation.emit(BlockerPageNavigation.ShowToastRes(
+                protect.yourself.R.string.block_screen_message_saved_toast
+            ))
+            Timber.i("Block screen custom message saved (length=%d)", trimmed.length)
+        }
+    }
+
+    /**
+     * Emit a navigation event that asks the UI to launch PornBlockActivity
+     * as a preview. The UI layer has the Context needed to startActivity().
+     */
+    fun previewBlockScreen() {
+        safeLaunch {
+            _navigation.emit(BlockerPageNavigation.PreviewBlockScreen)
+            _navigation.emit(BlockerPageNavigation.ShowToastRes(
+                protect.yourself.R.string.block_screen_preview_toast
+            ))
+        }
+    }
+
     fun onActionClick(item: SettingPageItemModel) {
         Timber.d("Action clicked: ${item.identifier}")
         safeLaunch {
@@ -641,7 +788,13 @@ class BlockerPageViewModel(
                 }
                 SettingPageItemIdentifiers.BLOCKED_SCREEN_MESSAGE -> {
                     val current = switchValues.getBlockScreenCustomMessage() ?: ""
-                    BlockerPageNavigation.EditTextField("Block Screen Message", current, "Custom message shown on block screen", SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE)
+                    val app = getApplication<Application>()
+                    BlockerPageNavigation.EditTextField(
+                        app.getString(protect.yourself.R.string.block_screen_message_dialog_title),
+                        current,
+                        app.getString(protect.yourself.R.string.block_screen_message_dialog_hint),
+                        SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE
+                    )
                 }
                 SettingPageItemIdentifiers.CUSTOM_REDIRECT_URL_APP -> {
                     val current = switchValues.getBlockScreenRedirectUrl() ?: ""
@@ -713,8 +866,18 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.VPN_NOTIFICATION_HIDE, "Hide VPN notification content", switchKey = SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_NEW_INSTALL_APPS, "Block new install apps", info = "Auto-block newly installed apps", switchKey = SwitchIdentifier.BLOCK_NEW_INSTALL_APPS_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_IN_APP_BROWSERS, "Block in-app browsers", info = "Block in-app browsers inside other apps", switchKey = SwitchIdentifier.BLOCK_IN_APP_BROWSERS_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKED_SCREEN_IMAGE, "Blocked screen image for motivation", info = "Custom image shown on block screen", actionLabel = "Choose"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKED_SCREEN_MESSAGE, "Blocked screen message", info = "Custom message shown on block screen", actionLabel = "Default"))
+        add(SettingPageItemModel(
+            SettingPageItemIdentifiers.BLOCKED_SCREEN_IMAGE,
+            getApplication<Application>().getString(protect.yourself.R.string.block_screen_image_title),
+            info = getApplication<Application>().getString(protect.yourself.R.string.block_screen_image_info),
+            actionLabel = getApplication<Application>().getString(protect.yourself.R.string.block_screen_image_action_choose)
+        ))
+        add(SettingPageItemModel(
+            SettingPageItemIdentifiers.BLOCKED_SCREEN_MESSAGE,
+            getApplication<Application>().getString(protect.yourself.R.string.block_screen_message_title),
+            info = getApplication<Application>().getString(protect.yourself.R.string.block_screen_message_info),
+            actionLabel = getApplication<Application>().getString(protect.yourself.R.string.block_screen_message_action_default)
+        ))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKED_SCREEN_COUNTDOWN, "Blocked screen countdown", info = "Require waiting N seconds before Close (3-300)", actionLabel = "Off"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.CUSTOM_REDIRECT_URL_APP, "Custom redirect URL", info = "URL to open when user taps Close", actionLabel = "None"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP, "Blocklist whitelist detected apps", info = "Apps detected via accessibility events", actionLabel = "Manage"))
@@ -1027,6 +1190,13 @@ class BlockerPageViewModel(
     }
 
     companion object {
+        /**
+         * Maximum character count for the custom block screen message.
+         * Longer messages would push the close button off-screen on smaller
+         * devices. The edit dialog enforces this and shows a live counter.
+         */
+        const val MAX_BLOCK_SCREEN_MESSAGE_CHARS = 200
+
         fun factory(application: Application, db: AppDatabase): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")

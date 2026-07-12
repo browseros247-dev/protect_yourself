@@ -25,7 +25,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Message
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
@@ -34,6 +38,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -49,21 +54,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.withContext
+import protect.yourself.R
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
 import protect.yourself.features.blockerPage.BlockerPageNavigation
 import protect.yourself.features.blockerPage.BlockerPageViewModel
 import protect.yourself.features.blockerPage.data.SettingPageItemModel
+import protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers
 import protect.yourself.features.blockerPage.service.MyAccessibilityService
 import protect.yourself.features.blockerPage.service.MyVpnService
+import protect.yourself.features.blockerPage.utils.BlockScreenImageLoader
 import protect.yourself.features.selectAppPage.components.SelectAppPage
 import protect.yourself.theme.BrandOrange
+import timber.log.Timber
 
 @Composable
 fun BlockerPageHome() {
@@ -103,15 +114,44 @@ fun BlockerPageHome() {
         viewModel.onDeviceAdminResult(granted)
     }
 
+    /**
+     * Image picker for the Block Screen Motivation Image.
+     *
+     * CRITICAL FIX: previously used `ActivityResultContracts.GetContent()`,
+     * which returns a content:// URI that is NOT persistable — the URI
+     * becomes invalid after the process dies or the device reboots, so the
+     * motivation image silently disappeared. We now use
+     * `ActivityResultContracts.OpenDocument()` which returns a persistable
+     * content:// URI, and we call `takePersistableUriPermission()` so the
+     * app retains read access across reboots.
+     *
+     * We also persist the URI via the new
+     * [protect.yourself.features.blockerPage.BlockerPageViewModel.saveBlockScreenImageUri]
+     * which validates the URI scheme before storing it.
+     */
     val imagePickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
+        ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            viewModel.saveTextField(
-                protect.yourself.database.switchStatus.SwitchIdentifier.BLOCK_SCREEN_STORE_IMAGE_PATH,
-                uri.toString()
-            )
-            android.widget.Toast.makeText(context, "Image selected", android.widget.Toast.LENGTH_SHORT).show()
+            try {
+                // Take a persistable read permission so the URI remains
+                // accessible after process death / device reboot.
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+                viewModel.saveBlockScreenImageUri(uri.toString())
+            } catch (t: Throwable) {
+                // Some providers don't support persistable permissions — log
+                // and fall back to a non-persistable save. The image will
+                // work for this app session but may need to be re-picked
+                // after a reboot. We still save the URI so the user sees
+                // immediate feedback.
+                Timber.w(t, "takePersistableUriPermission failed — saving non-persistable URI")
+                viewModel.saveBlockScreenImageUri(uri.toString())
+            }
+        } else {
+            Timber.d("Image picker cancelled by user")
         }
     }
 
@@ -213,7 +253,49 @@ fun BlockerPageHome() {
                     currentPage = SubPage.StopMe
                 }
                 is BlockerPageNavigation.PickBlockScreenImage -> {
-                    imagePickerLauncher.launch("image/*")
+                    // OpenDocument requires an array of MIME types. We pass
+                    // "image/*" so the picker shows photos only.
+                    imagePickerLauncher.launch(arrayOf("image/*"))
+                }
+                is BlockerPageNavigation.ClearBlockScreenImage -> {
+                    // The ViewModel has already cleared the persisted path.
+                    // Nothing more to do in the UI layer — the toast is
+                    // emitted by the ViewModel via ShowToastRes.
+                }
+                is BlockerPageNavigation.ClearBlockScreenMessage -> {
+                    // Same as above — handled by the ViewModel.
+                }
+                is BlockerPageNavigation.PreviewBlockScreen -> {
+                    // Launch PornBlockActivity as a preview so the user can
+                    // see what their custom message + image will look like
+                    // without having to trigger a real block.
+                    try {
+                        val intent = android.content.Intent(
+                            context,
+                            protect.yourself.features.blockerPage.ui.PornBlockActivity::class.java
+                        ).apply {
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            // Pass a synthetic package name + the default
+                            // message key so the activity's onCreate logs
+                            // are sensible.
+                            putExtra(
+                                protect.yourself.features.blockerPage.service.MyAccessibilityService.EXTRA_BLOCK_PACKAGE,
+                                "preview"
+                            )
+                            putExtra(
+                                protect.yourself.features.blockerPage.service.MyAccessibilityService.EXTRA_BLOCK_MESSAGE_KEY,
+                                "block_page_default_message"
+                            )
+                        }
+                        context.startActivity(intent)
+                    } catch (t: Throwable) {
+                        Timber.w(t, "Failed to launch block screen preview")
+                        android.widget.Toast.makeText(
+                            context,
+                            context.getString(R.string.block_screen_image_pick_failed),
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 }
                 is BlockerPageNavigation.RequestTimeDelay -> {
                     // PM-01: show the Time Delay countdown dialog
@@ -251,12 +333,35 @@ fun BlockerPageHome() {
     }
 
     editDialog?.let { dialog ->
-        EditTextDialog(dialog.title, dialog.currentValue, dialog.hint,
+        // Block screen message has its own save path that supports
+        // validation + clear-on-empty semantics. Other text fields
+        // use the generic saveTextField().
+        val isBlockScreenMessage =
+            dialog.switchKey == protect.yourself.database.switchStatus.SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE
+
+        EditTextDialog(
+            title = dialog.title,
+            currentValue = dialog.currentValue,
+            hint = dialog.hint,
+            maxLength = if (isBlockScreenMessage)
+                protect.yourself.features.blockerPage.BlockerPageViewModel.MAX_BLOCK_SCREEN_MESSAGE_CHARS
+            else null,
+            showResetToDefault = isBlockScreenMessage,
             onDismiss = { editDialog = null },
             onSave = { value ->
-                viewModel.saveTextField(dialog.switchKey, value)
+                if (isBlockScreenMessage) {
+                    viewModel.saveBlockScreenMessage(value)
+                } else {
+                    viewModel.saveTextField(dialog.switchKey, value)
+                }
                 editDialog = null
-            }
+            },
+            onResetToDefault = if (isBlockScreenMessage) {
+                {
+                    viewModel.clearBlockScreenMessage()
+                    editDialog = null
+                }
+            } else null
         )
     }
 
@@ -590,10 +695,20 @@ private fun CategoryDetailPage(
             Spacer(modifier = Modifier.height(8.dp))
         }
         items(items) { item ->
-            when {
-                item.switchKey != null -> SwitchRow(item) { viewModel.toggleSwitch(it) }
-                item.actionLabel != null -> ActionRow(item) { viewModel.onActionClick(it) }
-                else -> InfoRow(item)
+            // Dedicated cards for the Block Screen Motivation Image and
+            // Block Screen Message — these benefit from a richer layout
+            // (thumbnail preview, Clear button, Preview button) that the
+            // generic ActionRow can't express.
+            when (item.identifier) {
+                SettingPageItemIdentifiers.BLOCKED_SCREEN_IMAGE ->
+                    BlockScreenImageRow(item, viewModel)
+                SettingPageItemIdentifiers.BLOCKED_SCREEN_MESSAGE ->
+                    BlockScreenMessageRow(item, viewModel)
+                else -> when {
+                    item.switchKey != null -> SwitchRow(item) { viewModel.toggleSwitch(it) }
+                    item.actionLabel != null -> ActionRow(item) { viewModel.onActionClick(it) }
+                    else -> InfoRow(item)
+                }
             }
         }
         item { Spacer(modifier = Modifier.height(80.dp)) }
@@ -604,8 +719,23 @@ private fun CategoryDetailPage(
 
 @Composable
 private fun EditTextDialog(
-    title: String, currentValue: String, hint: String,
-    onDismiss: () -> Unit, onSave: (String) -> Unit
+    title: String,
+    currentValue: String,
+    hint: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+    /**
+     * Optional max character count. When set, a "N / maxLength" counter is
+     * shown below the text field and the input is clamped to [maxLength].
+     */
+    maxLength: Int? = null,
+    /**
+     * When true, a "Reset to default" button is shown in the dialog footer.
+     * Used by the Block Screen Message dialog so the user can clear the
+     * custom message back to the localized default.
+     */
+    showResetToDefault: Boolean = false,
+    onResetToDefault: (() -> Unit)? = null
 ) {
     var text by remember { mutableStateOf(currentValue) }
 
@@ -657,7 +787,14 @@ private fun EditTextDialog(
                     Spacer(modifier = Modifier.height(16.dp))
                     OutlinedTextField(
                         value = text,
-                        onValueChange = { text = it },
+                        onValueChange = { newValue ->
+                            // Clamp to maxLength when set
+                            text = if (maxLength != null && newValue.length > maxLength) {
+                                newValue.take(maxLength)
+                            } else {
+                                newValue
+                            }
+                        },
                         label = { Text(hint) },
                         singleLine = false,
                         modifier = Modifier.fillMaxWidth(),
@@ -667,12 +804,50 @@ private fun EditTextDialog(
                             cursorColor = BrandOrange
                         )
                     )
+                    // Character counter — only shown when maxLength is set
+                    if (maxLength != null) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            val context = LocalContext.current
+                            val counterColor = if (text.length >= maxLength) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            Text(
+                                text = context.getString(
+                                    R.string.block_screen_message_dialog_counter,
+                                    text.length, maxLength
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = counterColor
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(24.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // "Reset to default" — left-aligned, only for block
+                        // screen message.
+                        if (showResetToDefault && onResetToDefault != null) {
+                            val context = LocalContext.current
+                            TextButton(
+                                onClick = onResetToDefault,
+                                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                modifier = Modifier.padding(end = 8.dp)
+                            ) {
+                                Text(context.getString(R.string.block_screen_message_reset_to_default))
+                            }
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
                         TextButton(
                             onClick = onDismiss,
                             colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
@@ -688,7 +863,10 @@ private fun EditTextDialog(
                                 containerColor = BrandOrange,
                                 contentColor = androidx.compose.ui.graphics.Color.White
                             ),
-                            enabled = text.isNotBlank()
+                            // Allow saving an empty value when maxLength is
+                            // set — for the block screen message, an empty
+                            // value means "reset to default".
+                            enabled = maxLength != null || text.isNotBlank()
                         ) {
                             Text("Save", fontWeight = FontWeight.Bold)
                         }
@@ -931,6 +1109,305 @@ private fun InfoRow(item: SettingPageItemModel) {
             if (!item.info.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(item.info, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/**
+ * Dedicated settings card for the Block Screen Motivation Image.
+ *
+ * Shows:
+ *  - Title + info text
+ *  - A 56x56 thumbnail preview of the currently-set image (loaded async
+ *    via [BlockScreenImageLoader]). If no image is set, a placeholder
+ *    icon is shown instead.
+ *  - A primary "Choose" / "Change" TextButton (action label is dynamic
+ *    and comes from the ViewModel via [SettingPageItemModel.actionLabel]).
+ *  - A secondary "Remove" IconButton that calls
+ *    [BlockerPageViewModel.clearBlockScreenImage]. Only shown when an
+ *    image is currently set.
+ *  - A "Preview block screen" TextButton that launches PornBlockActivity
+ *    so the user can see what their customization looks like.
+ *
+ * The thumbnail is loaded off the main thread via `remember { mutableStateOf }
+ * + LaunchedEffect` to avoid blocking recomposition.
+ */
+@Composable
+private fun BlockScreenImageRow(
+    item: SettingPageItemModel,
+    viewModel: BlockerPageViewModel
+) {
+    val context = LocalContext.current
+    // Whether an image is currently set — derived from the action label.
+    val isImageSet = item.actionLabel != context.getString(R.string.block_screen_image_action_choose)
+
+    // Thumbnail state. Null = not loaded yet / nothing set.
+    var thumbnail by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var thumbnailLoadAttempted by remember { mutableStateOf(false) }
+
+    // Re-load the thumbnail whenever the action label flips between
+    // "Choose" and "Change" (i.e. the user picked / cleared an image).
+    LaunchedEffect(item.actionLabel) {
+        if (isImageSet && !thumbnailLoadAttempted) {
+            thumbnailLoadAttempted = true
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val db = protect.yourself.database.core.AppDatabase.getInstance(context)
+                    val sv = protect.yourself.database.switchStatus.SwitchStatusValues(db.switchStatusDao())
+                    val path = sv.getBlockScreenStoreImagePath()
+                    val bmp = if (!path.isNullOrBlank()) {
+                        // Use decodeWithReason so we can log the specific
+                        // failure mode (too large / decode failed / no input).
+                        when (val r = BlockScreenImageLoader.decodeWithReason(context, path)) {
+                            is BlockScreenImageLoader.DecodeResult.Success -> r.bitmap
+                            is BlockScreenImageLoader.DecodeResult.TooLarge -> {
+                                Timber.w("BlockScreenImageRow: thumbnail too large for path=%s", path)
+                                null
+                            }
+                            is BlockScreenImageLoader.DecodeResult.DecodeFailed -> {
+                                Timber.w("BlockScreenImageRow: thumbnail decode failed for path=%s", path)
+                                null
+                            }
+                            is BlockScreenImageLoader.DecodeResult.NoInput -> null
+                        }
+                    } else null
+                    thumbnail = bmp
+                } catch (t: Throwable) {
+                    Timber.w(t, "BlockScreenImageRow: thumbnail load failed")
+                    thumbnail = null
+                }
+            }
+        } else if (!isImageSet) {
+            thumbnail = null
+            thumbnailLoadAttempted = false
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        onClick = { viewModel.onActionClick(item) }
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Thumbnail or placeholder
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(
+                            BrandOrange.copy(alpha = 0.15f),
+                            RoundedCornerShape(8.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val bmp = thumbnail
+                    if (bmp != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = context.getString(R.string.block_screen_image_preview_content_description),
+                            modifier = Modifier.size(56.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Image,
+                            contentDescription = null,
+                            tint = BrandOrange,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.size(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(item.title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                    if (!item.info.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(item.info, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Primary action — Choose / Change
+                TextButton(
+                    onClick = { viewModel.onActionClick(item) },
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        contentColor = BrandOrange
+                    )
+                ) {
+                    Text(item.actionLabel ?: "", fontWeight = FontWeight.SemiBold)
+                }
+                // Secondary action — Preview block screen
+                TextButton(
+                    onClick = { viewModel.previewBlockScreen() },
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.size(4.dp))
+                    Text(context.getString(R.string.block_screen_preview_button))
+                }
+                // Spacer pushes the Clear button to the right
+                Spacer(modifier = Modifier.weight(1f))
+                // Clear button — only shown when an image is set
+                if (isImageSet) {
+                    IconButton(
+                        onClick = { viewModel.clearBlockScreenImage() },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = context.getString(R.string.block_screen_image_action_remove),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Dedicated settings card for the Block Screen Message.
+ *
+ * Shows:
+ *  - Title + info text
+ *  - A 1-line preview of the currently-set custom message (or "Using
+ *    default message" if none is set)
+ *  - A primary "Custom" / "Default" TextButton (action label comes from
+ *    the ViewModel)
+ *  - A "Reset to default" IconButton when a custom message is set
+ *  - A "Preview block screen" TextButton
+ */
+@Composable
+private fun BlockScreenMessageRow(
+    item: SettingPageItemModel,
+    viewModel: BlockerPageViewModel
+) {
+    val context = LocalContext.current
+    // Live preview of the current custom message — loaded from the DB.
+    var previewMessage by remember { mutableStateOf<String?>(null) }
+    var loadAttempted by remember { mutableStateOf(false) }
+
+    val isCustomSet = item.actionLabel == context.getString(R.string.block_screen_message_action_custom)
+
+    LaunchedEffect(item.actionLabel) {
+        if (!loadAttempted || item.actionLabel == context.getString(R.string.block_screen_message_action_custom)) {
+            loadAttempted = true
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val db = protect.yourself.database.core.AppDatabase.getInstance(context)
+                    val sv = protect.yourself.database.switchStatus.SwitchStatusValues(db.switchStatusDao())
+                    previewMessage = sv.getBlockScreenCustomMessage()
+                } catch (t: Throwable) {
+                    Timber.w(t, "BlockScreenMessageRow: preview load failed")
+                    previewMessage = null
+                }
+            }
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        onClick = { viewModel.onActionClick(item) }
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(
+                            BrandOrange.copy(alpha = 0.15f),
+                            RoundedCornerShape(8.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Message,
+                        contentDescription = null,
+                        tint = BrandOrange,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.size(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(item.title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                    if (!item.info.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(item.info, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    // Preview line — 1 line, ellipsized
+                    Spacer(modifier = Modifier.height(4.dp))
+                    val msg = previewMessage
+                    Text(
+                        text = if (!msg.isNullOrBlank()) "\"$msg\"" else context.getString(R.string.block_page_default_message),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (!msg.isNullOrBlank()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        fontStyle = if (!msg.isNullOrBlank()) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = { viewModel.onActionClick(item) },
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        contentColor = BrandOrange
+                    )
+                ) {
+                    Text(item.actionLabel ?: "", fontWeight = FontWeight.SemiBold)
+                }
+                TextButton(
+                    onClick = { viewModel.previewBlockScreen() },
+                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.size(4.dp))
+                    Text(context.getString(R.string.block_screen_preview_button))
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                if (isCustomSet) {
+                    IconButton(
+                        onClick = { viewModel.clearBlockScreenMessage() },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = context.getString(R.string.block_screen_message_reset_to_default),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
     }

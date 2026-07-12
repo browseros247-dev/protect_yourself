@@ -1,10 +1,12 @@
 package protect.yourself.features.blockerPage.ui
 
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.text.SpannableStringBuilder
+import android.text.method.LinkMovementMethod
+import android.text.style.ClickableSpan
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -20,8 +22,8 @@ import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.switchStatus.SwitchIdentifier
 import protect.yourself.database.switchStatus.SwitchStatusValues
 import protect.yourself.features.blockerPage.service.MyAccessibilityService
+import protect.yourself.features.blockerPage.utils.BlockScreenImageLoader
 import timber.log.Timber
-import java.io.File
 
 /**
  * PornBlockActivity — full-screen block overlay shown when content is blocked.
@@ -32,7 +34,7 @@ import java.io.File
  *
  * Behavior:
  *  1. Show app logo + name header
- *  2. Show optional motivation image (user-configured)
+ *  2. Show optional motivation image (user-configured) — see [loadMotivationImageAndMessage]
  *  3. Show block message (dynamic per block reason)
  *  4. Show optional rating prompt (after N blocks)
  *  5. Show "Why am I seeing this?" expandable text
@@ -42,6 +44,23 @@ import java.io.File
  * REMOVED from original:
  *  - AdMob banner (no AdView container)
  *  - PU promotion banner (no imgPuBanner)
+ *
+ * BUGFIX HISTORY (block-screen motivation image + message):
+ *  - The previous implementation stored a `content://` URI under
+ *    `BLOCK_SCREEN_STORE_IMAGE_PATH` but loaded it via `File(imagePath)`
+ *    and `BitmapFactory.decodeFile()`, which silently failed for content
+ *    URIs — the motivation image NEVER actually displayed. We now use
+ *    [BlockScreenImageLoader] which handles both content:// URIs and
+ *    filesystem paths via ContentResolver.openInputStream().
+ *  - The "Why am I seeing this?" affordance previously had two TextViews
+ *    both labeled "Why" (txtWhy + txtWhyContainer). The toggle is now
+ *    labeled "Why am I seeing this?" / "Hide details" so the affordance is
+ *    discoverable.
+ *  - Hard-coded English strings are now localized via strings.xml.
+ *  - The motivation image now preserves aspect ratio (adjustViewBounds +
+ *    fitCenter) instead of being squashed to 200x200dp.
+ *  - Bitmap decode failures now log a clear warning AND emit a user-facing
+ *    toast so the user knows their image was moved/deleted.
  */
 class PornBlockActivity : AppCompatActivity() {
 
@@ -100,31 +119,21 @@ class PornBlockActivity : AppCompatActivity() {
         // and adjust their keyword list.
         val matchedKeyword = intent.getStringExtra(MyAccessibilityService.EXTRA_MATCHED_KEYWORD)
 
-        Timber.i("Block screen shown for pkg=$blockPackage messageKey=$messageKey keyword=$matchedKeyword")
+        Timber.i("Block screen shown for pkg=%s messageKey=%s keyword=%s",
+            blockPackage, messageKey, matchedKeyword)
 
         // 1. Set message
         val messageResId = resources.getIdentifier(messageKey, "string", packageName)
         txtPageMessage.text = if (messageResId != 0) getString(messageResId) else getString(R.string.block_page_default_message)
 
         // 2. Configure Why text (initially hidden, tap to expand)
-        // KB-19: if we have a matched keyword, show it in the "why" expansion
-        // instead of the generic default message.
-        txtWhy.text = getString(R.string.why)
-        txtWhy.setOnClickListener {
-            if (txtWhyContainer.visibility == View.VISIBLE) {
-                txtWhyContainer.visibility = View.GONE
-            } else {
-                txtWhyContainer.text = if (!matchedKeyword.isNullOrBlank()) {
-                    "Blocked because the URL or content matched keyword: \"$matchedKeyword\""
-                } else {
-                    getString(R.string.block_page_default_porn_blocker_message)
-                }
-                txtWhyContainer.visibility = View.VISIBLE
-            }
-        }
+        // The toggle label changes between "Why am I seeing this?" and
+        // "Hide details" so the affordance is obvious. The detail text is
+        // populated below the toggle when expanded.
+        configureWhyToggle(matchedKeyword)
 
-        // 3. Load user motivation image (if set)
-        loadMotivationImage()
+        // 3. Load user motivation image (if set) + apply custom message
+        loadMotivationImageAndMessage()
 
         // 4. Configure Close button (with optional countdown)
         configureCloseButton()
@@ -136,45 +145,138 @@ class PornBlockActivity : AppCompatActivity() {
         incrementBlockCount()
     }
 
-    private fun loadMotivationImage() {
+    /**
+     * Configure the "Why am I seeing this?" toggle. Tapping it expands or
+     * collapses the explanation below it. The toggle label changes to make
+     * the affordance discoverable.
+     */
+    private fun configureWhyToggle(matchedKeyword: String?) {
+        // Detail text shown when expanded.
+        val detailText = if (!matchedKeyword.isNullOrBlank()) {
+            getString(R.string.block_screen_why_matched_keyword, matchedKeyword)
+        } else {
+            getString(R.string.block_page_default_porn_blocker_message)
+        }
+        txtWhyContainer.text = detailText
+        txtWhyContainer.visibility = View.GONE
+
+        // Make the toggle label a clickable span so the whole label is tappable
+        // (not just the text region that happens to be over the TextView).
+        val collapsedLabel = getString(R.string.why)
+        val expandedLabel = getString(R.string.why_hide)
+
+        txtWhy.text = collapsedLabel
+        txtWhy.movementMethod = LinkMovementMethod.getInstance()
+        val span = SpannableStringBuilder(collapsedLabel)
+        val click = object : ClickableSpan() {
+            override fun onClick(widget: View) {
+                if (txtWhyContainer.visibility == View.VISIBLE) {
+                    txtWhyContainer.visibility = View.GONE
+                    txtWhy.text = collapsedLabel
+                    refreshWhySpan(collapsedLabel)
+                } else {
+                    txtWhyContainer.text = detailText
+                    txtWhyContainer.visibility = View.VISIBLE
+                    txtWhy.text = expandedLabel
+                    refreshWhySpan(expandedLabel)
+                }
+            }
+        }
+        span.setSpan(click, 0, collapsedLabel.length,
+            SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE)
+        txtWhy.setText(span)
+
+        // Also forward plain clicks (some OEMs strip ClickableSpan clicks)
+        txtWhy.setOnClickListener {
+            if (txtWhyContainer.visibility == View.VISIBLE) {
+                txtWhyContainer.visibility = View.GONE
+                txtWhy.text = collapsedLabel
+                refreshWhySpan(collapsedLabel)
+            } else {
+                txtWhyContainer.text = detailText
+                txtWhyContainer.visibility = View.VISIBLE
+                txtWhy.text = expandedLabel
+                refreshWhySpan(expandedLabel)
+            }
+        }
+    }
+
+    private fun refreshWhySpan(label: String) {
+        val span = SpannableStringBuilder(label)
+        val click = object : ClickableSpan() {
+            override fun onClick(widget: View) {
+                // Re-dispatch to the View's own onClickListener — keeps the
+                // span clickable indefinitely.
+                txtWhy.performClick()
+            }
+        }
+        span.setSpan(click, 0, label.length, SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE)
+        txtWhy.setText(span)
+    }
+
+    /**
+     * Load the user's motivation image (if set) and override the default
+     * block message with the user's custom message (if set).
+     *
+     * Both happen in a single IO coroutine to avoid two separate DB hits.
+     *
+     * CRITICAL FIX: The previous implementation used `File(imagePath)` +
+     * `BitmapFactory.decodeFile()` which silently failed for `content://`
+     * URIs returned by the image picker. We now use [BlockScreenImageLoader]
+     * which handles content URIs via ContentResolver.openInputStream().
+     */
+    private fun loadMotivationImageAndMessage() {
         ioScope.launch {
             try {
                 val db = AppDatabase.getInstance(this@PornBlockActivity)
                 val switchValues = SwitchStatusValues(db.switchStatusDao())
 
                 val imagePath = switchValues.getBlockScreenStoreImagePath()
+                Timber.d("PornBlockActivity: motivation imagePath=%s", imagePath)
 
                 if (!imagePath.isNullOrBlank()) {
-                    val imageFile = File(imagePath)
-                    if (imageFile.exists()) {
-                        // CRASH FIX: use inSampleSize to downsample large images
-                        // before decoding, preventing OutOfMemoryError on devices
-                        // with limited heap. The block screen is shown frequently,
-                        // so repeated full-resolution decoding exhausts the heap.
-                        val boundsOptions = BitmapFactory.Options().apply {
-                            inJustDecodeBounds = true
-                        }
-                        BitmapFactory.decodeFile(imagePath, boundsOptions)
-                        val targetSize = 512  // max width/height in pixels
-                        var sampleSize = 1
-                        while (boundsOptions.outWidth / sampleSize > targetSize ||
-                               boundsOptions.outHeight / sampleSize > targetSize) {
-                            sampleSize *= 2
-                        }
-                        val decodeOptions = BitmapFactory.Options().apply {
-                            inSampleSize = sampleSize
-                        }
-                        val bitmap = BitmapFactory.decodeFile(imagePath, decodeOptions)
-                        if (bitmap != null) {
+                    // Use decodeWithReason() so we can show a specific toast
+                    // for each failure mode (too large vs could-not-open).
+                    val result = BlockScreenImageLoader.decodeWithReason(
+                        this@PornBlockActivity, imagePath
+                    )
+                    when (result) {
+                        is BlockScreenImageLoader.DecodeResult.Success -> {
                             uiScope.launch {
-                                imgMotivation.setImageBitmap(bitmap)
+                                imgMotivation.setImageBitmap(result.bitmap)
                                 imgMotivation.visibility = View.VISIBLE
                             }
+                        }
+                        is BlockScreenImageLoader.DecodeResult.TooLarge -> {
+                            Timber.w("PornBlockActivity: motivation image too large for path=%s", imagePath)
+                            uiScope.launch {
+                                Toast.makeText(
+                                    this@PornBlockActivity,
+                                    R.string.block_screen_image_too_large_toast,
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                        is BlockScreenImageLoader.DecodeResult.DecodeFailed -> {
+                            // Decode failed — log + show a one-shot toast so the
+                            // user knows their image was moved/deleted and isn't
+                            // just silently missing.
+                            Timber.w("PornBlockActivity: motivation image decode failed for path=%s", imagePath)
+                            uiScope.launch {
+                                Toast.makeText(
+                                    this@PornBlockActivity,
+                                    R.string.block_screen_image_load_error_toast,
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                        is BlockScreenImageLoader.DecodeResult.NoInput -> {
+                            // No path stored — nothing to do (image stays GONE)
                         }
                     }
                 }
 
-                // 7. Apply custom block message if set
+                // Apply custom block message if set
                 val customMessage = switchValues.getBlockScreenCustomMessage()
                 if (!customMessage.isNullOrBlank()) {
                     uiScope.launch {
@@ -182,7 +284,14 @@ class PornBlockActivity : AppCompatActivity() {
                     }
                 }
             } catch (t: Throwable) {
-                Timber.w(t, "Failed to load motivation image / custom message")
+                Timber.w(t, "PornBlockActivity: failed to load motivation image / custom message")
+                uiScope.launch {
+                    Toast.makeText(
+                        this@PornBlockActivity,
+                        R.string.block_screen_image_load_failed,
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
         }
     }
@@ -209,7 +318,7 @@ class PornBlockActivity : AppCompatActivity() {
                     }
                 }
             } catch (t: Throwable) {
-                Timber.w(t, "Failed to configure close button — using immediate close")
+                Timber.w(t, "PornBlockActivity: failed to configure close button — using immediate close")
                 txtCloseContainer.setOnClickListener { finish() }
             }
         }
@@ -251,8 +360,8 @@ class PornBlockActivity : AppCompatActivity() {
                 }
                 startActivity(intent)
             } catch (t: Throwable) {
-                Timber.w(t, "Failed to redirect to $redirectUrl")
-                Toast.makeText(this, "Could not open redirect URL", Toast.LENGTH_SHORT).show()
+                Timber.w(t, "PornBlockActivity: failed to redirect to %s", redirectUrl)
+                Toast.makeText(this, R.string.block_screen_redirect_failed_toast, Toast.LENGTH_SHORT).show()
             }
         }
         finish()
@@ -292,7 +401,7 @@ class PornBlockActivity : AppCompatActivity() {
                     }
                 }
             } catch (t: Throwable) {
-                Timber.w(t, "Failed to check rating prompt")
+                Timber.w(t, "PornBlockActivity: failed to check rating prompt")
             }
         }
     }
@@ -311,7 +420,7 @@ class PornBlockActivity : AppCompatActivity() {
                 ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
                 startActivity(intent)
             } catch (_: Throwable) {
-                Toast.makeText(this, "Could not open Play Store", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, R.string.block_screen_play_store_failed_toast, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -328,9 +437,9 @@ class PornBlockActivity : AppCompatActivity() {
                 } else {
                     db.blockScreenCountDao().increment()
                 }
-                Timber.d("Block count incremented")
+                Timber.d("PornBlockActivity: block count incremented")
             } catch (t: Throwable) {
-                Timber.w(t, "Failed to increment block count")
+                Timber.w(t, "PornBlockActivity: failed to increment block count")
             }
         }
     }
@@ -338,6 +447,17 @@ class PornBlockActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         countDownTimer?.cancel()
+        // Drop the motivation bitmap eagerly to release memory faster — the
+        // ImageView may hold a reference until the next GC.
+        try {
+            (imgMotivation.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap?.let {
+                if (!it.isRecycled) {
+                    imgMotivation.setImageDrawable(null)
+                }
+            }
+        } catch (_: Throwable) {
+            // Best-effort — don't crash on cleanup.
+        }
     }
 
     /**

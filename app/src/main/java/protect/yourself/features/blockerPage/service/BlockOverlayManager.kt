@@ -3,6 +3,7 @@ package protect.yourself.features.blockerPage.service
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.os.Build
 import android.provider.Settings
 import android.util.TypedValue
@@ -11,9 +12,17 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import protect.yourself.R
+import protect.yourself.database.core.AppDatabase
+import protect.yourself.database.switchStatus.SwitchStatusValues
+import protect.yourself.features.blockerPage.utils.BlockScreenImageLoader
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -67,6 +76,15 @@ import java.util.concurrent.atomic.AtomicBoolean
  * pattern. Per-package throttling is intentionally NOT used (NopoX doesn't
  * either) because it creates a bypass window.
  *
+ * ## User customizations (motivation image + custom message)
+ *
+ * BUGFIX: The previous implementation ignored the user's custom block
+ * screen message and motivation image. Only the fallback PornBlockActivity
+ * applied them, and even there the image-loading was broken (see
+ * [PornBlockActivity] history). The overlay now ALSO loads the user's
+ * custom message + motivation image so the customisations appear
+ * regardless of which block path is taken.
+ *
  * Ported from NopoX `PornBlockPage.java` (decompiled) + adapted to the
  * Protect Yourself block screen layout.
  */
@@ -85,9 +103,19 @@ class BlockOverlayManager(
     private var overlayView: View? = null
 
     @Volatile
+    private var motivationImageView: ImageView? = null
+
+    @Volatile
     private var killTimer: KillTimer? = null
 
     private val isOverlayShowing = AtomicBoolean(false)
+
+    /**
+     * Coroutine scope for IO-bound DB / image decode work. Uses a
+     * SupervisorJob so a failure loading the motivation image doesn't
+     * cancel sibling work (e.g. the close-button countdown wiring).
+     */
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
      * Whether we have permission to draw an overlay. If false, callers
@@ -170,20 +198,99 @@ class BlockOverlayManager(
         return try {
             wm.addView(view, params)
             overlayView = view
-            Timber.i("BlockOverlayManager: overlay shown for pkg=$packageName messageKey=$messageResKey")
+            Timber.i("BlockOverlayManager: overlay shown for pkg=%s messageKey=%s", packageName, messageResKey)
 
             // Start the kill timer — HOME×5 + BACK×1 every 500ms, for 3 seconds
             // (6 iterations). This is what actually kills the offending activity.
             killTimer = KillTimer(service).also { it.start() }
 
+            // Asynchronously apply the user's custom message + motivation image.
+            // This is non-blocking — the overlay is already visible with the
+            // default message, and the customisations are applied as soon as
+            // the DB + image decode complete (typically < 50ms).
+            applyUserCustomisations(messageText = defaultMessageText(messageResKey))
+
             true
         } catch (t: Throwable) {
-            Timber.e(t, "BlockOverlayManager: addView failed for pkg=$packageName")
+            Timber.e(t, "BlockOverlayManager: addView failed for pkg=%s", packageName)
             // Clean up partial state
             try { if (overlayView != null) wm.removeView(overlayView) } catch (_: Throwable) {}
             overlayView = null
             isOverlayShowing.set(false)
             false
+        }
+    }
+
+    /**
+     * Resolve the default message text for [messageResKey]. Falls back to
+     * [R.string.block_page_default_message] if the resource can't be found.
+     */
+    private fun defaultMessageText(messageResKey: String): String {
+        val resId = try {
+            service.resources.getIdentifier(messageResKey, "string", service.packageName)
+        } catch (_: Throwable) { 0 }
+        return if (resId != 0) {
+            try { service.getString(resId) } catch (_: Throwable) {
+                service.getString(R.string.block_page_default_message)
+            }
+        } else {
+            service.getString(R.string.block_page_default_message)
+        }
+    }
+
+    /**
+     * Asynchronously load the user's custom block screen message + motivation
+     * image from the DB and apply them to the current overlay.
+     *
+     * Safe to call from any thread. All view mutations are posted to the
+     * main thread via [overlayView]?.post { ... }.
+     */
+    private fun applyUserCustomisations(messageText: String) {
+        ioScope.launch {
+            try {
+                val db = AppDatabase.getInstance(service)
+                val switchValues = SwitchStatusValues(db.switchStatusDao())
+
+                // 1. Custom message override
+                val customMessage = switchValues.getBlockScreenCustomMessage()
+                if (!customMessage.isNullOrBlank()) {
+                    overlayView?.post {
+                        try {
+                            (overlayView?.findViewWithTag<TextView>("messageText"))?.text = customMessage
+                        } catch (t: Throwable) {
+                            Timber.w(t, "BlockOverlayManager: failed to apply custom message")
+                        }
+                    }
+                }
+
+                // 2. Motivation image — use decodeWithReason() so we can log
+                // the specific failure mode (too large vs could-not-open).
+                val imagePath = switchValues.getBlockScreenStoreImagePath()
+                if (!imagePath.isNullOrBlank()) {
+                    val result = BlockScreenImageLoader.decodeWithReason(service, imagePath)
+                    when (result) {
+                        is BlockScreenImageLoader.DecodeResult.Success -> {
+                            overlayView?.post {
+                                try {
+                                    motivationImageView?.let { iv ->
+                                        iv.setImageBitmap(result.bitmap)
+                                        iv.visibility = View.VISIBLE
+                                    }
+                                } catch (t: Throwable) {
+                                    Timber.w(t, "BlockOverlayManager: failed to apply motivation image")
+                                }
+                            }
+                        }
+                        is BlockScreenImageLoader.DecodeResult.TooLarge ->
+                            Timber.w("BlockOverlayManager: motivation image too large for path=%s", imagePath)
+                        is BlockScreenImageLoader.DecodeResult.DecodeFailed ->
+                            Timber.w("BlockOverlayManager: motivation image decode failed for path=%s", imagePath)
+                        is BlockScreenImageLoader.DecodeResult.NoInput -> { /* no-op */ }
+                    }
+                }
+            } catch (t: Throwable) {
+                Timber.w(t, "BlockOverlayManager: failed to apply user customisations")
+            }
         }
     }
 
@@ -205,13 +312,15 @@ class BlockOverlayManager(
             }
             overlayView = null
         }
+        motivationImageView = null
         isOverlayShowing.set(false)
     }
 
     /**
      * Build the overlay view — a simple full-screen layout with:
      *   - App logo + name header
-     *   - Block message (from string resource)
+     *   - Optional motivation image (loaded async after the view is attached)
+     *   - Block message (from string resource, optionally overridden by user)
      *   - "Why am I seeing this?" expandable text (shows matched keyword)
      *   - Close button (immediate, no countdown — overlay is already non-dismissible)
      *
@@ -239,7 +348,7 @@ class BlockOverlayManager(
             textSize = 20f
             gravity = Gravity.CENTER
             setPadding(0, dp(8), 0, dp(24))
-            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         }
         root.addView(header)
 
@@ -251,6 +360,29 @@ class BlockOverlayManager(
             setPadding(0, dp(8), 0, dp(16))
         }
         root.addView(icon)
+
+        // Optional motivation image (initially GONE — shown async after
+        // applyUserCustomisations() decodes the bitmap). Wrapped in a
+        // horizontal LinearLayout so we can constrain its width.
+        val motivationContainer = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(12))
+        }
+        val motivationIv = ImageView(ctx).apply {
+            visibility = View.GONE
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            adjustViewBounds = true
+            // Cap dimensions so a portrait photo doesn't push the message off-screen.
+            layoutParams = LinearLayout.LayoutParams(dp(240), dp(240)).apply {
+                gravity = Gravity.CENTER
+            }
+            contentDescription = ctx.getString(R.string.block_screen_motivation_image_cd)
+        }
+        motivationContainer.addView(motivationIv)
+        root.addView(motivationContainer)
+        // Save a reference so applyUserCustomisations() can set the bitmap.
+        motivationImageView = motivationIv
 
         // Block message
         val messageResId = try {
@@ -264,6 +396,7 @@ class BlockOverlayManager(
             ctx.getString(R.string.block_page_default_message)
         }
         val message = TextView(ctx).apply {
+            tag = "messageText"
             text = messageText
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 16f
@@ -273,26 +406,39 @@ class BlockOverlayManager(
         root.addView(message)
 
         // "Why am I seeing this?" expandable
+        val collapsedLabel = ctx.getString(R.string.why)
+        val expandedLabel = ctx.getString(R.string.why_hide)
+        val detailText = if (!matchedKeyword.isNullOrBlank()) {
+            ctx.getString(R.string.block_screen_why_matched_keyword, matchedKeyword)
+        } else {
+            messageText
+        }
+
         val whyToggle = TextView(ctx).apply {
-            text = ctx.getString(R.string.why)
+            text = collapsedLabel
             setTextColor(0xFF90CAF9.toInt())
             textSize = 14f
             gravity = Gravity.CENTER
             setPadding(0, dp(8), 0, dp(8))
             setOnClickListener {
                 val detail = (parent as? ViewGroup)?.findViewWithTag<TextView>("whyDetail")
-                detail?.visibility = if (detail?.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                detail?.let {
+                    if (it.visibility == View.VISIBLE) {
+                        it.visibility = View.GONE
+                        text = collapsedLabel
+                    } else {
+                        it.text = detailText
+                        it.visibility = View.VISIBLE
+                        text = expandedLabel
+                    }
+                }
             }
         }
         root.addView(whyToggle)
 
         val whyDetail = TextView(ctx).apply {
             tag = "whyDetail"
-            text = if (!matchedKeyword.isNullOrBlank()) {
-                "Blocked because the URL or content matched keyword: \"$matchedKeyword\""
-            } else {
-                messageText
-            }
+            text = detailText
             setTextColor(0xFFBDBDBD.toInt())
             textSize = 13f
             gravity = Gravity.CENTER
@@ -314,7 +460,7 @@ class BlockOverlayManager(
             gravity = Gravity.CENTER
             setBackgroundColor(0xFFFFB74B.toInt())
             setPadding(dp(24), dp(16), dp(24), dp(16))
-            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             setOnClickListener {
                 hideBlockOverlay()
             }
@@ -337,7 +483,7 @@ class BlockOverlayManager(
                 keyCode == KeyEvent.KEYCODE_HOME ||
                 keyCode == KeyEvent.KEYCODE_APP_SWITCH
             ) {
-                Timber.d("BlockOverlayManager: swallowed key $keyCode")
+                Timber.d("BlockOverlayManager: swallowed key %d", keyCode)
                 true
             } else {
                 false
