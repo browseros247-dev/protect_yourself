@@ -52,6 +52,12 @@ class AppSystemActionReceiverAllTimeWithData : BroadcastReceiver() {
 
                     Intent.ACTION_PACKAGE_ADDED -> {
                         if (packageName != null) {
+                            // Invalidate the unsupported-browser cache so the
+                            // picker picks up the newly installed browser on
+                            // its next open. Cheap no-op if the cache is empty.
+                            protect.yourself.features.selectAppPage.utils.UnsupportedBrowserDetector
+                                .invalidateCache()
+
                             // Check if "Block new install apps" is ON
                             val db = AppDatabase.getInstance(context)
                             val switchValues = SwitchStatusValues(db.switchStatusDao())
@@ -84,6 +90,12 @@ class AppSystemActionReceiverAllTimeWithData : BroadcastReceiver() {
 
                     Intent.ACTION_PACKAGE_REMOVED -> {
                         if (packageName != null) {
+                            // Invalidate the unsupported-browser cache so the
+                            // picker doesn't show a ghost entry for the
+                            // uninstalled app on its next open.
+                            protect.yourself.features.selectAppPage.utils.UnsupportedBrowserDetector
+                                .invalidateCache()
+
                             // Clean up: remove from all app lists
                             val db = AppDatabase.getInstance(context)
                             for (identifier in SelectedAppListIdentifier.values()) {
