@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.webkit.URLUtil
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import protect.yourself.core.appCoroutineScope
@@ -187,13 +188,32 @@ class MyAccessibilityService : AccessibilityService() {
         val eventType = event.eventType
 
         try {
+            // IAB-02 fix: Block In-App Browsers must also fire on click/long-click
+            // events, not just window-state changes. NopoX 1.0.53 runs
+            // checkBlockBrowsers on eventType 1 (VIEW_CLICKED), 2
+            // (VIEW_LONG_CLICKED), and 32 (WINDOW_STATE_CHANGED). When a user
+            // taps a link inside an app that opens an in-app WebView, the
+            // click event carries the WebView className + the link URL in its
+            // text/contentDescription — that is the primary signal. The
+            // previous implementation only ran on WINDOW_STATE_CHANGED, so
+            // most in-app browser opens were never caught.
+            if (eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
+                eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED ||
+                eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            ) {
+                if (isBlockInAppBrowsersOn && checkInAppBrowserBlock(event, packageName)) {
+                    return
+                }
+            }
+
             when (eventType) {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                     handleWindowStateChange(packageName, event)
                 }
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
                 AccessibilityEvent.TYPE_VIEW_FOCUSED,
-                AccessibilityEvent.TYPE_VIEW_CLICKED -> {
+                AccessibilityEvent.TYPE_VIEW_CLICKED,
+                AccessibilityEvent.TYPE_VIEW_LONG_CLICKED -> {
                     handleContentChange(packageName, event)
                 }
             }
@@ -370,14 +390,9 @@ class MyAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Block in-app browsers
-        if (isBlockInAppBrowsersOn && cachedInAppBrowserBlockApps.contains(packageName)) {
-            val url = extractUrlFromEvent(event, packageName)
-            if (url != null) {
-                launchBlockActivity(packageName, "block_page_default_in_app_browser_message")
-                return
-            }
-        }
+        // Block in-app browsers — handled in onAccessibilityEvent (IAB-02 fix)
+        // so that click/long-click events are also caught. No inline check
+        // here to avoid double-blocking.
 
         // Stop Me: block apps not in whitelist.
         // AB-01 fix: check persisted end-time instead of in-memory boolean.
@@ -705,6 +720,188 @@ class MyAccessibilityService : AccessibilityService() {
             if (found != null) return found
         }
         return null
+    }
+
+    // ===== In-App Browser blocking (IAB-01 / IAB-02 fix) =====
+
+    /**
+     * Detect and block in-app browsers (WebViews, Facebook browser, Outlook
+     * browser) inside user-selected apps.
+     *
+     * This method is the reference implementation ported from NopoX 1.0.53
+     * (`MyAccessibilityService.checkBlockBrowsers` →
+     * `blockInAppBrowserApps` branch, lines 8544-8611 in the jadx output).
+     *
+     * ## Root cause of the original bug
+     *
+     * The previous implementation called `extractUrlFromEvent(event, pkg)`,
+     * which is designed for STANDALONE browsers: it looks up known address-bar
+     * view IDs (e.g. `com.android.chrome:id/url_bar`) and falls back to
+     * searching for EditText-like nodes containing URL text. In-app browsers
+     * (WebViews) do NOT expose their URL in an EditText address bar — the URL
+     * is internal to the WebView and not exposed as an accessibility node.
+     * As a result, `extractUrlFromEvent` almost always returned `null` for
+     * in-app browsers, and the block never fired.
+     *
+     * ## Correct detection (three independent signals)
+     *
+     * NopoX 1.0.53 uses three signals. ANY one of them triggers a block:
+     *
+     *  1. **ClassName match** — concatenate `event.className`,
+     *     `sourceNode.className`, and `rootNode.className` (comma-separated)
+     *     and check whether it contains any entry from
+     *     [BlockerPageUtils.IN_APP_BROWSER_CLASS_NAMES]
+     *     (`android.webkit.WebView`, `com.facebook.browser`). When an app
+     *     opens a link in an in-app browser, the resulting accessibility
+     *     event's className is `android.webkit.WebView` — this is the
+     *     primary signal.
+     *
+     *  2. **URL in text** — combine `event.text`,
+     *     `event.contentDescription`, `sourceNode.text`, and
+     *     `sourceNode.contentDescription` into a single space-separated
+     *     string, split on spaces, and check each token with
+     *     [URLUtil.isValidUrl]. This catches links surfaced as plain text
+     *     (e.g. in the content description of a clicked link view) even
+     *     when the className doesn't match.
+     *
+     *  3. **Outlook special case** — Microsoft Outlook uses a custom
+     *     in-app browser (not a WebView) whose address bar has view ID
+     *     [BlockerPageUtils.OUTLOOK_BROWSER_ADDRESS_VIEW_ID]. We look up
+     *     that view ID on the source node as a final fallback.
+     *
+     * If the package is not in [cachedInAppBrowserBlockApps], this method
+     * returns `false` without doing any work.
+     *
+     * @param event the accessibility event
+     * @param packageName the package name of the foreground app
+     * @return `true` if an in-app browser was detected and blocked,
+     *         `false` otherwise
+     */
+    private fun checkInAppBrowserBlock(event: AccessibilityEvent, packageName: String): Boolean {
+        // Fast path: package not in the user-selected in-app browser blocklist.
+        // This avoids the (relatively expensive) className / text / view-ID
+        // checks for every event from every app.
+        if (!cachedInAppBrowserBlockApps.contains(packageName)) {
+            return false
+        }
+
+        val sourceNode: AccessibilityNodeInfo? = try {
+            event.source
+        } catch (t: Throwable) {
+            Timber.v(t, "IAB: event.source threw for pkg=$packageName")
+            null
+        }
+        val rootNode: AccessibilityNodeInfo? = try {
+            rootInActiveWindow
+        } catch (t: Throwable) {
+            Timber.v(t, "IAB: rootInActiveWindow threw for pkg=$packageName")
+            null
+        }
+
+        // ===== Signal 1: className match =====
+        // Concatenate the three class names (event, source, root) with ","
+        // and check whether the result contains any known in-app browser
+        // class name. Using `contains` (not equals) because the event
+        // className may be a more specific subclass (e.g.
+        // `android.webkit.WebView` embedded inside a fullscreen view).
+        val eventClassName = try {
+            event.className?.toString() ?: ""
+        } catch (_: Throwable) { "" }
+        val sourceClassName = try {
+            sourceNode?.className?.toString() ?: ""
+        } catch (_: Throwable) { "" }
+        val rootClassName = try {
+            rootNode?.className?.toString() ?: ""
+        } catch (_: Throwable) { "" }
+        val combinedClassNames = "$eventClassName,$sourceClassName,$rootClassName"
+
+        val matchedClassName = BlockerPageUtils.IN_APP_BROWSER_CLASS_NAMES
+            .firstOrNull { combinedClassNames.contains(it) }
+        if (matchedClassName != null) {
+            Timber.i(
+                "IAB: blocking pkg=$packageName — className matched " +
+                    "'$matchedClassName' (combined='$combinedClassNames')"
+            )
+            protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                "IAB-Block",
+                "pkg=$packageName signal=className match='$matchedClassName' " +
+                    "eventClass='$eventClassName' sourceClass='$sourceClassName' " +
+                    "rootClass='$rootClassName'"
+            )
+            launchBlockActivity(packageName, "block_page_default_in_app_browser_message")
+            return true
+        }
+
+        // ===== Signal 2: URL in combined text =====
+        // Combine event.text + event.contentDescription + sourceNode.text +
+        // sourceNode.contentDescription, split on spaces, and check each
+        // token with URLUtil.isValidUrl(). This catches links that appear
+        // as plain text in the clicked view's content description even when
+        // the className is not a WebView.
+        val eventText = try {
+            event.text?.joinToString(" ") { it?.toString() ?: "" } ?: ""
+        } catch (_: Throwable) { "" }
+        val eventContentDescription = try {
+            event.contentDescription?.toString() ?: ""
+        } catch (_: Throwable) { "" }
+        val sourceText = try {
+            sourceNode?.text?.toString() ?: ""
+        } catch (_: Throwable) { "" }
+        val sourceContentDescription = try {
+            sourceNode?.contentDescription?.toString() ?: ""
+        } catch (_: Throwable) { "" }
+        val combinedText =
+            "$eventText $eventContentDescription $sourceText $sourceContentDescription"
+
+        val matchedUrl = combinedText
+            .split(' ')
+            .firstOrNull { token -> token.isNotBlank() && URLUtil.isValidUrl(token) }
+        if (matchedUrl != null) {
+            Timber.i(
+                "IAB: blocking pkg=$packageName — URL in text '$matchedUrl' " +
+                    "(eventText='$eventText' eventCD='$eventContentDescription' " +
+                    "sourceText='$sourceText' sourceCD='$sourceContentDescription')"
+            )
+            protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                "IAB-Block",
+                "pkg=$packageName signal=url-in-text url='$matchedUrl'"
+            )
+            launchBlockActivity(packageName, "block_page_default_in_app_browser_message")
+            return true
+        }
+
+        // ===== Signal 3: Outlook in-app browser address bar =====
+        // Microsoft Outlook opens links in its own internal browser (not a
+        // WebView). The address bar has a known view ID — if that view is
+        // present on the source node, block.
+        if (sourceNode != null) {
+            val outlookNodes = try {
+                sourceNode.findAccessibilityNodeInfosByViewId(
+                    BlockerPageUtils.OUTLOOK_BROWSER_ADDRESS_VIEW_ID
+                )
+            } catch (t: Throwable) {
+                Timber.v(t, "IAB: Outlook view ID lookup threw for pkg=$packageName")
+                null
+            }
+            if (outlookNodes != null && outlookNodes.isNotEmpty()) {
+                Timber.i(
+                    "IAB: blocking pkg=$packageName — Outlook in-app browser " +
+                        "address bar view ID found"
+                )
+                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                    "IAB-Block",
+                    "pkg=$packageName signal=outlook-address-bar"
+                )
+                launchBlockActivity(packageName, "block_page_default_in_app_browser_message")
+                return true
+            }
+        }
+
+        // No signal matched — do not block. (The package IS in the
+        // blocklist, but no in-app browser activity was detected. This is
+        // correct: the user still wants to use the app's non-browser
+        // features.)
+        return false
     }
 
     private fun extractTextFromEvent(event: AccessibilityEvent): String {

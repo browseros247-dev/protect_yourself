@@ -91,6 +91,27 @@ class PresetDataTest {
     }
 
     @Test
+    fun `in-app browser class names include Facebook browser`() {
+        // Per NopoX 1.0.53 reference APK — exactly two entries.
+        assertThat(BlockerPageUtils.IN_APP_BROWSER_CLASS_NAMES).contains("com.facebook.browser")
+    }
+
+    @Test
+    fun `in-app browser class names are exactly two entries`() {
+        // NopoX 1.0.53 uses only 2 entries. Adding more (e.g. Chromium
+        // internal classes) caused false positives in the original rebuild.
+        assertThat(BlockerPageUtils.IN_APP_BROWSER_CLASS_NAMES).hasSize(2)
+    }
+
+    @Test
+    fun `outlook in-app browser view ID is defined`() {
+        // Per NopoX 1.0.53 reference APK smali — Outlook uses a custom
+        // in-app browser (not a WebView) with this view ID.
+        assertThat(BlockerPageUtils.OUTLOOK_BROWSER_ADDRESS_VIEW_ID)
+            .isEqualTo("com.microsoft.office.outlook:id/browser_top_address")
+    }
+
+    @Test
     fun `device admin texts include admin keyword`() {
         assertThat(BlockerPageUtils.DEVICE_ADMIN_TEXTS_TO_MATCH).contains("device admin")
     }

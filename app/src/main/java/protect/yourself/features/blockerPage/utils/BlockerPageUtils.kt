@@ -764,11 +764,33 @@ class BlockerPageUtils {
          * 6 entries including Chromium internal classes that caused false
          * positives (e.g. WebContentDelegateImpl appears in many non-browser
          * apps that use Chromium for rendering).
+         *
+         * These are matched against the accessibility event's className,
+         * the source node's className, and the root node's className. When
+         * an in-app browser (WebView) is shown inside another app, the
+         * accessibility event's className will be "android.webkit.WebView",
+         * which is the primary signal for in-app browser detection.
          */
         val IN_APP_BROWSER_CLASS_NAMES: List<String> = listOf(
             "android.webkit.WebView",
             "com.facebook.browser"
         )
+
+        /**
+         * Outlook in-app browser address bar view ID.
+         *
+         * NopoX 1.0.53 has a special case for Microsoft Outlook's in-app
+         * browser: when the user taps a link in an email, Outlook opens its
+         * own internal browser (not a WebView) with a custom address bar
+         * view ID. This view ID is checked as a fallback when neither the
+         * className match nor the URL-in-text check fires.
+         *
+         * Source: NopoX 1.0.53 APK smali — checkBlockBrowsers() checks
+         * `accessibilityNodeInfoByViewId(sourceNode,
+         *   "com.microsoft.office.outlook:id/browser_top_address")`.
+         */
+        const val OUTLOOK_BROWSER_ADDRESS_VIEW_ID: String =
+            "com.microsoft.office.outlook:id/browser_top_address"
 
         /**
          * Texts to match in settings to detect device admin / accessibility pages.
