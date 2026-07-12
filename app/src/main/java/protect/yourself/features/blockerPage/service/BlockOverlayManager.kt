@@ -223,57 +223,20 @@ class BlockOverlayManager(
             overlayView = view
             Timber.i("BlockOverlayManager: overlay addView succeeded for pkg=%s messageKey=%s", packageName, messageResKey)
 
-            // OV-01 fix (overlay z-order): delay the kill timer start by a short
-            // settling period to let the window manager fully register the overlay
-            // and place it at the top of the z-order BEFORE HOME is pressed.
+            // OV-02 fix: start the kill timer immediately (like NopoX). The
+            // kill timer runs on a java.util.Timer background thread, so the
+            // first HOME press happens on a separate thread — this gives the
+            // window manager time to process the addView on the main thread
+            // before the HOME action fires.
             //
-            // ## Root cause of "overlay appears in background"
-            //
-            // The previous implementation started the KillTimer immediately after
-            // addView. The KillTimer's first iteration (at T+0) posts HOME×5 to
-            // the main thread handler. Because addView and the handler.post both
-            // run on the main thread, the HOME press can execute before the
-            // window manager has finished bringing the new overlay window to the
-            // foreground. When HOME fires, the system brings the launcher forward
-            // — and the overlay, not yet fully settled into its z-order position,
-            // can end up BEHIND the launcher instead of on top of it.
-            //
-            // NopoX 1.0.53 does not have this issue because its kill timer runs
-            // on a separate java.util.Timer thread (not the main thread), and
-            // the Timer thread spin-up + the first scheduleAtFixedRate callback
-            // naturally introduces a ~10-50ms delay during which the overlay
-            // settles. The rebuild's mainHandler.post is too fast — it executes
-            // on the very next main-thread loop iteration, before the window
-            // manager has processed the addView fully.
-            //
-            // ## Fix
-            //
-            // Post the kill-timer start to the main thread with a 150ms delay.
-            // This gives the window manager time to:
-            //   1. Process the addView call and create the overlay window
-            //   2. Assign it the correct z-order (top of application overlays)
-            //   3. Render the first frame so it's visible
-            // Only then does the kill timer start pressing HOME, which brings
-            // the launcher forward — but by now the overlay is already on top
-            // and stays on top because TYPE_APPLICATION_OVERLAY windows are
-            // always above the launcher in z-order.
-            //
-            // The 150ms value is conservative — it's long enough for the window
-            // manager to settle (typically <50ms on modern devices) but short
-            // enough that the user doesn't notice a gap between the offending
-            // app closing and the overlay appearing.
-            mainHandler.postDelayed({
-                try {
-                    if (overlayView != null && isOverlayShowing.get()) {
-                        killTimer = KillTimer(service).also { it.start() }
-                        Timber.d("BlockOverlayManager: kill timer started after settling delay (pkg=%s)", packageName)
-                    } else {
-                        Timber.w("BlockOverlayManager: overlay was hidden before kill timer could start (pkg=%s)", packageName)
-                    }
-                } catch (t: Throwable) {
-                    Timber.e(t, "BlockOverlayManager: failed to start kill timer after settling delay (pkg=%s)", packageName)
-                }
-            }, OVERLAY_SETTLING_DELAY_MS)
+            // The previous OV-01 fix added a 150ms delay, but that was a
+            // workaround for the wrong root cause. The REAL issue was that
+            // the old KillTimer pressed HOME 5× in a tight loop on the main
+            // thread, flooding the system and racing with the window manager.
+            // Now that the KillTimer matches NopoX (one HOME per 500ms tick
+            // on a background thread), the delay is no longer needed.
+            killTimer = KillTimer(service).also { it.start() }
+            Timber.d("BlockOverlayManager: kill timer started (pkg=%s)", packageName)
 
             // Asynchronously apply the user's custom message + motivation image.
             // This is non-blocking — the overlay is already visible with the
@@ -580,66 +543,80 @@ class BlockOverlayManager(
     }
 
     /**
-     * Kill timer — presses GLOBAL_ACTION_HOME ×5 then GLOBAL_ACTION_BACK ×1,
-     * every 500ms, for a total of 6 iterations (3 seconds).
+     * Kill timer — matches NopoX 1.0.53 reference exactly.
      *
-     * This is what actually kills the offending activity underneath the
-     * overlay. The overlay only covers it visually.
+     * OV-02 fix: the previous implementation pressed HOME 5 times in a tight
+     * loop every 500ms (`repeat(5) { ... }`), and also pressed BACK every
+     * single iteration. This is NOT what NopoX does.
      *
-     * Ported from NopoX's `TimersKt.timer().scheduleAtFixedRate(..., 0L, 500L)`.
+     * NopoX 1.0.53 kill timer logic (decompiled
+     * PornBlockPage$initCloseButtonBackPageAction$$inlined$fixedRateTimer$1.smali):
+     *   - count increments at the START of each run (count starts at 0, first
+     *     run makes it 1)
+     *   - At count 1-5: performGlobalAction(GLOBAL_ACTION_HOME) — ONE HOME
+     *     press per tick
+     *   - At count 6: performGlobalAction(GLOBAL_ACTION_BACK) + cancel timer
+     *   - Interval: 500ms (0x1f4)
+     *   - Runs on a java.util.Timer background thread
      *
-     * THREAD-01 fix (v1.0.58): NopoX calls `performGlobalAction` directly from
-     * the TimerTask's background thread. On Android 14 (API 34), this throws
-     * `ViewRootImpl$CalledFromWrongThreadException` because `performGlobalAction`
-     * internally triggers accessibility content change events that ViewRootImpl
-     * validates against the thread that created the view hierarchy (the main
-     * thread).
+     * The previous rebuild pressed HOME 5× per tick AND BACK every tick,
+     * which:
+     *   1. Flooded the system with 30 HOME presses (5×6 iterations) instead
+     *      of 5 — this can cause the system to behave unpredictably
+     *   2. Pressed BACK every tick, which can dismiss the overlay itself if
+     *      the overlay has focus
+     *   3. Ran all 5 HOME presses in a single main-thread post, which
+     *      blocked the main thread for longer than necessary
      *
-     * The fix: dispatch all `performGlobalAction` calls to the main thread via
-     * `Handler(Looper.getMainLooper()).post { ... }`. This is an improvement
-     * over NopoX 1.0.53 which has the same bug but was tolerated on older
-     * Android versions.
+     * THREAD-01 fix (v1.0.58): NopoX calls `performGlobalAction` directly
+     * from the TimerTask's background thread. On Android 14 (API 34), this
+     * can throw `ViewRootImpl$CalledFromWrongThreadException`. We dispatch
+     * to the main thread via `Handler(Looper.getMainLooper()).post { ... }`
+     * but only ONE action per tick (not 5), matching NopoX's per-tick
+     * behavior.
      */
     private class KillTimer(private val service: AccessibilityService) {
         private val mainHandler = Handler(Looper.getMainLooper())
         private var timer: java.util.Timer? = null
-        private var iteration = 0
-        private val maxIterations = 6  // 6 × 500ms = 3 seconds
+        private var count = 0
+        private val maxCount = 6  // NopoX: 5 HOME + 1 BACK = 6 ticks
 
         fun start() {
             timer = java.util.Timer("BlockOverlay-KillTimer", true)
+            // NopoX: scheduleAtFixedRate(task, 0L, 500L) — first run at T+0
             timer?.scheduleAtFixedRate(object : java.util.TimerTask() {
                 override fun run() {
                     try {
-                        if (iteration >= maxIterations) {
-                            cancel()
-                            return
-                        }
-                        // THREAD-01: dispatch performGlobalAction calls to the
-                        // main thread. On Android 14+, calling these from a
-                        // background thread throws CalledFromWrongThreadException.
-                        mainHandler.post {
-                            // Press HOME 5 times
-                            repeat(5) {
+                        // NopoX: count++ at the START of each run
+                        count++
+
+                        if (count <= 5) {
+                            // NopoX: at count 1-5, press HOME once
+                            mainHandler.post {
                                 try {
                                     service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                                    Timber.d("KillTimer: tick %d/6 — HOME pressed", count)
                                 } catch (t: Throwable) {
-                                    Timber.w(t, "KillTimer: GLOBAL_ACTION_HOME failed")
+                                    Timber.w(t, "KillTimer: GLOBAL_ACTION_HOME failed at tick %d", count)
                                 }
                             }
-                            // Press BACK once
-                            try {
-                                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                            } catch (t: Throwable) {
-                                Timber.w(t, "KillTimer: GLOBAL_ACTION_BACK failed")
+                        } else if (count == 6) {
+                            // NopoX: at count 6, press BACK once + cancel
+                            mainHandler.post {
+                                try {
+                                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                                    Timber.d("KillTimer: tick 6/6 — BACK pressed")
+                                } catch (t: Throwable) {
+                                    Timber.w(t, "KillTimer: GLOBAL_ACTION_BACK failed at tick 6")
+                                }
                             }
+                            cancel()
                         }
-                        iteration++
                     } catch (t: Throwable) {
                         Timber.w(t, "KillTimer: iteration failed")
                     }
                 }
-            }, 0L, 500L)
+            }, 0L, 500L)  // NopoX: 0ms initial delay, 500ms interval
         }
 
         fun cancel() {
