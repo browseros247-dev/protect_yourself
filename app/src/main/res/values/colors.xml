@@ -13,7 +13,6 @@
     <color name="bg_blue">#FF151F26</color>
     <color name="bg_blue_dark">#FF061620</color>
     <color name="bg_blue_dark_overlay">#BF061620</color>
-    <color name="bg_splash">#FF152B35</color>
 
     <color name="bottom_nav_active">#FF38D0FE</color>
     <color name="bottom_nav_divider">#FF052233</color>
@@ -42,22 +41,7 @@
 
     <!-- ============ Misc ============ -->
     <color name="transparent">#00000000</color>
-    <color name="card_background_dark">#FF0F1F28</color>
     <color name="card_background_light">#FFFFFFFF</color>
-    <color name="divider_color_dark">#FF1F3B4B</color>
     <color name="divider_color_light">#FFE0E5EA</color>
 
-    <!-- ============ Block screen ============ -->
-    <color name="block_screen_background">@color/bg_blue_dark</color>
-    <color name="block_screen_message_text">@color/white</color>
-    <color name="block_screen_close_button_text">@color/white</color>
-    <color name="block_screen_why_text">@color/accent_color</color>
-
-    <!-- ============ AMP SDK colors (kept for compatibility) ============ -->
-    <color name="amp_blue">#FF005488</color>
-    <color name="amp_dark_blue">#FF0C2A4B</color>
-    <color name="amp_gray">#FF60758B</color>
-    <color name="amp_light_gray">#FFE5E5E5</color>
-    <color name="amp_light_gray_2">#FFC6D0D9</color>
-    <color name="amp_transparent">#00000000</color>
 </resources>

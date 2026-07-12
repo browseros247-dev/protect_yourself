@@ -283,37 +283,6 @@ class KeywordManagerViewModel(
     }
 
     /**
-     * KB-10 fix: validate a keyword before adding it.
-     *  - Min 2 characters (matches NopoX behaviour)
-     *  - Max 100 characters (prevents abuse / performance issues)
-     *  - Not blank
-     *  - Not a duplicate of an existing keyword (case-insensitive)
-     *
-     * Returns true if valid, false otherwise.
-     */
-    private fun isValidKeyword(keyword: String, existing: List<SelectedKeywordItemModel>): Boolean {
-        if (keyword.isBlank()) {
-            Timber.w("KB-10: keyword is blank — rejected")
-            return false
-        }
-        if (keyword.length < 2) {
-            Timber.w("KB-10: keyword '$keyword' too short (< 2 chars) — rejected")
-            return false
-        }
-        if (keyword.length > 100) {
-            Timber.w("KB-10: keyword too long (> 100 chars) — rejected")
-            return false
-        }
-        // KB-10: duplicate check (case-insensitive, trimmed).
-        val lowerKeyword = keyword.lowercase()
-        if (existing.any { it.keyword.trim().lowercase() == lowerKeyword }) {
-            Timber.w("KB-10: keyword '$keyword' is a duplicate — rejected")
-            return false
-        }
-        return true
-    }
-
-    /**
      * Delete a keyword by key.
      * Emits a [KeywordManagerEvent.Deleted] event for UI feedback.
      */

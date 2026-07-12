@@ -139,13 +139,13 @@ fun UnifiedBlockingPage(
     LaunchedEffect(Unit) {
         Timber.i("UnifiedBlockingPage: subscribed to KeywordManager events")
         keywordViewModel.events.collect { event ->
-            handleKeywordEvent(event, context, activeTab) { inlineError = it }
+            handleKeywordEvent(event, context) { inlineError = it }
         }
     }
     LaunchedEffect(Unit) {
         Timber.i("UnifiedBlockingPage: subscribed to PackageIntent events")
         packageIntentViewModel.events.collect { event ->
-            handlePackageIntentEvent(event, context, activeTab) { inlineError = it }
+            handlePackageIntentEvent(event, context) { inlineError = it }
         }
     }
 
@@ -1000,14 +1000,11 @@ private fun handleAdd(
 /**
  * Handle a [KeywordManagerEvent] from the KeywordManagerViewModel.
  *
- * @param activeTab the currently active tab (so we only show validation errors
- *  inline if the user is still on the tab that emitted the event)
  * @param setError callback to set the inline error text (null to clear)
  */
 private fun handleKeywordEvent(
     event: KeywordManagerEvent,
     context: android.content.Context,
-    @Suppress("UNUSED_PARAMETER") activeTab: UnifiedBlockingTab,
     setError: (String?) -> Unit
 ) {
     when (event) {
@@ -1044,7 +1041,6 @@ private fun handleKeywordEvent(
 private fun handlePackageIntentEvent(
     event: PackageIntentEvent,
     context: android.content.Context,
-    @Suppress("UNUSED_PARAMETER") activeTab: UnifiedBlockingTab,
     setError: (String?) -> Unit
 ) {
     when (event) {

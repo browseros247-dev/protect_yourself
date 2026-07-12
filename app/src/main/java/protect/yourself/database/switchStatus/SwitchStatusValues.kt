@@ -1,6 +1,5 @@
 package protect.yourself.database.switchStatus
 
-import android.content.Context
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import protect.yourself.features.blockerPage.identifiers.AccountabilityPartnerTypeIdentifiers
@@ -197,14 +196,8 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
     suspend fun getVpnNotificationCustomMessage(): String? =
         dao.get(SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE)?.asString()?.takeIf { it.isNotBlank() }
 
-    suspend fun getFirebaseToken(): String? =
-        dao.get(SwitchIdentifier.FIREBASE_TOKEN)?.asString()?.takeIf { it.isNotBlank() }
-
     suspend fun getLastBackupCreatedTime(): Long =
         dao.get(SwitchIdentifier.LAST_BACKUP_CREATED_TIME)?.asLong() ?: 0L
-
-    suspend fun getUserDeviceCurrencyCode(): String? =
-        dao.get(SwitchIdentifier.USER_DEVICE_CURRENCY_CODE)?.asString()?.takeIf { it.isNotBlank() }
 
     // ===== Reads: Enum-typed =====
 
@@ -284,17 +277,4 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
         }
 
     fun observeAll(): Flow<List<SwitchStatusItemModel>> = dao.observeAll()
-
-    companion object {
-        @Volatile
-        private var instance: SwitchStatusValues? = null
-
-        fun getInstance(context: Context): SwitchStatusValues {
-            return instance ?: synchronized(this) {
-                instance ?: SwitchStatusValues(
-                    protect.yourself.database.core.AppDatabase.getInstance(context).switchStatusDao()
-                ).also { instance = it }
-            }
-        }
-    }
 }

@@ -123,8 +123,4 @@ class StreakWidget : AppWidgetProvider() {
         if (diffMs < 0) return 0
         return (TimeUnit.MILLISECONDS.toDays(diffMs).toInt() + 1).coerceAtLeast(0)
     }
-
-    companion object {
-        const val EXTRA_OPEN_TAB = "extra_open_tab"
-    }
 }

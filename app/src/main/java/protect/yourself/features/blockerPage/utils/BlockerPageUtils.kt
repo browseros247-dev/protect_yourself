@@ -2,7 +2,6 @@ package protect.yourself.features.blockerPage.utils
 
 import android.net.Uri
 import android.util.Patterns
-import timber.log.Timber
 import java.net.IDN
 import java.net.URLDecoder
 import java.text.Normalizer

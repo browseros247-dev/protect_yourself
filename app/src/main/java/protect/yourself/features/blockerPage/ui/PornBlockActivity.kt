@@ -13,7 +13,6 @@ import android.widget.RatingBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.FileProvider
 import kotlinx.coroutines.launch
 import protect.yourself.R
 import protect.yourself.core.appCoroutineScope
@@ -367,9 +366,5 @@ class PornBlockActivity : AppCompatActivity() {
         // BUG-08 fix: this is now handled by backPressedCallback for predictive back.
         // This override is kept for backward compatibility with Android < 13.
         onBackPressedDispatcher.onBackPressed()
-    }
-
-    companion object {
-        private const val TAG = "PornBlockActivity"
     }
 }

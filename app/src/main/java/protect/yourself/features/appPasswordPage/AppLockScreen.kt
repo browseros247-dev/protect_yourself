@@ -115,13 +115,6 @@ class AppLockViewModel(
         _state.update { it.copy(input = value, error = null) }
     }
 
-    fun addPatternDot(dot: Int) {
-        val current = _state.value.input
-        if (dot !in current.mapNotNull { it.digitToIntOrNull() }) {
-            _state.update { it.copy(input = current + dot.toString(), error = null) }
-        }
-    }
-
     fun clearInput() {
         _state.update { it.copy(input = "", error = null) }
     }
@@ -578,14 +571,4 @@ fun launchBiometricPrompt(
         Timber.e(t, "Failed to launch biometric prompt")
         onFailure()
     }
-}
-
-/**
- * Check if biometric authentication is available.
- */
-fun isBiometricAvailable(context: android.content.Context): Boolean {
-    val biometricManager = BiometricManager.from(context)
-    return biometricManager.canAuthenticate(
-        BiometricManager.Authenticators.BIOMETRIC_WEAK
-    ) == BiometricManager.BIOMETRIC_SUCCESS
 }

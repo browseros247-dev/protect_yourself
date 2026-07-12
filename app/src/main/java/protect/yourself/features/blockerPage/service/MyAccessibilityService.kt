@@ -3,9 +3,7 @@ package protect.yourself.features.blockerPage.service
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
-import android.graphics.PixelFormat
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -15,7 +13,6 @@ import protect.yourself.core.appCoroutineScope
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
 import protect.yourself.database.selectedKeywords.SelectedKeywordIdentifier
-import protect.yourself.database.switchStatus.SwitchIdentifier
 import protect.yourself.database.switchStatus.SwitchStatusValues
 import protect.yourself.features.blockerPage.utils.BlockerPageUtils
 import timber.log.Timber
@@ -55,7 +52,6 @@ class MyAccessibilityService : AccessibilityService() {
     @Volatile private var cachedWhitelistKeywords: List<String> = emptyList()
     @Volatile private var cachedBlockApps: Set<String> = emptySet()
     @Volatile private var cachedStopMeWhitelist: Set<String> = emptySet()
-    @Volatile private var cachedVpnWhitelist: Set<String> = emptySet()
     @Volatile private var cachedNewInstallBlockApps: Set<String> = emptySet()
     @Volatile private var cachedInAppBrowserBlockApps: Set<String> = emptySet()
     @Volatile private var cachedUnsupportedBrowserWhitelist: Set<String> = emptySet()
@@ -95,7 +91,6 @@ class MyAccessibilityService : AccessibilityService() {
     // cause ConcurrentModificationException.
     private val browserCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 
-    private var lastBlockedPackage: String? = null
     private var lastBlockTimeMs: Long = 0
 
     // SafeSearch redirect throttle — prevents redirect loops + rapid-fire intents
@@ -298,7 +293,7 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         // Block recent apps — prevents force-stop / uninstall from recents
-        if (isBlockRecentAppsOn && isRecentApps(className, packageName)) {
+        if (isBlockRecentAppsOn && isRecentApps(className)) {
             launchBlockActivity(packageName, "block_recent_apps_bw_message")
             return
         }
@@ -431,7 +426,7 @@ class MyAccessibilityService : AccessibilityService() {
             packageName != "com.android.systemui" &&
             !isStaleEvent(event)
         ) {
-            val text = extractTextFromEvent(event, packageName)
+            val text = extractTextFromEvent(event)
             if (text.isNotBlank() && text.length < MAX_CONTENT_TEXT_LENGTH) {
                 val utils = BlockerPageUtils.getInstance()
                 val (found, matchedKeyword) = utils.isDetectWord(text, cachedBlockKeywords)
@@ -616,7 +611,7 @@ class MyAccessibilityService : AccessibilityService() {
         return null
     }
 
-    private fun extractTextFromEvent(event: AccessibilityEvent, packageName: String): String {
+    private fun extractTextFromEvent(event: AccessibilityEvent): String {
         val sb = StringBuilder()
         event.text?.forEach { sb.append(it).append(' ') }
         val root = rootInActiveWindow
@@ -663,33 +658,6 @@ class MyAccessibilityService : AccessibilityService() {
         }
     }
 
-    /**
-     * Safe wrapper around [AccessibilityNodeInfo.findAccessibilityNodeInfosByViewId] —
-     * catches SecurityException and returns empty list. NopoX wraps every
-     * findAccessibilityNodeInfosByViewId call this way.
-     *
-     * UP-04 fix.
-     */
-    private fun safeFindByIds(viewId: String): List<AccessibilityNodeInfo> {
-        return try {
-            rootInActiveWindow?.findAccessibilityNodeInfosByViewId(viewId) ?: emptyList()
-        } catch (_: Throwable) {
-            emptyList()
-        }
-    }
-
-    /**
-     * Safe wrapper around [AccessibilityNodeInfo.findAccessibilityNodeInfosByText] —
-     * catches SecurityException and returns empty list.
-     */
-    private fun safeFindByText(text: String): List<AccessibilityNodeInfo> {
-        return try {
-            rootInActiveWindow?.findAccessibilityNodeInfosByText(text) ?: emptyList()
-        } catch (_: Throwable) {
-            emptyList()
-        }
-    }
-
     // ===== Detection helpers =====
 
     /**
@@ -728,7 +696,7 @@ class MyAccessibilityService : AccessibilityService() {
      *
      * UP-04 fix: wrapped in try/catch (NopoX pattern).
      */
-    private fun isRecentApps(className: String, packageName: String): Boolean {
+    private fun isRecentApps(className: String): Boolean {
         return try {
             val lower = className.lowercase(Locale.ROOT)
             if (lower.contains("recents") ||
@@ -827,7 +795,6 @@ class MyAccessibilityService : AccessibilityService() {
      *     not block, because a false positive on a legitimate Settings page
      *     is worse than a false negative)
      *   - OEM-specific class name checks (Samsung, MIUI, Huawei, OnePlus, OPLUS)
-     *   - View-ID-based detection via [safeFindByIds] (NopoX uses this heavily)
      *   - Node-tree text traversal via [safeCollectText] as a fallback when
      *     the event text is empty (some OEMs don't populate event.text)
      *   - App-name text search is NO LONGER gated behind a class-name guard
@@ -1128,11 +1095,6 @@ class MyAccessibilityService : AccessibilityService() {
         return knownBrowserPrefixes.any { packageName.startsWith(it) }
     }
 
-    private fun isBrowserPackage(packageName: String): Boolean {
-        // Legacy method kept for backward compatibility with other callers
-        return isBrowserPackageDetected(packageName)
-    }
-
     // ===== Block activity launcher =====
 
     /**
@@ -1228,7 +1190,6 @@ class MyAccessibilityService : AccessibilityService() {
         if (now - lastBlockTimeMs < BLOCK_THROTTLE_GLOBAL_MS) {
             return
         }
-        lastBlockedPackage = packageName
         lastBlockTimeMs = now
 
         val intent = Intent(this, protect.yourself.features.blockerPage.ui.PornBlockActivity::class.java).apply {
@@ -1393,9 +1354,6 @@ class MyAccessibilityService : AccessibilityService() {
             if (stopMeEndTime > 0) {
                 Timber.i("AB-01: Restored active Stop Me session (endTime=$stopMeEndTime)")
             }
-            cachedVpnWhitelist = db.selectedAppsListDao()
-                .getSelectedByIdentifier(SelectedAppListIdentifier.VPN_WHITELIST_APPS.value)
-                .map { it.packageName }.toSet()
             cachedNewInstallBlockApps = db.selectedAppsListDao()
                 .getSelectedByIdentifier(SelectedAppListIdentifier.BLOCK_NEW_INSTALL_APPS.value)
                 .map { it.packageName }.toSet()
@@ -1443,7 +1401,6 @@ class MyAccessibilityService : AccessibilityService() {
         const val EXTRA_MATCHED_KEYWORD = "extra_matched_keyword"
 
         // KB-06: throttle constants.
-        private const val BLOCK_THROTTLE_PER_PACKAGE_MS = 500L
         private const val BLOCK_THROTTLE_GLOBAL_MS = 300L
 
         // KB-01: max content-text length we'll run keyword matching on. Avoids

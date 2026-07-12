@@ -935,16 +935,6 @@ class CrashLogger private constructor(private val context: Context) {
     }
 
     /**
-     * Clear the breadcrumb buffer (in-memory + disk). Useful for testing.
-     */
-    fun clearBreadcrumbs() {
-        synchronized(breadcrumbBuffer) {
-            breadcrumbBuffer.clear()
-            try { breadcrumbFile.delete() } catch (_: Throwable) {}
-        }
-    }
-
-    /**
      * Set the re-entrancy flag — called by the uncaught exception handler
      * before invoking logThrowable, to prevent infinite recursion if logging
      * itself throws.
