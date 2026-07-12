@@ -358,29 +358,6 @@ class CrashLogger private constructor(private val context: Context) {
         return gson.toJson(export)
     }
 
-    /**
-     * Get a summary string for the most recent N crashes — useful for
-     * "Email support" auto-attachment.
-     */
-    fun getRecentCrashesSummary(limit: Int = 5): String {
-        val entries = readEntries(limit)
-        if (entries.isEmpty()) return "No crash logs recorded."
-        val sb = StringBuilder()
-        sb.appendLine("Protect Yourself — recent crash logs (last $limit)")
-        sb.appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT})")
-        sb.appendLine("App: v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-        sb.appendLine("====")
-        for (entry in entries) {
-            sb.appendLine("[${entry.timestampFormatted}] ${entry.severity} ${entry.tag.ifBlank { "untagged" }}")
-            sb.appendLine("  ${entry.message}")
-            if (entry.throwableClass.isNotBlank()) {
-                sb.appendLine("  Exception: ${entry.throwableClass}")
-            }
-            sb.appendLine()
-        }
-        return sb.toString()
-    }
-
     // ===== Internal: persistence =====
 
     private fun persistEntry(entry: CrashLogEntry) {
@@ -930,16 +907,6 @@ class CrashLogger private constructor(private val context: Context) {
             }
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to load breadcrumbs from disk", t)
-        }
-    }
-
-    /**
-     * Clear the breadcrumb buffer (in-memory + disk). Useful for testing.
-     */
-    fun clearBreadcrumbs() {
-        synchronized(breadcrumbBuffer) {
-            breadcrumbBuffer.clear()
-            try { breadcrumbFile.delete() } catch (_: Throwable) {}
         }
     }
 

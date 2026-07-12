@@ -113,13 +113,6 @@ class AppLockViewModel(
         _state.update { it.copy(input = value, error = null) }
     }
 
-    fun addPatternDot(dot: Int) {
-        val current = _state.value.input
-        if (dot !in current.mapNotNull { it.digitToIntOrNull() }) {
-            _state.update { it.copy(input = current + dot.toString(), error = null) }
-        }
-    }
-
     fun clearInput() {
         _state.update { it.copy(input = "", error = null) }
     }
@@ -577,4 +570,3 @@ fun launchBiometricPrompt(
         onFailure()
     }
 }
-

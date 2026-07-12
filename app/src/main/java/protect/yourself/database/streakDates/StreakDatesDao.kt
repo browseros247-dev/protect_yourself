@@ -18,9 +18,6 @@ interface StreakDatesDao {
     @Query("SELECT * FROM streak_dates_table WHERE type != '' ORDER BY startTime DESC")
     fun observeRelapseDays(): Flow<List<StreakDatesItemModel>>
 
-    @Query("SELECT * FROM streak_dates_table WHERE type = :type ORDER BY startTime DESC")
-    suspend fun getByType(type: String): List<StreakDatesItemModel>
-
     @Query("SELECT COUNT(*) FROM streak_dates_table WHERE type = ''")
     suspend fun countActiveStreakDays(): Int
 

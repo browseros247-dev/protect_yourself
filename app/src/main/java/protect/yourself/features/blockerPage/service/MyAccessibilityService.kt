@@ -52,7 +52,6 @@ class MyAccessibilityService : AccessibilityService() {
     @Volatile private var cachedWhitelistKeywords: List<String> = emptyList()
     @Volatile private var cachedBlockApps: Set<String> = emptySet()
     @Volatile private var cachedStopMeWhitelist: Set<String> = emptySet()
-    @Volatile private var cachedVpnWhitelist: Set<String> = emptySet()
     @Volatile private var cachedNewInstallBlockApps: Set<String> = emptySet()
     @Volatile private var cachedInAppBrowserBlockApps: Set<String> = emptySet()
     @Volatile private var cachedUnsupportedBrowserWhitelist: Set<String> = emptySet()
@@ -294,7 +293,7 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         // Block recent apps — prevents force-stop / uninstall from recents
-        if (isBlockRecentAppsOn && isRecentApps(className, packageName)) {
+        if (isBlockRecentAppsOn && isRecentApps(className)) {
             launchBlockActivity(packageName, "block_recent_apps_bw_message")
             return
         }
@@ -427,7 +426,7 @@ class MyAccessibilityService : AccessibilityService() {
             packageName != "com.android.systemui" &&
             !isStaleEvent(event)
         ) {
-            val text = extractTextFromEvent(event, packageName)
+            val text = extractTextFromEvent(event)
             if (text.isNotBlank() && text.length < MAX_CONTENT_TEXT_LENGTH) {
                 val utils = BlockerPageUtils.getInstance()
                 val (found, matchedKeyword) = utils.isDetectWord(text, cachedBlockKeywords)
@@ -612,7 +611,7 @@ class MyAccessibilityService : AccessibilityService() {
         return null
     }
 
-    private fun extractTextFromEvent(event: AccessibilityEvent, packageName: String): String {
+    private fun extractTextFromEvent(event: AccessibilityEvent): String {
         val sb = StringBuilder()
         event.text?.forEach { sb.append(it).append(' ') }
         val root = rootInActiveWindow
@@ -697,7 +696,7 @@ class MyAccessibilityService : AccessibilityService() {
      *
      * UP-04 fix: wrapped in try/catch (NopoX pattern).
      */
-    private fun isRecentApps(className: String, packageName: String): Boolean {
+    private fun isRecentApps(className: String): Boolean {
         return try {
             val lower = className.lowercase(Locale.ROOT)
             if (lower.contains("recents") ||
@@ -1355,9 +1354,6 @@ class MyAccessibilityService : AccessibilityService() {
             if (stopMeEndTime > 0) {
                 Timber.i("AB-01: Restored active Stop Me session (endTime=$stopMeEndTime)")
             }
-            cachedVpnWhitelist = db.selectedAppsListDao()
-                .getSelectedByIdentifier(SelectedAppListIdentifier.VPN_WHITELIST_APPS.value)
-                .map { it.packageName }.toSet()
             cachedNewInstallBlockApps = db.selectedAppsListDao()
                 .getSelectedByIdentifier(SelectedAppListIdentifier.BLOCK_NEW_INSTALL_APPS.value)
                 .map { it.packageName }.toSet()

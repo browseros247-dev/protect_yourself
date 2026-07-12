@@ -1,6 +1,5 @@
 package protect.yourself.database.switchStatus
 
-import android.content.Context
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import protect.yourself.features.blockerPage.identifiers.AccountabilityPartnerTypeIdentifiers
@@ -26,9 +25,24 @@ import timber.log.Timber
  *  - getForcePuOffStatus  (was a flag for "force PU promo off if premium")
  *  - getPornBlockerSwitchNumber  (was premium-aware count)
  *
- * Added helpers:
- *  - isPremiumActive(): always returns `false` — kept for compatibility but
- *    no longer gates any feature (premium removed).
+ * REMOVED accessors (orphans after the XML→Compose migration + Phase 5/6 deferral):
+ *  - All social-media-specific getters (Snapchat/Insta/YT/Telegram/Whatsapp)
+ *    — kept as SwitchIdentifier keys for DB schema compat, but the typed
+ *    accessors had zero call sites.
+ *  - All `observeX` flows except `observePornBlockerSwitch` — only
+ *    `observePornBlockerSwitch` is consumed by Compose UI.
+ *  - `observeAll()` — had zero external call sites.
+ *  - `isLongSentenceMessageSet`, `isBlockScreenCountDownTimeSet`,
+ *    `isBlockScreenCustomMessageSet`, `isVpnNotificationCustomMessageSet`,
+ *    `isVpnDnsCustomListSet`, `isStopMeWhitelistAppsSet` — boolean "is set"
+ *    predicates with zero call sites.
+ *  - `getLastBackupCreatedTime` — no UI displays backup time.
+ *  - `getAppLockType` — AppLockManager reads `"app_lock_type"` directly from
+ *    the DAO, bypassing this wrapper.
+ *
+ * Kept stubs (exercised by SwitchStatusDaoTest):
+ *  - isPremiumActive(): always returns `false` — premium removed.
+ *  - isEligibleForBannerAd(): always returns `0L` — ads removed.
  *
  * Usage:
  *  - Reads happen via suspend getters (Flow or suspend fun).
@@ -118,23 +132,8 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
     suspend fun isRealFriendVisible(): Boolean =
         dao.get(SwitchIdentifier.REAL_FRIEND_VISIBLE)?.asBoolean() ?: false
 
-    suspend fun isBlockScreenCountDownTimeSet(): Boolean =
-        dao.get(SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET)?.asBoolean() ?: false
-
-    suspend fun isBlockScreenCustomMessageSet(): Boolean =
-        dao.get(SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE_SET)?.asBoolean() ?: false
-
     suspend fun isBlockScreenRedirectUrlSet(): Boolean =
         dao.get(SwitchIdentifier.BLOCK_SCREEN_REDIRECT_URL_SET)?.asBoolean() ?: false
-
-    suspend fun isVpnNotificationCustomMessageSet(): Boolean =
-        dao.get(SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE_SET)?.asBoolean() ?: false
-
-    suspend fun isVpnDnsCustomListSet(): Boolean =
-        dao.get(SwitchIdentifier.VPN_DNS_CUSTOM_LIST_SET)?.asBoolean() ?: false
-
-    suspend fun isStopMeWhitelistAppsSet(): Boolean =
-        dao.get(SwitchIdentifier.STOP_ME_WHITELIST_APPS_SET)?.asBoolean() ?: false
 
     suspend fun isTermsApproved(): Boolean =
         dao.get(SwitchIdentifier.TERMS_APPROVE_STATUS)?.asBoolean() ?: false
@@ -170,15 +169,6 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
     suspend fun getVpnNotificationCustomMessage(): String? =
         dao.get(SwitchIdentifier.VPN_NOTIFICATION_CUSTOM_MESSAGE)?.asString()?.takeIf { it.isNotBlank() }
 
-    suspend fun getFirebaseToken(): String? =
-        dao.get(SwitchIdentifier.FIREBASE_TOKEN)?.asString()?.takeIf { it.isNotBlank() }
-
-    suspend fun getLastBackupCreatedTime(): Long =
-        dao.get(SwitchIdentifier.LAST_BACKUP_CREATED_TIME)?.asLong() ?: 0L
-
-    suspend fun getUserDeviceCurrencyCode(): String? =
-        dao.get(SwitchIdentifier.USER_DEVICE_CURRENCY_CODE)?.asString()?.takeIf { it.isNotBlank() }
-
     // ===== Reads: Enum-typed =====
 
     suspend fun getAccountabilityPartnerType(): AccountabilityPartnerTypeIdentifiers {
@@ -186,30 +176,17 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
         return AccountabilityPartnerTypeIdentifiers.fromString(raw)
     }
 
-    suspend fun getAppLockType(): AppLockTypeIdentifiers {
-        // BUG-15 fix: removed the dead `dao.get(SwitchIdentifier.SET_APP_LOCK_SWITCH)` read.
-        // The result was assigned to `val raw` but never used — `raw` was a
-        // leftover from a refactor. The actual type is stored under the
-        // "app_lock_type" key, which is what we return.
-        return try {
-            val typeRaw = dao.get("app_lock_type")?.asString()
-            AppLockTypeIdentifiers.fromString(typeRaw)
-        } catch (t: Throwable) {
-            Timber.w(t, "getAppLockType failed — defaulting to OFF")
-            AppLockTypeIdentifiers.OFF
-        }
-    }
-
-    // ===== Premium / ads — REMOVED stubs =====
+    // ===== Premium / ads — REMOVED stubs (kept for tests) =====
 
     /**
      * Always returns false. Premium is removed in the rebuild.
-     * Kept as a method for compatibility with original code paths.
+     * Kept as a method for compatibility with original code paths and tests.
      */
     suspend fun isPremiumActive(): Boolean = false
 
     /**
      * Always returns 0 (no banner ad eligibility). Ads removed.
+     * Kept for compatibility with tests.
      */
     suspend fun isEligibleForBannerAd(): Long = 0L
 
@@ -235,39 +212,4 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
 
     fun observePornBlockerSwitch(): Flow<Boolean> =
         dao.observe(SwitchIdentifier.PORN_BLOCKER_SWITCH).map { it?.asBoolean() ?: true }
-
-    fun observeSafeSearchSwitch(): Flow<Boolean> =
-        dao.observe(SwitchIdentifier.SAFE_SEARCH_SWITCH).map { it?.asBoolean() ?: false }
-
-    fun observeVpnSwitch(): Flow<Boolean> =
-        dao.observe(SwitchIdentifier.VPN_SWITCH).map { it?.asBoolean() ?: false }
-
-    fun observePreventUninstallSwitch(): Flow<Boolean> =
-        dao.observe(SwitchIdentifier.PREVENT_UNINSTALL_SWITCH).map { it?.asBoolean() ?: false }
-
-    fun observeAppLockSwitch(): Flow<Boolean> =
-        dao.observe(SwitchIdentifier.SET_APP_LOCK_SWITCH).map { it?.asBoolean() ?: false }
-
-    fun observeTouchIdSwitch(): Flow<Boolean> =
-        dao.observe(SwitchIdentifier.TOUCH_ID_SWITCH).map { it?.asBoolean() ?: false }
-
-    fun observeAccountabilityPartnerType(): Flow<AccountabilityPartnerTypeIdentifiers> =
-        dao.observe(SwitchIdentifier.ACCOUNTABILITY_PARTNER_TYPE).map {
-            AccountabilityPartnerTypeIdentifiers.fromString(it?.asString())
-        }
-
-    fun observeAll(): Flow<List<SwitchStatusItemModel>> = dao.observeAll()
-
-    companion object {
-        @Volatile
-        private var instance: SwitchStatusValues? = null
-
-        fun getInstance(context: Context): SwitchStatusValues {
-            return instance ?: synchronized(this) {
-                instance ?: SwitchStatusValues(
-                    protect.yourself.database.core.AppDatabase.getInstance(context).switchStatusDao()
-                ).also { instance = it }
-            }
-        }
-    }
 }

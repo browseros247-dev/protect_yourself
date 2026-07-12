@@ -9,9 +9,6 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface SwitchStatusDao {
 
-    @Query("SELECT * FROM switch_status ORDER BY `key`")
-    fun observeAll(): Flow<List<SwitchStatusItemModel>>
-
     @Query("SELECT * FROM switch_status")
     suspend fun getAll(): List<SwitchStatusItemModel>
 
@@ -20,9 +17,6 @@ interface SwitchStatusDao {
 
     @Query("SELECT * FROM switch_status WHERE `key` = :key")
     fun observe(key: String): Flow<SwitchStatusItemModel?>
-
-    @Query("SELECT value FROM switch_status WHERE `key` = :key")
-    suspend fun getValue(key: String): String?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(item: SwitchStatusItemModel)

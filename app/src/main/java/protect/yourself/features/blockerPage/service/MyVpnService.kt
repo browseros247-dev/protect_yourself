@@ -98,6 +98,19 @@ class MyVpnService : VpnService() {
     @Volatile
     private var restartJob: kotlinx.coroutines.Job? = null
 
+    // NOTE: an earlier "FIX 1.5" refactor removed the setter's
+    // refreshNotification() call (it posted a notification via
+    // NotificationManager.notify() BEFORE startForeground() tied the
+    // notification ID to the foreground service, causing a brief
+    // "notification posted by a non-foreground service" warning on
+    // Android 14+). The intent was to call refreshNotification()
+    // explicitly after startForeground() — but that call site was
+    // never added, and the function itself has now been removed as
+    // dead code. If the VPN notification needs to be updated after
+    // config changes (custom message, hide toggle, connection type),
+    // call startForeground(NOTIFICATION_ID, buildNotification(...))
+    // again with the new notification — that is the Android-blessed
+    // way to update a foreground service's notification.
     @Volatile private var vpnState: VpnState = VpnState.IDLE
 
     enum class VpnState { IDLE, CONNECTING, CONNECTED, FAILED }

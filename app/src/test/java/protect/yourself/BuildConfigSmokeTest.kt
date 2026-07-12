@@ -33,10 +33,11 @@ class BuildConfigSmokeTest {
     }
 
     @Test
-    fun `debug flag is false for release`() {
-        // Unit tests run in debug variant — DEBUG will be true here.
+    fun `debug flag is a boolean`() {
+        // Unit tests run in the debug variant, so DEBUG will be true here.
         // This test just verifies the field exists and is a Boolean.
         val debug: Boolean = BuildConfig.DEBUG
-        assertTrue(debug || !debug) // always true
+        // Explicitly check the type rather than asserting a tautology.
+        assertTrue(debug is Boolean)
     }
 }

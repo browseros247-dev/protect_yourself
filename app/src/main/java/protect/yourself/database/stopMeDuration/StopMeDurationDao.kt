@@ -9,9 +9,6 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface StopMeDurationDao {
 
-    @Query("SELECT * FROM stop_me_duration_table ORDER BY duration")
-    fun observeAll(): Flow<List<StopMeDurationItemModel>>
-
     @Query("SELECT * FROM stop_me_duration_table WHERE days = 0 ORDER BY duration")
     fun observeInstantDurations(): Flow<List<StopMeDurationItemModel>>
 

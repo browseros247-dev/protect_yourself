@@ -6,13 +6,8 @@
 
     <!-- ============ Dark theme colors (matches original) ============ -->
     <color name="colorPrimary">#FF1F323F</color>
-
-    <color name="bg_blue">#FF151F26</color>
     <color name="bg_blue_dark">#FF061620</color>
-    <color name="bg_splash">#FF152B35</color>
-
     <color name="sub_title_text_color">#FFB7BABD</color>
-
     <color name="white">#FFFFFFFF</color>
     <color name="black">#FF000000</color>
 
@@ -27,7 +22,7 @@
         Removed (unused) colors — cleaned up during dead-code analysis:
           - brand_orange, brand_orange_light (Compose theme uses theme/Color.kt BrandOrange instead)
           - colorAccent (Compose theme uses MaterialTheme.colorScheme.primary)
-          - bg_blue_dark_overlay (no references)
+          - bg_blue, bg_blue_dark_overlay, bg_splash (no references)
           - bottom_nav_active, bottom_nav_divider, bottom_nav_inactive, bottom_sheet_divider
             (Compose bottom-nav uses theme/Color.kt)
           - about_message_color, biometric_error_color (no references)
@@ -41,4 +36,5 @@
           - amp_blue, amp_dark_blue, amp_gray, amp_light_gray, amp_light_gray_2, amp_transparent
             (AMP SDK was removed; these were "kept for compatibility" but never read)
     -->
+
 </resources>
