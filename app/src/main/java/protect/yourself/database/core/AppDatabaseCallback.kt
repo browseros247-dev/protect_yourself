@@ -26,6 +26,29 @@ import timber.log.Timber
  *
  * Keyword pre-population (1189+ entries) is deferred to a background coroutine
  * that runs AFTER the DB is fully created, using DAOs safely.
+ *
+ * ## BUGFIX (v1.0.49): camelCase column names
+ *
+ * The entities (VpnCustomDnsItemModel, StopMeDurationItemModel,
+ * SelectedAppItemModel) use camelCase field names WITHOUT @ColumnInfo
+ * annotations. Room 2.6.1 generates column names matching the field names
+ * exactly — so the actual DB columns are `firstDns`, `secondDns`,
+ * `isSelected`, `displayName`, `endTime`, `startTime`, `startTimeDayMillis`,
+ * `packageName`, `appName`, etc.
+ *
+ * The PREVIOUS version of this file used snake_case in all raw SQL
+ * (`first_dns`, `second_dns`, `is_selected`, `display_name`, `end_time`,
+ * `start_time`, `start_time_day_millis`, `package_name`, `app_name`).
+ * This caused `SQLiteException: table X has no column named Y` on EVERY
+ * install (fresh and upgrade), silently caught by the try/catch in onCreate.
+ *
+ * The result: default DNS presets, Stop Me durations, and whitelist apps
+ * were NEVER inserted. The app ran in a degraded state with empty preset
+ * lists. Crash log `crash_20260712_101502_0002` (v1.0.48, vivo V2206)
+ * surfaced this as a FATAL-level diagnostic.
+ *
+ * FIX: all raw SQL now uses the camelCase column names that match the
+ * entity field names (and what Room actually generates).
  */
 class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
 
@@ -35,18 +58,6 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
 
         try {
             // === 0. Defensive schema repair ===
-            // On some upgrade paths (especially v8→v9 where the migration was
-            // interrupted or the DB was partially corrupted), Room may call
-            // onCreate even though the tables already exist from a previous
-            // install. The CREATE TABLE statements in Room's generated code
-            // use "CREATE TABLE IF NOT EXISTS", so they silently succeed even
-            // if the table exists with an OLD schema. This leaves the table
-            // missing columns that the new entity expects (e.g. display_name
-            // on vpn_custom_dns).
-            //
-            // We proactively check and repair the vpn_custom_dns table here
-            // so the insertDnsPresets() call below doesn't crash with
-            // "table vpn_custom_dns has no column named display_name".
             ensureVpnCustomDnsSchema(db)
 
             // === 1. Block screen count (single row, key=0, count=0) ===
@@ -54,7 +65,7 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
                 "INSERT OR REPLACE INTO block_screen_count_table (`key`, count) VALUES (0, 0)"
             )
 
-            // === 2. Stop Me session count (single row, key=0, count=0) ===
+            // === 2. Stop Me session count (single row, key=0, duration=0) ===
             db.execSQL(
                 "INSERT OR REPLACE INTO stop_me_session_count_table (`key`, duration) VALUES (0, 0)"
             )
@@ -74,13 +85,6 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
             Timber.i("Core default data inserted via execSQL")
 
             // === 9. Preset keywords (1189+ entries) — deferred to background ===
-            // These are too many to insert synchronously during onCreate.
-            // Launch a background coroutine that runs AFTER onCreate returns
-            // and the DB transaction is committed.
-            //
-            // Uses appCoroutineScope so uncaught exceptions are routed to
-            // CrashLogger with scope context (instead of being silently lost
-            // if the coroutine throws outside the try/catch).
             protect.yourself.core.appCoroutineScope(
                 scopeName = "AppDatabaseCallback",
                 dispatcher = Dispatchers.IO
@@ -93,6 +97,15 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
             }
         } catch (t: Throwable) {
             Timber.e(t, "Failed to pre-populate database (critical)")
+            try {
+                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                    throwable = t,
+                    severity = protect.yourself.features.crashLog.CrashSeverity.ERROR,
+                    tag = "DatabaseInit",
+                    message = "Failed to pre-populate database (critical) — app will run in degraded state",
+                    extraContext = mapOf("phase" to "onCreate")
+                )
+            } catch (_: Throwable) {}
         }
     }
 
@@ -101,70 +114,133 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
      *
      * # Why this exists
      *
-     * Crash log `crash_20260711_123555_0001` (v1.0.46, vivo V2206) shows:
-     * `SQLiteException: table vpn_custom_dns has no column named display_name`
-     * during `AppDatabaseCallback.onCreate → insertDnsPresets`.
+     * Crash log `crash_20260712_101502_0002` (v1.0.48, vivo V2206) shows:
+     * `SQLiteException: table vpn_custom_dns has no column named first_dns`
      *
-     * The user upgraded from an older version (DB schema v8, where
-     * vpn_custom_dns had no display_name column) to v1.0.46 (DB schema v9).
-     * The MIGRATION_8_9 migration should have added the column, but in some
-     * upgrade paths (interrupted migration, partial corruption, or Room's
-     * fallbackToDestructiveMigration not fully dropping the table), the table
-     * ends up at v9 version but v8 structure — missing the display_name column.
+     * # Root cause
      *
-     * Room's generated `CREATE TABLE IF NOT EXISTS` silently succeeds when the
-     * table already exists, so the column is never added. Then
-     * `INSERT INTO vpn_custom_dns (..., display_name, ...)` crashes.
+     * The entity uses camelCase field names (firstDns, secondDns, isSelected,
+     * displayName) WITHOUT @ColumnInfo. Room 2.6.1 generates camelCase columns.
+     * But the raw SQL used snake_case — causing silent crashes on every install.
      *
      * # What this does
      *
-     * 1. Queries `PRAGMA table_info(vpn_custom_dns)` to check if the
-     *    `display_name` column exists.
-     * 2. If missing, runs `ALTER TABLE ... ADD COLUMN display_name TEXT NOT
-     *    NULL DEFAULT ''` (same as MIGRATION_8_9).
-     * 3. Backfills display_name for known preset keys.
+     * 1. Queries PRAGMA table_info to read the actual column set.
+     * 2. Checks for ALL expected camelCase columns.
+     * 3. If only displayName is missing: ALTER TABLE ADD COLUMN (preserves data).
+     * 4. If any core column is missing: DROP + CREATE (severe corruption repair).
+     * 5. Backfills displayName for known preset keys after any repair.
      *
-     * Idempotent — safe to call even if the column already exists.
+     * Idempotent — safe to call even if the schema is already correct.
      */
     private fun ensureVpnCustomDnsSchema(db: SupportSQLiteDatabase) {
         try {
-            // Check if display_name column exists via PRAGMA table_info
-            val cursor = db.query("PRAGMA table_info(vpn_custom_dns)")
-            val hasDisplayName = cursor.use { c ->
-                var found = false
-                while (c.moveToNext()) {
-                    val nameIndex = c.getColumnIndex("name")
-                    if (nameIndex >= 0 && c.getString(nameIndex) == "display_name") {
-                        found = true
-                        break
+            val existingColumns = mutableSetOf<String>()
+            var tableExists = false
+            try {
+                val cursor = db.query("PRAGMA table_info(vpn_custom_dns)")
+                cursor.use { c ->
+                    while (c.moveToNext()) {
+                        tableExists = true
+                        val nameIndex = c.getColumnIndex("name")
+                        if (nameIndex >= 0) {
+                            existingColumns.add(c.getString(nameIndex))
+                        }
                     }
                 }
-                found
+            } catch (t: Throwable) {
+                Timber.w(t, "ensureVpnCustomDnsSchema: PRAGMA table_info failed (non-critical, likely fresh install)")
+                return
             }
 
-            if (!hasDisplayName) {
-                Timber.w("vpn_custom_dns missing display_name column — adding it defensively")
-                db.execSQL(
-                    "ALTER TABLE vpn_custom_dns ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"
-                )
-                // Backfill display names for known preset keys
-                for (preset in DefaultDnsPresets.ALL) {
-                    try {
-                        db.execSQL(
-                            "UPDATE vpn_custom_dns SET display_name = ? WHERE `key` = ?",
-                            arrayOf(preset.displayName, preset.key)
-                        )
-                    } catch (_: Throwable) {
-                        // Non-critical — the row may not exist yet
+            if (!tableExists || existingColumns.isEmpty()) {
+                Timber.d("ensureVpnCustomDnsSchema: vpn_custom_dns does not exist yet — fresh install, no repair needed")
+                return
+            }
+
+            val expectedColumns = setOf(
+                "key", "displayName", "firstDns", "secondDns", "isSelected"
+            )
+
+            val missingColumns = expectedColumns - existingColumns
+            if (missingColumns.isEmpty()) {
+                Timber.d("ensureVpnCustomDnsSchema: schema already correct (columns=${existingColumns.sorted()})")
+                return
+            }
+
+            Timber.w("ensureVpnCustomDnsSchema: missing columns detected: ${missingColumns.sorted()} (existing=${existingColumns.sorted()})")
+
+            val v8CoreColumns = setOf("firstDns", "secondDns", "isSelected", "key")
+            val missingCoreColumns = missingColumns.intersect(v8CoreColumns)
+
+            if (missingCoreColumns.isEmpty()) {
+                // Only displayName missing — additive ALTER
+                if ("displayName" in missingColumns) {
+                    Timber.w("ensureVpnCustomDnsSchema: adding missing displayName column via ALTER TABLE")
+                    db.execSQL(
+                        "ALTER TABLE vpn_custom_dns ADD COLUMN displayName TEXT NOT NULL DEFAULT ''"
+                    )
+                    for (preset in DefaultDnsPresets.ALL) {
+                        try {
+                            db.execSQL(
+                                "UPDATE vpn_custom_dns SET displayName = ? WHERE `key` = ?",
+                                arrayOf(preset.displayName, preset.key)
+                            )
+                        } catch (_: Throwable) {}
                     }
+                    Timber.i("ensureVpnCustomDnsSchema: defensively added displayName column to vpn_custom_dns")
                 }
-                Timber.i("Defensively added display_name column to vpn_custom_dns")
+            } else {
+                // Severe corruption — DROP + CREATE
+                Timber.e("ensureVpnCustomDnsSchema: SEVERE corruption — missing core columns ${missingCoreColumns.sorted()}. Dropping and recreating vpn_custom_dns table.")
+
+                try {
+                    db.execSQL("DROP TABLE IF EXISTS vpn_custom_dns")
+                } catch (dropErr: Throwable) {
+                    Timber.e(dropErr, "ensureVpnCustomDnsSchema: DROP TABLE failed — attempting CREATE anyway")
+                }
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS vpn_custom_dns (
+                        `key` TEXT NOT NULL,
+                        displayName TEXT NOT NULL DEFAULT '',
+                        firstDns TEXT NOT NULL,
+                        secondDns TEXT NOT NULL,
+                        isSelected INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(`key`)
+                    )
+                    """.trimIndent()
+                )
+                Timber.i("ensureVpnCustomDnsSchema: vpn_custom_dns table recreated with v9 schema (5 columns)")
+
+                try {
+                    protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                        throwable = java.lang.RuntimeException(
+                            "vpn_custom_dns table was severely corrupted (missing columns: ${missingCoreColumns.sorted()}) — dropped and recreated"
+                        ),
+                        severity = protect.yourself.features.crashLog.CrashSeverity.ERROR,
+                        tag = "DatabaseRepair",
+                        message = "vpn_custom_dns severe schema corruption repaired via DROP+CREATE",
+                        extraContext = mapOf(
+                            "missingColumns" to missingColumns.sorted().toString(),
+                            "existingColumns" to existingColumns.sorted().toString(),
+                            "repairStrategy" to "DROP_AND_CREATE"
+                        )
+                    )
+                } catch (_: Throwable) {}
             }
         } catch (t: Throwable) {
-            // If the table doesn't exist yet (fresh install), PRAGMA table_info
-            // returns an empty cursor and we skip the ALTER. If the ALTER fails
-            // because the column already exists, log and continue.
-            Timber.w(t, "ensureVpnCustomDnsSchema: defensive check failed (non-critical)")
+            Timber.e(t, "ensureVpnCustomDnsSchema: defensive repair FAILED (critical)")
+            try {
+                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                    throwable = t,
+                    severity = protect.yourself.features.crashLog.CrashSeverity.ERROR,
+                    tag = "DatabaseRepair",
+                    message = "ensureVpnCustomDnsSchema repair threw — DB may be corrupt",
+                    extraContext = emptyMap()
+                )
+            } catch (_: Throwable) {}
         }
     }
 
@@ -188,7 +264,6 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
             Triple(SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.VPN_SWITCH, "false", "boolean"),
-            // Default VPN mode = NORMAL (Balanced / Cloudflare Family)
             Triple(SwitchIdentifier.VPN_CONNECTION_TYPE, "1", "long"),
             Triple(SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH, "false", "boolean"),
             Triple(SwitchIdentifier.BLOCK_NEW_INSTALL_APPS_SWITCH, "false", "boolean"),
@@ -232,42 +307,50 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
     }
 
     private fun insertDnsPresets(db: SupportSQLiteDatabase) {
-        // Use INSERT OR IGNORE (not REPLACE) so that if a user has previously
-        // added a custom preset with a key that collides with a default preset
-        // key, we don't clobber their data. In practice this is unlikely
-        // (default keys are "preset_cloudflare_family" etc.), but it's the
-        // safe choice. On first launch the table is empty so all 4 defaults
-        // are inserted.
-        //
-        // NOTE: this only runs in onCreate() — i.e. only on first install.
-        // Upgrades from v8 to v9 use the MIGRATION_8_9 path which ALTERs
-        // the existing table and backfills display_name by key.
+        // BUGFIX (v1.0.49): column names are now camelCase to match the
+        // VpnCustomDnsItemModel entity (Room 2.6.1 default column naming).
         for (preset in DefaultDnsPresets.ALL) {
-            db.execSQL(
-                "INSERT OR IGNORE INTO vpn_custom_dns (`key`, display_name, first_dns, second_dns, is_selected) VALUES (?, ?, ?, ?, ?)",
-                arrayOf(preset.key, preset.displayName, preset.firstDns, preset.secondDns, preset.isSelectedByDefault)
-            )
+            try {
+                db.execSQL(
+                    "INSERT OR IGNORE INTO vpn_custom_dns (`key`, displayName, firstDns, secondDns, isSelected) VALUES (?, ?, ?, ?, ?)",
+                    arrayOf(preset.key, preset.displayName, preset.firstDns, preset.secondDns, preset.isSelectedByDefault)
+                )
+            } catch (t: Throwable) {
+                Timber.e(t, "insertDnsPresets: failed to insert preset ${preset.key}")
+            }
         }
         Timber.i("Inserted ${DefaultDnsPresets.ALL.size} DNS presets")
     }
 
     private fun insertStopMeDurations(db: SupportSQLiteDatabase) {
+        // BUGFIX (v1.0.49): column names are now camelCase to match the
+        // StopMeDurationItemModel entity.
         for (preset in DefaultStopMeDurations.ALL) {
-            db.execSQL(
-                "INSERT OR REPLACE INTO stop_me_duration_table (`key`, duration, end_time, days, start_time, start_time_day_millis) VALUES (?, ?, ?, ?, ?, ?)",
-                arrayOf(preset.key, preset.durationMillis, 0L, 0, 0L, 0L)
-            )
+            try {
+                db.execSQL(
+                    "INSERT OR REPLACE INTO stop_me_duration_table (`key`, duration, endTime, days, startTime, startTimeDayMillis) VALUES (?, ?, ?, ?, ?, ?)",
+                    arrayOf(preset.key, preset.durationMillis, 0L, 0, 0L, 0L)
+                )
+            } catch (t: Throwable) {
+                Timber.e(t, "insertStopMeDurations: failed to insert preset ${preset.key}")
+            }
         }
         Timber.i("Inserted ${DefaultStopMeDurations.ALL.size} Stop Me durations")
     }
 
     private fun insertWhitelistApps(db: SupportSQLiteDatabase) {
+        // BUGFIX (v1.0.49): column names are now camelCase to match the
+        // SelectedAppItemModel entity.
         for (pkg in DefaultWhitelistApps.ALL) {
-            db.execSQL(
-                "INSERT OR REPLACE INTO selected_apps_table (`key`, package_name, app_name, identifier, is_selected) VALUES (?, ?, ?, ?, ?)",
-                arrayOf("preset_whitelist_stop_me_$pkg", pkg, pkg.substringAfterLast('.'),
-                    SelectedAppListIdentifier.WHITELIST_STOP_ME_APPS.value, true)
-            )
+            try {
+                db.execSQL(
+                    "INSERT OR REPLACE INTO selected_apps_table (`key`, packageName, appName, identifier, isSelected) VALUES (?, ?, ?, ?, ?)",
+                    arrayOf("preset_whitelist_stop_me_$pkg", pkg, pkg.substringAfterLast('.'),
+                        SelectedAppListIdentifier.WHITELIST_STOP_ME_APPS.value, true)
+                )
+            } catch (t: Throwable) {
+                Timber.e(t, "insertWhitelistApps: failed to insert whitelist app $pkg")
+            }
         }
         Timber.i("Inserted ${DefaultWhitelistApps.ALL.size} whitelist apps")
     }
@@ -276,13 +359,8 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
      * Insert preset block + whitelist keywords.
      * Runs in a background coroutine AFTER the DB is fully created.
      *
-     * KB-12 fix: uses INSERT OR IGNORE (via a dedicated DAO method) instead of
-     * INSERT OR REPLACE (upsertAll). This ensures that if a user has deleted
-     * a preset keyword, re-seeding on app update will NOT re-add it. The
-     * preset keys are stable ("preset_block_<idx>", "preset_whitelist_<idx>"),
-     * so INSERT OR IGNORE will skip any key that already exists (whether it
-     * was inserted by a previous seed or by a user who manually added the
-     * same key — though the latter is unlikely).
+     * KB-12 fix: uses INSERT OR IGNORE instead of INSERT OR REPLACE so
+     * user-deleted presets are not re-added.
      */
     private suspend fun insertPresetKeywords() {
         val db = AppDatabase.getInstance(context)
@@ -291,8 +369,6 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
         val blockKeywords = keywordData.getDefaultBlockKeywordModels()
         val whitelistKeywords = keywordData.getDefaultWhitelistKeywordModels()
 
-        // KB-12: use insertAllOrIgnore (INSERT OR IGNORE) instead of upsertAll
-        // (INSERT OR REPLACE) so user-deleted presets are not re-added.
         db.selectedKeywordDao().insertAllOrIgnore(blockKeywords)
         db.selectedKeywordDao().insertAllOrIgnore(whitelistKeywords)
         Timber.i("Inserted ${blockKeywords.size} block keywords + ${whitelistKeywords.size} whitelist keywords (INSERT OR IGNORE)")

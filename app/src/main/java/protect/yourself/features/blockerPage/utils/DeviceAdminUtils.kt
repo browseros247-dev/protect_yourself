@@ -43,6 +43,13 @@ class DeviceAdminUtils {
      */
     class MyDeviceAdminReceiver : DeviceAdminReceiver() {
 
+        // BUGFIX (v1.0.49): throttle constants for onDisabled notification spam.
+        companion object {
+            private const val DEVICE_ADMIN_PREFS = "device_admin_prefs"
+            private const val KEY_LAST_DISABLED_NOTIF_MS = "last_disabled_notif_ms"
+            private const val THROTTLE_MS = 5 * 60 * 1000L  // 5 minutes
+        }
+
         override fun onEnabled(context: Context, intent: Intent) {
             try {
                 super.onEnabled(context, intent)
@@ -57,14 +64,33 @@ class DeviceAdminUtils {
         override fun onDisabled(context: Context, intent: Intent) {
             try {
                 super.onDisabled(context, intent)
-                Timber.w("Device admin disabled — user may be attempting uninstall")
-                protect.yourself.core.ProtectYourselfApp.getCrashLogger()
-                    ?.logBreadcrumb("DeviceAdmin", "DISABLED — possible uninstall attempt")
-                // Post a high-priority notification warning the user
-                try {
-                    protect.yourself.commons.utils.notificationUtils.NotificationHelper
-                        .showAccessibilityDisabledNotification(context)
-                } catch (_: Throwable) {}
+
+                // BUGFIX (v1.0.49): throttle the warning + notification.
+                // Crash log analysis (v1.0.48, vivo V2206) showed `onDisabled`
+                // firing 3 times within 7 seconds. Each call logged a WARN and
+                // posted a high-priority notification — flooding the crash log
+                // and notification shade. OEM ROMs (vivo, OPPO, MIUI) fire
+                // multiple times for a single user action.
+                val now = System.currentTimeMillis()
+                val prefs = context.applicationContext
+                    .getSharedPreferences(DEVICE_ADMIN_PREFS, 0)
+                val lastNotifMs = prefs.getLong(KEY_LAST_DISABLED_NOTIF_MS, 0L)
+                val shouldNotify = (now - lastNotifMs) >= THROTTLE_MS
+
+                if (shouldNotify) {
+                    Timber.w("Device admin disabled — user may be attempting uninstall")
+                    protect.yourself.core.ProtectYourselfApp.getCrashLogger()
+                        ?.logBreadcrumb("DeviceAdmin", "DISABLED — possible uninstall attempt")
+                    try {
+                        protect.yourself.commons.utils.notificationUtils.NotificationHelper
+                            .showAccessibilityDisabledNotification(context)
+                    } catch (_: Throwable) {}
+                    try {
+                        prefs.edit().putLong(KEY_LAST_DISABLED_NOTIF_MS, now).apply()
+                    } catch (_: Throwable) {}
+                } else {
+                    Timber.d("Device admin disabled (throttled — last notif ${now - lastNotifMs}ms ago)")
+                }
             } catch (t: Throwable) {
                 Timber.w(t, "DeviceAdminReceiver.onDisabled threw")
             }

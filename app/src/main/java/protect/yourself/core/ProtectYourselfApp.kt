@@ -11,6 +11,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
+import kotlinx.coroutines.launch
 import protect.yourself.BuildConfig
 import protect.yourself.R
 import protect.yourself.database.core.AppDatabase
@@ -101,12 +102,28 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
         //    PackageManagerProvider MUST be initialised before this step
         //    because AccessibilityPersistUtils.ownComponentFlat calls
         //    PackageManagerProvider.getPackageName() lazily.
+        //
+        // BUGFIX (v1.0.49): moved selfHealSafe to a BACKGROUND coroutine.
+        // selfHealSafe performs blocking IPC calls to Settings.Secure and
+        // PackageManager.getInstalledPackages — each can block 100-500ms on
+        // some OEMs (vivo, OPPO, Xiaomi). On a vivo V2206, these combined
+        // contributed to ANR symptoms. The AccessibilityGuard.startWatching
+        // call is lightweight (registers a ContentObserver) so stays on main.
         safeInit("AccessibilityGuard") {
-            // Ensure PackageManagerProvider is initialised even if step 6 failed
             try {
                 protect.yourself.commons.utils.PackageManagerProvider.init(this)
             } catch (_: Throwable) {}
-            protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this)
+            protect.yourself.core.appCoroutineScope(
+                scopeName = "ProtectYourselfApp-selfHealSafe",
+                dispatcher = kotlinx.coroutines.Dispatchers.IO
+            ).launch {
+                try {
+                    protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this@ProtectYourselfApp)
+                    Timber.d("selfHealSafe completed in onCreate (background)")
+                } catch (t: Throwable) {
+                    Timber.w(t, "selfHealSafe in onCreate failed (background)")
+                }
+            }
             protect.yourself.features.protectedApps.AccessibilityGuard.getInstance()
                 .startWatching(this)
         }

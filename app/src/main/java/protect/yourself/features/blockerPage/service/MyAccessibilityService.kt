@@ -130,17 +130,19 @@ class MyAccessibilityService : AccessibilityService() {
             ?.logBreadcrumb("AccessibilityService", "onServiceConnected")
         configureService()
         refreshBlockingConfig()
-        // Re-arm persistence the moment the service starts — this catches the
-        // case where the service was disabled, then re-enabled by the user via
-        // Settings. selfHealSafe is a no-op if WRITE_SECURE_SETTINGS isn't granted.
-        try {
-            protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this)
-        } catch (t: Throwable) {
-            Timber.w(t, "selfHealSafe in onServiceConnected failed")
+        // BUGFIX (v1.0.49): moved selfHealSafe to a BACKGROUND coroutine.
+        // selfHealSafe performs blocking IPC calls to Settings.Secure and
+        // PackageManager.getInstalledPackages — each can block 100-500ms on
+        // some OEMs (vivo, OPPO, Xiaomi). Combined, these exceeded the 5s
+        // ANR threshold on a vivo V2206 (crash_20260712_101552_0004).
+        serviceScope.launch {
+            try {
+                protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this@MyAccessibilityService)
+                Timber.d("selfHealSafe completed in onServiceConnected (background)")
+            } catch (t: Throwable) {
+                Timber.w(t, "selfHealSafe in onServiceConnected failed")
+            }
         }
-        // NopoX does NOT show a Toast here — user feedback is exclusively via
-        // the block overlay. Toasts from the accessibility service are an
-        // anti-pattern (they're noisy and can be missed). Removed per NopoX.
     }
 
     /**
@@ -152,10 +154,13 @@ class MyAccessibilityService : AccessibilityService() {
      * in the enabled list before the system finishes tearing us down.
      */
     override fun onUnbind(intent: Intent?): Boolean {
-        try {
-            protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this)
-        } catch (t: Throwable) {
-            Timber.w(t, "selfHealSafe in onUnbind failed")
+        // BUGFIX (v1.0.49): moved to background coroutine to avoid main-thread blocking.
+        serviceScope.launch {
+            try {
+                protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this@MyAccessibilityService)
+            } catch (t: Throwable) {
+                Timber.w(t, "selfHealSafe in onUnbind failed")
+            }
         }
         return super.onUnbind(intent)
     }
@@ -240,23 +245,18 @@ class MyAccessibilityService : AccessibilityService() {
         super.onDestroy()
         Timber.w("Accessibility service destroyed")
         instance = null
-        // Last-chance self-heal before the service is fully destroyed.
-        // If WRITE_SECURE_SETTINGS is granted, this writes us back into
-        // enabled_accessibility_services so the system will restart us.
-        try {
-            protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this)
-        } catch (t: Throwable) {
-            Timber.w(t, "selfHealSafe in onDestroy failed")
+        // BUGFIX (v1.0.49): moved selfHealSafe to background coroutine.
+        serviceScope.launch {
+            try {
+                protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this@MyAccessibilityService)
+            } catch (t: Throwable) {
+                Timber.w(t, "selfHealSafe in onDestroy failed")
+            }
         }
-        // Hide the block overlay if it's visible (otherwise it would persist
-        // after the service is destroyed, locking the user out).
         try {
             blockOverlayManager?.hideBlockOverlay()
         } catch (_: Throwable) {}
-        // Cancel the service scope to prevent coroutine leaks (Phase 6 P0 fix)
         try { serviceScope.cancel() } catch (_: Throwable) {}
-        // NopoX does NOT show a Toast here — removed per NopoX pattern.
-        // User feedback is exclusively via notifications + the block overlay.
     }
 
     // ===== Window state change handler =====
@@ -1465,6 +1465,12 @@ class MyAccessibilityService : AccessibilityService() {
                     "BlockFallback",
                     "Overlay permission missing — using Activity fallback for pkg=$packageName"
                 )
+                // BUGFIX (v1.0.49): proactively prompt the user to grant the
+                // overlay permission. Throttled to once per 24 hours.
+                try {
+                    protect.yourself.commons.utils.notificationUtils.NotificationHelper
+                        .showOverlayPermissionNotification(this)
+                } catch (_: Throwable) {}
             }
         } catch (t: Throwable) {
             Timber.e(t, "BlockOverlayManager threw — falling back to Activity")

@@ -92,38 +92,35 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
-         * Migration v8 → v9: adds the `display_name` column to `vpn_custom_dns`.
+         * Migration v8 → v9: adds the `displayName` column to `vpn_custom_dns`.
          *
-         * Before this migration, the table had columns (key, first_dns, second_dns,
-         * is_selected) — display names were looked up from DefaultDnsPresets.ALL
-         * by matching the key. v9 adds a `display_name` column so the VPN management
-         * UI can render provider names directly from the DB (and so user-added
-         * custom presets can have their own display name).
+         * BUGFIX (v1.0.49): the column name is now `displayName` (camelCase) to
+         * match the @Entity field name and Room 2.6.1's default column naming
+         * policy. The previous version used `display_name` (snake_case), which
+         * created a dead column that the entity never read or wrote.
          *
-         * The migration:
-         *   1. ALTERs the table to add `display_name TEXT NOT NULL DEFAULT ''`.
-         *   2. Backfills the display_name for the 4 default presets by matching key.
-         *
-         * This preserves all user data (streak, block count, keywords, app lists,
-         * switch states, custom DNS presets, etc.) — only the new column is added.
+         * We try the camelCase column name first. If that fails because the
+         * snake_case column already exists (from the old migration), we skip —
+         * the defensive repair in AppDatabaseCallback.ensureVpnCustomDnsSchema
+         * will handle the mismatch on the next onCreate call.
          */
         private val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                Timber.i("Running migration v8 → v9: adding display_name to vpn_custom_dns")
-                // Add the column with a safe default (empty string). NOT NULL so
-                // future inserts can never leave it null.
-                database.execSQL(
-                    "ALTER TABLE vpn_custom_dns ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"
-                )
-                // Backfill the display names for the 4 default presets. User-added
-                // presets (if any exist — not possible in v8 because there was no
-                // add UI, but defensive) keep the empty default; the VPN management
-                // UI falls back to the key when displayName is blank.
-                for (preset in protect.yourself.features.blockerPage.utils.DefaultDnsPresets.ALL) {
+                Timber.i("Running migration v8 → v9: adding displayName to vpn_custom_dns")
+                try {
                     database.execSQL(
-                        "UPDATE vpn_custom_dns SET display_name = ? WHERE `key` = ?",
-                        arrayOf(preset.displayName, preset.key)
+                        "ALTER TABLE vpn_custom_dns ADD COLUMN displayName TEXT NOT NULL DEFAULT ''"
                     )
+                } catch (_: Throwable) {
+                    Timber.w("MIGRATION_8_9: ALTER TABLE ADD COLUMN displayName failed (column may already exist) — defensive repair will handle")
+                }
+                for (preset in protect.yourself.features.blockerPage.utils.DefaultDnsPresets.ALL) {
+                    try {
+                        database.execSQL(
+                            "UPDATE vpn_custom_dns SET displayName = ? WHERE `key` = ?",
+                            arrayOf(preset.displayName, preset.key)
+                        )
+                    } catch (_: Throwable) {}
                 }
                 Timber.i("Migration v8 → v9 complete")
             }
