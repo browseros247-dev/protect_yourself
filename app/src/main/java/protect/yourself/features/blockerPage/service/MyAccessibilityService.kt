@@ -810,17 +810,34 @@ class MyAccessibilityService : AccessibilityService() {
 
         try {
             // Strategy 1: known view IDs
+            //
+            // URL-01 fix (v1.0.58): also check contentDescription. Recent
+            // Chrome versions (2024+) sometimes expose the URL via
+            // contentDescription instead of text — especially when the user
+            // is typing in the address bar or when the page is still loading.
+            // NopoX 1.0.53 only checked text, but Chrome has since changed.
             if (viewIds != null) {
                 for (viewId in viewIds) {
                     val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
                     if (nodes != null && nodes.isNotEmpty()) {
                         val node = nodes[0]
-                        val text = node.text?.toString() ?: continue
-                        if (text.isNotBlank()) return text
+                        // Check text first (NopoX behaviour)
+                        val text = node.text?.toString()
+                        if (!text.isNullOrBlank()) return text
+                        // URL-01: fallback to contentDescription (Chrome 2024+)
+                        val desc = node.contentDescription?.toString()
+                        if (!desc.isNullOrBlank() && (
+                                desc.startsWith("http") || desc.contains("://") ||
+                                desc.contains("."))) {
+                            Timber.v("URL-01: extracted url from contentDescription for pkg=$packageName viewId=$viewId")
+                            return desc
+                        }
                     }
                 }
             }
             // Strategy 2: fallback — search any EditText-like node with URL text
+            //
+            // URL-01 fix: also check contentDescription in the recursive search.
             val fallbackUrl = findUrlInNode(root)
             if (fallbackUrl != null) return fallbackUrl
         } catch (t: Throwable) {
@@ -829,17 +846,30 @@ class MyAccessibilityService : AccessibilityService() {
         return null
     }
 
-    private fun findUrlInNode(node: AccessibilityNodeInfo?, depth: Int = 0): String? {
+    private fun findUrlInNode(node: AccessibilityNodeInfo?, depth: Int = 0, nodeCounter: IntArray = intArrayOf(0)): String? {
         if (node == null) return null
         // KB-20 fix: depth limit to prevent StackOverflow on deeply nested trees.
         if (depth > MAX_NODE_DEPTH) return null
+        // ANR-01 fix (v1.0.58): node-count limit to prevent main-thread ANR.
+        // Same rationale as collectText — each getChild() is an IPC call.
+        if (nodeCounter[0] >= MAX_URL_SEARCH_NODES) return null
+        nodeCounter[0]++
+        // Check text (NopoX behaviour)
         val text = node.text?.toString() ?: ""
         if (text.isNotBlank() && (text.startsWith("http") || text.contains("://"))) {
             return text
         }
+        // URL-01 fix (v1.0.58): also check contentDescription. Some browsers
+        // (Chrome 2024+) expose the URL via contentDescription on the address
+        // bar's parent container, not as text on the EditText itself.
+        val desc = node.contentDescription?.toString() ?: ""
+        if (desc.isNotBlank() && (desc.startsWith("http") || desc.contains("://"))) {
+            return desc
+        }
         for (i in 0 until node.childCount) {
+            if (nodeCounter[0] >= MAX_URL_SEARCH_NODES) return null
             val child = node.getChild(i) ?: continue
-            val found = findUrlInNode(child, depth + 1)
+            val found = findUrlInNode(child, depth + 1, nodeCounter)
             if (found != null) return found
         }
         return null
@@ -1033,23 +1063,43 @@ class MyAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow
         if (root != null) {
             try {
-                collectText(root, sb, depth = 0, maxDepth = 3)
+                // ANR-01 fix (v1.0.58): pass a node counter to enforce a hard
+                // limit on the number of nodes visited. Without this, on complex
+                // pages (e.g. Chrome with many tabs), the recursive traversal
+                // can visit thousands of nodes — each requiring an IPC round-trip
+                // to getChild() — blocking the main thread for 5+ seconds.
+                val counter = intArrayOf(0)
+                collectText(root, sb, depth = 0, maxDepth = 3, nodeCounter = counter)
             } catch (_: Throwable) {}
         }
         return sb.toString().trim()
     }
 
+    /**
+     * ANR-01 fix (v1.0.58): maximum number of nodes collectText will visit
+     * before bailing out. 500 nodes × ~2ms IPC per getChild = ~1s worst case —
+     * well under the 5s ANR threshold. If the page has more than 500 visible
+     * nodes within depth 3, we truncate the text (the block decision is based
+     * on keyword matching, which works fine with partial text).
+     */
+    private val MAX_TEXT_COLLECTION_NODES = MAX_TEXT_COLLECTION_NODES_CONST
+
     private fun collectText(
         node: AccessibilityNodeInfo,
         sb: StringBuilder,
         depth: Int,
-        maxDepth: Int
+        maxDepth: Int,
+        nodeCounter: IntArray = intArrayOf(0)
     ) {
         if (depth > maxDepth) return
+        // ANR-01: bail out if we've visited too many nodes
+        if (nodeCounter[0] >= MAX_TEXT_COLLECTION_NODES) return
+        nodeCounter[0]++
         node.text?.let { sb.append(it).append(' ') }
         for (i in 0 until node.childCount) {
+            if (nodeCounter[0] >= MAX_TEXT_COLLECTION_NODES) return
             val child = node.getChild(i) ?: continue
-            collectText(child, sb, depth + 1, maxDepth)
+            collectText(child, sb, depth + 1, maxDepth, nodeCounter)
         }
     }
 
@@ -1849,6 +1899,19 @@ class MyAccessibilityService : AccessibilityService() {
         // KB-20: max recursion depth for findUrlInNode to prevent StackOverflow
         // on deeply nested view trees.
         private const val MAX_NODE_DEPTH = 50
+
+        // ANR-01 fix (v1.0.58): max number of nodes findUrlInNode will visit
+        // before bailing out. Each getChild() is a blocking IPC call (~2ms),
+        // so 300 nodes = ~600ms worst case — well under the 5s ANR threshold.
+        // If the URL isn't found in the first 300 nodes, it's almost certainly
+        // not in the address bar (which is always near the root of the view
+        // hierarchy).
+        private const val MAX_URL_SEARCH_NODES = 300
+
+        // ANR-01 fix (v1.0.58): max number of nodes collectText will visit
+        // before bailing out. 500 nodes × ~2ms IPC per getChild = ~1s worst
+        // case — well under the 5s ANR threshold.
+        private const val MAX_TEXT_COLLECTION_NODES_CONST = 500
 
         // SS-03: SafeSearch redirect throttle. Prevents redirect loops and
         // rapid-fire intents when the same URL fires multiple accessibility

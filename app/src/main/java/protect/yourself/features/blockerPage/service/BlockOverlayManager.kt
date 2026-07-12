@@ -5,6 +5,8 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
@@ -509,8 +511,21 @@ class BlockOverlayManager(
      * overlay. The overlay only covers it visually.
      *
      * Ported from NopoX's `TimersKt.timer().scheduleAtFixedRate(..., 0L, 500L)`.
+     *
+     * THREAD-01 fix (v1.0.58): NopoX calls `performGlobalAction` directly from
+     * the TimerTask's background thread. On Android 14 (API 34), this throws
+     * `ViewRootImpl$CalledFromWrongThreadException` because `performGlobalAction`
+     * internally triggers accessibility content change events that ViewRootImpl
+     * validates against the thread that created the view hierarchy (the main
+     * thread).
+     *
+     * The fix: dispatch all `performGlobalAction` calls to the main thread via
+     * `Handler(Looper.getMainLooper()).post { ... }`. This is an improvement
+     * over NopoX 1.0.53 which has the same bug but was tolerated on older
+     * Android versions.
      */
     private class KillTimer(private val service: AccessibilityService) {
+        private val mainHandler = Handler(Looper.getMainLooper())
         private var timer: java.util.Timer? = null
         private var iteration = 0
         private val maxIterations = 6  // 6 × 500ms = 3 seconds
@@ -524,19 +539,24 @@ class BlockOverlayManager(
                             cancel()
                             return
                         }
-                        // Press HOME 5 times
-                        repeat(5) {
-                            try {
-                                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-                            } catch (t: Throwable) {
-                                Timber.w(t, "KillTimer: GLOBAL_ACTION_HOME failed")
+                        // THREAD-01: dispatch performGlobalAction calls to the
+                        // main thread. On Android 14+, calling these from a
+                        // background thread throws CalledFromWrongThreadException.
+                        mainHandler.post {
+                            // Press HOME 5 times
+                            repeat(5) {
+                                try {
+                                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                                } catch (t: Throwable) {
+                                    Timber.w(t, "KillTimer: GLOBAL_ACTION_HOME failed")
+                                }
                             }
-                        }
-                        // Press BACK once
-                        try {
-                            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                        } catch (t: Throwable) {
-                            Timber.w(t, "KillTimer: GLOBAL_ACTION_BACK failed")
+                            // Press BACK once
+                            try {
+                                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                            } catch (t: Throwable) {
+                                Timber.w(t, "KillTimer: GLOBAL_ACTION_BACK failed")
+                            }
                         }
                         iteration++
                     } catch (t: Throwable) {
