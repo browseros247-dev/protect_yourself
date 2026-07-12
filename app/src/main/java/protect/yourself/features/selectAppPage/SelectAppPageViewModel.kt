@@ -272,8 +272,37 @@ class SelectAppPageViewModel(
                 // reloads cachedUnsupportedBrowserWhitelist from the DB.
                 Timber.tag(TAG).i("Unsupported browser whitelist changed — refreshing blocking config")
                 refreshAccessibilityConfig()
+            } else if (identifier == SelectedAppListIdentifier.BLOCK_NEW_INSTALL_APPS) {
+                // NIB-02 fix (v1.0.60): for the new install block list, use
+                // the targeted cache update methods instead of the full
+                // refreshBlockingConfig. This eliminates the race condition
+                // where the user unchecks an app but the cache isn't updated
+                // for 200-500ms, during which the app is still blocked.
+                Timber.tag(TAG).i("Block new install apps list changed — updating cache immediately")
+                try {
+                    val instance = MyAccessibilityService.instance
+                    if (instance == null) {
+                        Timber.tag(TAG).w(
+                            "toggleAppSelection: MyAccessibilityService.instance is null — " +
+                                "cache not updated. Next onServiceConnected will pick it up."
+                        )
+                    } else {
+                        if (newSelected) {
+                            instance.addToNewInstallBlockCache(app.packageName)
+                        } else {
+                            instance.removeFromNewInstallBlockCache(app.packageName)
+                        }
+                        // Also trigger a full refresh in the background to
+                        // sync the entire cache (catches any other pending
+                        // changes). This is async and non-blocking.
+                        instance.refreshBlockingConfig()
+                    }
+                } catch (t: Throwable) {
+                    Timber.tag(TAG).w(t, "Failed to update new install block cache immediately")
+                    // Fallback: full refresh
+                    refreshAccessibilityConfig()
+                }
             } else if (identifier == SelectedAppListIdentifier.BLOCK_APPS ||
-                identifier == SelectedAppListIdentifier.BLOCK_NEW_INSTALL_APPS ||
                 identifier == SelectedAppListIdentifier.BLOCK_IN_APP_BROWSER_APPS ||
                 identifier == SelectedAppListIdentifier.WHITELIST_STOP_ME_APPS ||
                 identifier == SelectedAppListIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_APPS ||

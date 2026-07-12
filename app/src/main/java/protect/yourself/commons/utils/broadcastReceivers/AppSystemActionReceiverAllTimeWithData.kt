@@ -237,8 +237,18 @@ class AppSystemActionReceiverAllTimeWithData : BroadcastReceiver() {
         }
 
         // Step b: insert the new row.
+        // NIB-04 fix (v1.0.60): use the SAME key format as the UI
+        // (SelectAppPageViewModel.toggleAppSelection) to avoid duplicate rows.
+        // Previously the receiver used "block_new_install_$packageName" while
+        // the UI used "${identifier.value}_${packageName}". Since `key` is the
+        // @PrimaryKey, this created two separate rows for the same package
+        // under the same identifier — one from the receiver (isSelected=true)
+        // and one from the UI (isSelected=false when user unchecked it).
+        // The getSelectedByIdentifier query filters by isSelected=1, so the
+        // block still worked, but the stale row wasted DB space and made
+        // manual unblock via UI leave ghost entries.
         val item = SelectedAppItemModel(
-            key = "block_new_install_$packageName",
+            key = "${SelectedAppListIdentifier.BLOCK_NEW_INSTALL_APPS.value}_$packageName",
             packageName = packageName,
             appName = appName,
             identifier = SelectedAppListIdentifier.BLOCK_NEW_INSTALL_APPS.value,
@@ -290,7 +300,52 @@ class AppSystemActionReceiverAllTimeWithData : BroadcastReceiver() {
         // Step d: refresh the accessibility service's cached config so the
         // new app is blocked immediately. If the service isn't connected,
         // log a warning — the next onServiceConnected will pick it up.
-        refreshServiceConfig(context, "PACKAGE_ADDED (new install: $packageName)")
+        //
+        // NIB-01/NIB-02 fix (v1.0.60): the previous implementation called
+        // instance.refreshBlockingConfig() which is ASYNC — it launches a
+        // coroutine and returns immediately. The actual cache update happens
+        // later (200-500ms on a device with 1189+ keywords). If the user
+        // opens the newly installed app within that window, the cache hasn't
+        // been updated yet and the block doesn't fire.
+        //
+        // The fix uses a two-pronged approach:
+        //  1. addToNewInstallBlockCache() — immediate, in-memory, no I/O.
+        //     The package is blocked from the very first accessibility event.
+        //  2. refreshNewInstallBlockSync() — authoritative, reads from DB.
+        //     Guarantees the cache matches the DB state.
+        //
+        // If (1) runs but (2) hasn't yet, the package is still blocked (it's
+        // in the cache from step 1). If (2) runs and the DB read returns the
+        // same set, no harm done (idempotent). If (2) fails, the cache from
+        // (1) persists — better to over-block than under-block for a new
+        // install.
+        val instance = MyAccessibilityService.instance
+        if (instance == null) {
+            Timber.w(
+                "handlePackageAdded: MyAccessibilityService.instance is null — " +
+                    "cache not updated. The DB insert succeeded, so the next " +
+                    "onServiceConnected will load pkg=$packageName from the DB."
+            )
+            protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                "NewInstallBlockingServiceDown",
+                "Accessibility service not connected — cache not updated for pkg=$packageName (DB insert OK)"
+            )
+        } else {
+            // Step 1: immediate in-memory cache update (no I/O, <1ms)
+            try {
+                instance.addToNewInstallBlockCache(packageName)
+                Timber.v("handlePackageAdded: addToNewInstallBlockCache OK for pkg=$packageName")
+            } catch (t: Throwable) {
+                Timber.w(t, "handlePackageAdded: addToNewInstallBlockCache failed (non-fatal)")
+            }
+            // Step 2: authoritative DB read to sync the full cache
+            try {
+                instance.refreshNewInstallBlockSync(db)
+                Timber.v("handlePackageAdded: refreshNewInstallBlockSync OK for pkg=$packageName")
+            } catch (t: Throwable) {
+                Timber.w(t, "handlePackageAdded: refreshNewInstallBlockSync failed (non-fatal — in-memory cache from step 1 is still active)")
+            }
+        }
 
         Timber.i("handlePackageAdded: SUCCESS — pkg=$packageName ($appName) auto-blocked")
     }
