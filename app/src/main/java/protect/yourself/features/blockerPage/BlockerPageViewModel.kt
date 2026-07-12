@@ -696,7 +696,7 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_CONTENT_BLOCKING, "Content Blocking", isSection = true))
         add(SettingPageItemModel(SettingPageItemIdentifiers.PORN_BLOCKER, "Porn blocker", info = "Block content based on keyword list", switchKey = SwitchIdentifier.PORN_BLOCKER_SWITCH))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCKLIST_APPS, "Blocklist apps", info = "Apps that get blocked on launch", actionLabel = "Manage"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.SAFE_SEARCH, "SafeSearch enforcement", info = "Redirect Google/Bing/YouTube/DuckDuckGo to SafeSearch variants. VPN adds DNS-level enforcement.", switchKey = SwitchIdentifier.SAFE_SEARCH_SWITCH))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.SAFE_SEARCH, "SafeSearch enforcement", info = "Enforce SafeSearch on Google, Bing, YouTube, DuckDuckGo, Yahoo, and Yandex. VPN adds DNS-level enforcement.", switchKey = SwitchIdentifier.SAFE_SEARCH_SWITCH))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_UNINSTALL_PROTECTION, "Uninstall Protection", isSection = true))
         add(SettingPageItemModel(SettingPageItemIdentifiers.PREVENT_UNINSTALL_SETTINGS, "Prevent uninstall", info = "Block attempts to uninstall (requires Device Admin)", switchKey = SwitchIdentifier.PREVENT_UNINSTALL_SWITCH))

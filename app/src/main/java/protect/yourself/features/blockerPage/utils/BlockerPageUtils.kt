@@ -7,6 +7,7 @@ import java.net.URLDecoder
 import java.text.Normalizer
 import java.util.Locale
 import java.util.regex.Pattern
+import timber.log.Timber
 
 /**
  * BlockerPageUtils — central utility for keyword matching, URL validation, encoding.
@@ -301,92 +302,250 @@ class BlockerPageUtils {
     /**
      * Get the SafeSearch-enforced URL for a given search-engine URL.
      *
-     * NopoX behavior: when SafeSearch switch is ON, navigating to an unsafe
-     * search engine URL triggers a redirect to the safe variant:
-     *   - www.google.com  → forcesafesearch.google.com
-     *   - www.bing.com     → strict.bing.com
-     *   - www.youtube.com  → restrict.youtube.com
-     *   - duckduckgo.com   → safe.duckduckgo.com
+     * **SS-01 fix (v1.0.54)**: Rewritten to match the NopoX 1.0.53 reference
+     * APK's `getSafeUrl()` behaviour exactly. The previous implementation had
+     * several bugs that broke SafeSearch enforcement:
      *
-     * The path and query are preserved so the user's search query is kept.
+     *  1. Used exact-host matching against a fixed map of 20 country TLDs —
+     *     missed 180+ Google TLDs (google.co.za, google.com.ph, …). NopoX
+     *     uses substring host matching (`host.contains("google")`).
+     *  2. Redirected Google → `forcesafesearch.google.com` (different host).
+     *     This host is a CNAME that doesn't resolve on all networks/DNS and
+     *     breaks browser cookies/sessions. NopoX keeps the SAME host and
+     *     appends the `&safe=active` query parameter, which is more reliable.
+     *  3. Did NOT require a `/search` path — so opening `google.com` (the
+     *     homepage) triggered an immediate redirect, breaking the homepage.
+     *     NopoX only redirects when the path contains `search`.
+     *  4. Used `family=1` for Yandex — the correct parameter is `family=yes`.
+     *     Yandex SafeSearch was silently never activated.
+     *  5. Same Bing issue: redirected to `strict.bing.com` instead of appending
+     *     `&adlt=strict` on the same host.
+     *
+     * NopoX reference behaviour (decompiled from BlockerPageUtils.getSafeUrl):
+     *  - Google  (host contains "google"):  append `&safe=active` if path has "search"
+     *  - Bing    (host contains "bing.com"): append `&adlt=strict` if path has "search"
+     *  - Yahoo   (host contains "yahoo.com"): append `&vm=r` if path has "search"
+     *  - Yandex  (host contains "yandex"):    append `&family=yes` if path has "search"
+     *  - DuckDuckGo (host contains "duckduckgo.com"): replace host with safe.duckduckgo.com
+     *  - YouTube (host contains "youtube.com" or "youtu.be"): replace host with
+     *    restrict.youtube.com — extension beyond NopoX (NopoX doesn't redirect
+     *    YouTube), kept because the app's UI advertises YouTube SafeSearch.
      *
      * @return the safe URL, or null if:
+     *          - URL is blank
      *          - URL is not a recognised search engine
      *          - URL is already on the safe variant (no redirect loop)
-     *          - URL already has a safe=active / safe=strict parameter
+     *          - URL already has the safe parameter (no double-append)
+     *          - URL's path doesn't contain "search" (for parameter-based engines)
      */
     fun getSafeSearchUrl(url: String): String? {
         if (url.isBlank()) return null
-        val lower = url.lowercase(Locale.ROOT)
 
-        // Already safe — don't redirect (avoid loop)
-        if (isSafeSearchUrl(lower)) return null
+        // Already safe — don't redirect (avoid loop). This check is now precise
+        // (SS-02 fix) — the old isSafeSearchUrl() used .contains("vm=r") which
+        // matched "vm=red", "vm=remote", etc., causing false "already safe"
+        // results and skipping the redirect.
+        if (isSafeSearchUrl(url)) return null
 
         try {
             val uri = Uri.parse(url)
             // Strip trailing dot from host (DNS allows trailing dots, e.g.
             // "www.google.com." is equivalent to "www.google.com")
             val host = uri.host?.lowercase()?.trimEnd('.') ?: return null
-            val safeHost = SAFE_SEARCH_HOST_MAP[host]
-            if (safeHost != null) {
-                // Build safe URL preserving path + query + fragment
-                val path = uri.path ?: ""
-                val query = uri.query ?: ""
-                val fragment = uri.fragment ?: ""
-                val safeUrl = StringBuilder("https://$safeHost")
-                if (path.isNotBlank()) safeUrl.append(path)
-                if (query.isNotBlank()) safeUrl.append("?").append(query)
-                if (fragment.isNotBlank()) safeUrl.append("#").append(fragment)
+            val path = uri.path ?: ""
+            val lowerUrl = url.lowercase(Locale.ROOT)
+
+            // ===== Google (any TLD) — append &safe=active =====
+            // NopoX: host.contains("google") && path.contains("search")
+            // && !url.contains("&safe=active") && !url.contains("?safe=active")
+            if (host.contains("google") && path.contains("search")) {
+                if (!lowerUrl.contains("&safe=active") && !lowerUrl.contains("?safe=active") &&
+                    !lowerUrl.contains("safe=active")
+                ) {
+                    return buildSafeUrlWithParam(uri, "safe=active")
+                }
+                return null  // already has safe=active
+            }
+
+            // ===== DuckDuckGo — replace host with safe.duckduckgo.com =====
+            // NopoX: host.contains("duckduckgo.com") → replace host
+            // No path check — DDG safe host enforces SafeSearch site-wide.
+            if (host.contains("duckduckgo.com")) {
+                // Preserve scheme (prefer https), path, query, fragment.
+                val scheme = if (uri.scheme.isNullOrBlank()) "https" else uri.scheme
+                val newPath = uri.path ?: ""
+                val newQuery = uri.query ?: ""
+                val newFragment = uri.fragment ?: ""
+                val safeUrl = StringBuilder("$scheme://safe.duckduckgo.com")
+                if (newPath.isNotBlank()) safeUrl.append(newPath)
+                if (newQuery.isNotBlank()) safeUrl.append("?").append(newQuery)
+                if (newFragment.isNotBlank()) safeUrl.append("#").append(newFragment)
                 return safeUrl.toString()
             }
 
-            // Parameter-based safe search (Yahoo → vm=r, Yandex → family=1)
-            val safeParam = SAFE_SEARCH_PARAM_MAP[host]
-            if (safeParam != null) {
-                val path = uri.path ?: ""
-                val existingQuery = uri.query ?: ""
-                val fragment = uri.fragment ?: ""
-                val safeUrl = StringBuilder("https://$host")
-                if (path.isNotBlank()) safeUrl.append(path)
-                // Inject the safe search parameter, appending to existing query
-                val newQuery = if (existingQuery.isNotBlank()) {
-                    "$existingQuery&$safeParam"
-                } else {
-                    safeParam
+            // ===== Bing — append &adlt=strict =====
+            // NopoX: host.contains("bing.com") && path.contains("search")
+            // && !url.contains("&adlt=strict")
+            if (host.contains("bing.com") && path.contains("search")) {
+                if (!lowerUrl.contains("adlt=strict")) {
+                    return buildSafeUrlWithParam(uri, "adlt=strict")
                 }
-                safeUrl.append("?").append(newQuery)
-                if (fragment.isNotBlank()) safeUrl.append("#").append(fragment)
+                return null
+            }
+
+            // ===== Yahoo — append &vm=r =====
+            // NopoX: host.contains("yahoo.com") && path.contains("search")
+            // && !url.contains("&vm=r")
+            if (host.contains("yahoo.com") && path.contains("search")) {
+                if (!hasQueryParam(lowerUrl, "vm", "r")) {
+                    return buildSafeUrlWithParam(uri, "vm=r")
+                }
+                return null
+            }
+
+            // ===== Yandex — append &family=yes (NOT family=1) =====
+            // NopoX: host.contains("yandex") && path.contains("search")
+            // && !url.contains("&family=yes")
+            // SS-01 fix: was "family=1" — wrong parameter. Yandex uses "family=yes".
+            if (host.contains("yandex") && path.contains("search")) {
+                if (!lowerUrl.contains("family=yes") && !lowerUrl.contains("family=1")) {
+                    return buildSafeUrlWithParam(uri, "family=yes")
+                }
+                return null
+            }
+
+            // ===== YouTube — replace host with restrict.youtube.com =====
+            // Extension beyond NopoX (NopoX doesn't redirect YouTube). Kept
+            // because the app's UI advertises YouTube SafeSearch. Uses host
+            // replacement (not parameter) because YouTube doesn't honour a
+            // query-parameter-based SafeSearch — restrict.youtube.com is the
+            // only reliable way.
+            if (host.contains("youtube.com") || host == "youtu.be" || host.endsWith(".youtube.com")) {
+                if (host.contains("restrict.youtube.com")) return null  // already safe
+                val scheme = if (uri.scheme.isNullOrBlank()) "https" else uri.scheme
+                val newPath = uri.path ?: ""
+                val newQuery = uri.query ?: ""
+                val newFragment = uri.fragment ?: ""
+                val safeUrl = StringBuilder("$scheme://restrict.youtube.com")
+                if (newPath.isNotBlank()) safeUrl.append(newPath)
+                if (newQuery.isNotBlank()) safeUrl.append("?").append(newQuery)
+                if (newFragment.isNotBlank()) safeUrl.append("#").append(newFragment)
                 return safeUrl.toString()
             }
 
             return null
         } catch (t: Throwable) {
+            Timber.d(t, "getSafeSearchUrl failed for url=$url")
             return null
         }
     }
 
     /**
+     * Build a safe URL by appending a SafeSearch parameter to the existing
+     * URL's query string. Preserves scheme, host, path, existing query params,
+     * and fragment.
+     *
+     * SS-01 fix: helper extracted to centralize the "append &param" logic so
+     * Google/Bing/Yahoo/Yandex all build URLs identically.
+     *
+     * Example:
+     *   buildSafeUrlWithParam("https://www.google.com/search?q=cats&hl=en", "safe=active")
+     *   → "https://www.google.com/search?q=cats&hl=en&safe=active"
+     */
+    private fun buildSafeUrlWithParam(uri: Uri, param: String): String {
+        val scheme = if (uri.scheme.isNullOrBlank()) "https" else uri.scheme
+        val host = uri.host ?: return ""
+        val port = if (uri.port > 0) ":${uri.port}" else ""
+        val path = uri.path ?: ""
+        val existingQuery = uri.query ?: ""
+        val fragment = uri.fragment ?: ""
+
+        val safeUrl = StringBuilder("$scheme://$host$port")
+        if (path.isNotBlank()) safeUrl.append(path)
+        // Append the safe parameter to the existing query (or start a new one)
+        val newQuery = if (existingQuery.isNotBlank()) {
+            "$existingQuery&$param"
+        } else {
+            param
+        }
+        safeUrl.append("?").append(newQuery)
+        if (fragment.isNotBlank()) safeUrl.append("#").append(fragment)
+        return safeUrl.toString()
+    }
+
+    /**
+     * Check if a URL's query string contains a specific key=value pair.
+     *
+     * SS-02 fix: replaces the broken `.contains("vm=r")` check that matched
+     * substrings like "vm=red". This helper parses the query string and
+     * checks for an exact key=value match.
+     *
+     * Example:
+     *   hasQueryParam("https://example.com/?vm=r", "vm", "r") → true
+     *   hasQueryParam("https://example.com/?vm=red", "vm", "r") → false
+     */
+    private fun hasQueryParam(lowerUrl: String, key: String, value: String): Boolean {
+        // Check for &key=value or ?key=value (exact match, not substring)
+        val target = "$key=$value"
+        // Match either "&key=value" at end of URL or followed by "&",
+        // OR "?key=value" at start of query or followed by "&".
+        // Using word-boundary-like checks: the char before must be ? or &,
+        // and the char after must be & or end-of-string or #.
+        val pattern = Pattern.compile("[?&]" + Pattern.quote(target) + "(?:&|#|$)")
+        return pattern.matcher(lowerUrl).find()
+    }
+
+    /**
      * Check if a URL is already SafeSearch-enforced (no redirect needed).
      *
+     * **SS-02 fix (v1.0.54)**: The previous implementation used loose
+     * `.contains()` checks that caused false positives:
+     *  - `.contains("vm=r")` matched `vm=red`, `vm=remote`, `avm=rare`, …
+     *  - `.contains("family=1")` matched `family=10`, `bfamily=1`, …
+     *  - `.contains("safe=active")` matched `bsafe=active`, `safe=active2`, …
+     *
+     * These false positives made the redirect get silently skipped, which was
+     * one of the root causes of "SafeSearch not working" reports.
+     *
+     * The new implementation uses regex with query-string boundary checks so
+     * `vm=r` only matches when it's a complete key=value pair (preceded by
+     * `?` or `&`, followed by `&`, `#`, or end-of-string).
+     *
+     * Also added `family=yes` (the correct Yandex parameter — the old code
+     * only checked `family=1`).
+     *
      * Returns true if the URL:
-     *  - Contains safe=active (Google SafeSearch parameter)
-     *  - Contains safe=strict (Bing strict mode)
-     *  - Is on forcesafesearch.google.com
-     *  - Is on strict.bing.com
-     *  - Is on restrict.youtube.com
-     *  - Is on safe.duckduckgo.com
+     *  - Has `safe=active` as a query parameter (Google SafeSearch)
+     *  - Has `adlt=strict` as a query parameter (Bing strict mode)
+     *  - Has `vm=r` as a query parameter (Yahoo SafeSearch)
+     *  - Has `family=yes` OR `family=1` as a query parameter (Yandex Family)
+     *  - Is on forcesafesearch.google.com (legacy safe host)
+     *  - Is on strict.bing.com (legacy safe host)
+     *  - Is on restrict.youtube.com (YouTube Restricted Mode)
+     *  - Is on safe.duckduckgo.com (DuckDuckGo Safe Search)
      */
     fun isSafeSearchUrl(url: String): Boolean {
+        if (url.isBlank()) return false
         val lower = url.lowercase(Locale.ROOT)
-        return lower.contains("safe=active") ||
-            lower.contains("safe=strict") ||
-            lower.contains("adlt=strict") ||
-            lower.contains("vm=r") ||
-            lower.contains("family=1") ||
-            lower.contains("forcesafesearch.google.com") ||
+
+        // Host-based checks (these are safe regardless of query string)
+        if (lower.contains("forcesafesearch.google.com") ||
             lower.contains("strict.bing.com") ||
             lower.contains("restrict.youtube.com") ||
             lower.contains("safe.duckduckgo.com")
+        ) {
+            return true
+        }
+
+        // Query-parameter checks — use regex with boundaries to avoid
+        // false positives like "vm=red" matching "vm=r".
+        // Pattern: [?&]key=value(?=&|#|$)
+        return hasQueryParam(lower, "safe", "active") ||
+            hasQueryParam(lower, "safe", "strict") ||
+            hasQueryParam(lower, "adlt", "strict") ||
+            hasQueryParam(lower, "vm", "r") ||
+            hasQueryParam(lower, "family", "yes") ||
+            hasQueryParam(lower, "family", "1")
     }
 
     companion object {
@@ -402,7 +561,11 @@ class BlockerPageUtils {
         /**
          * Search engine host → SafeSearch-enforced host mapping.
          *
-         * Used by getSafeSearchUrl() to build redirect URLs.
+         * **DEPRECATED (v1.0.54, SS-01 fix)**: No longer used by
+         * [getSafeSearchUrl]. Kept for backward compatibility and as
+         * reference data. The new implementation uses NopoX-style substring
+         * host matching (e.g. `host.contains("google")`) which catches ALL
+         * country TLDs automatically, instead of this fixed list of 20.
          *
          * These safe variants enforce SafeSearch at the DNS/CDN level:
          *  - forcesafesearch.google.com — Google SafeSearch (always active)
@@ -413,7 +576,10 @@ class BlockerPageUtils {
          * When the VPN is also ON, the family DNS resolvers
          * (Cloudflare 1.1.1.3 / AdGuard 94.140.14.15) enforce SafeSearch
          * at the DNS level too — providing a second independent layer.
+         *
+         * @deprecated Use [getSafeSearchUrl] which now uses substring matching.
          */
+        @Deprecated("No longer used by getSafeSearchUrl (SS-01 fix). Kept for reference.", ReplaceWith("getSafeSearchUrl(url)"))
         val SAFE_SEARCH_HOST_MAP: Map<String, String> = mapOf(
             // Google — forcesafesearch.google.com works for all Google TLDs
             "www.google.com" to "forcesafesearch.google.com",
@@ -481,20 +647,27 @@ class BlockerPageUtils {
         /**
          * Search engine host → SafeSearch parameter mapping.
          *
+         * **DEPRECATED (v1.0.54, SS-01 fix)**: No longer used by
+         * [getSafeSearchUrl]. Kept for backward compatibility.
+         *
          * For search engines that don't have a dedicated SafeSearch host
          * (unlike Google/Bing/YouTube/DuckDuckGo), SafeSearch is enforced
          * via a URL query parameter on the same host.
          *
-         *  - search.yahoo.com     → vm=r      (Yahoo SafeSearch)
-         *  - yandex.com           → family=1  (Yandex Family Search)
-         *  - ya.ru                → family=1  (Yandex Russia, Family Search)
+         *  - search.yahoo.com     → vm=r         (Yahoo SafeSearch)
+         *  - yandex.com           → family=yes   (Yandex Family Search —
+         *                                          SS-01 fix: was family=1)
+         *  - ya.ru                → family=yes   (Yandex Russia, Family Search)
+         *
+         * @deprecated Use [getSafeSearchUrl] which now uses substring matching.
          */
+        @Deprecated("No longer used by getSafeSearchUrl (SS-01 fix). Kept for reference.", ReplaceWith("getSafeSearchUrl(url)"))
         val SAFE_SEARCH_PARAM_MAP: Map<String, String> = mapOf(
             // Yahoo — enforce via vm=r parameter
             "search.yahoo.com" to "vm=r",
-            // Yandex — enforce via family=1 parameter
-            "yandex.com" to "family=1",
-            "ya.ru" to "family=1"
+            // Yandex — SS-01 fix: family=yes (was family=1, which is invalid)
+            "yandex.com" to "family=yes",
+            "ya.ru" to "family=yes"
         )
 
         /**

@@ -11,6 +11,11 @@
     <!-- Block screen -->
     <string name="block_page_default_message">This page is blocked.</string>
     <string name="block_page_default_porn_blocker_message">Your porn blocker switch is on.</string>
+    <!-- SS-04 fix (v1.0.54): SafeSearch fallback block message. Shown only
+         when the SafeSearch redirect fails entirely (no browser can open
+         the safe URL). This is rare — normally the redirect succeeds and
+         the user sees the SafeSearch results directly. -->
+    <string name="block_page_default_safe_search_message">SafeSearch enforcement is on. This search could not be redirected to SafeSearch.</string>
 
     <!-- Block screen UI -->
     <string name="why">Why</string>

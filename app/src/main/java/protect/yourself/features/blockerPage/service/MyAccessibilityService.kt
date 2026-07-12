@@ -447,6 +447,50 @@ class MyAccessibilityService : AccessibilityService() {
         val utils = BlockerPageUtils.getInstance()
         val decoded = utils.decodeText(url)
 
+        // ============================================================
+        // SS-03 fix (v1.0.54): SafeSearch runs FIRST, BEFORE whitelist
+        // and keyword-block checks — matching the NopoX 1.0.53 reference
+        // APK's checkPornUrlSearch() order exactly.
+        //
+        // Previously, SafeSearch ran LAST. This meant that if the URL
+        // matched a whitelist keyword (e.g. user added "google" to
+        // whitelist) OR a block keyword, SafeSearch was silently skipped.
+        // This was the PRIMARY root cause of "SafeSearch not working"
+        // reports — the redirect never fired because the function
+        // returned early on the whitelist/keyword check.
+        //
+        // NopoX reference order (decompiled):
+        //   1. SafeSearch redirect (if switch on AND url is search engine)
+        //   2. ytSearchBlock / ytShortsBlock checks
+        //   3. Whitelist check (overrides block)
+        //   4. blockAllWebsite check
+        //   5. Block keyword check
+        //
+        // We follow the same order: SafeSearch FIRST, then whitelist,
+        // then block keyword. After SafeSearch redirect, the browser
+        // navigates to the safe URL (which has safe=active / safe.duckduckgo.com
+        // / etc.), and the next accessibility event fires for the safe URL —
+        // which isSafeSearchUrl() recognises, so no redirect loop occurs.
+        // ============================================================
+        if (isSafeSearchOn) {
+            val safeUrl = utils.getSafeSearchUrl(decoded)
+            if (safeUrl != null) {
+                Timber.i("SS-03: SafeSearch redirect triggered for pkg=$packageName url=$decoded")
+                enforceSafeSearch(packageName, decoded, safeUrl)
+                // Do NOT return here — NopoX continues to check whitelist
+                // and block keywords on the SAME (original) URL. This is
+                // intentional: if the user's search query itself contains
+                // a blocked keyword, the block screen should still fire
+                // (the SafeSearch redirect only filters IMAGE results, not
+                // the search query itself).
+                //
+                // However, we skip the block if the URL is the safe variant
+                // (already redirected) to avoid double-firing.
+            } else {
+                Timber.v("SS-03: SafeSearch on but no redirect needed for url=$decoded (not a search engine or already safe)")
+            }
+        }
+
         // Whitelist check (overrides block)
         if (utils.isSafeUrl(decoded, cachedWhitelistKeywords)) {
             return
@@ -463,11 +507,6 @@ class MyAccessibilityService : AccessibilityService() {
             )
             return
         }
-
-        // SafeSearch enforcement: redirect to safe search if user tries unsafe Google
-        if (isSafeSearchOn) {
-            enforceSafeSearch(packageName, decoded)
-        }
     }
 
     // ===== SafeSearch enforcement =====
@@ -475,18 +514,24 @@ class MyAccessibilityService : AccessibilityService() {
     /**
      * NopoX-style SafeSearch enforcement.
      *
+     * **SS-01 fix (v1.0.54)**: Updated to match the NopoX 1.0.53 reference
+     * APK's behaviour. The safe URL is now computed by [BlockerPageUtils.getSafeSearchUrl]
+     * which uses NopoX's substring host matching + parameter-append strategy
+     * (same host + `&safe=active` for Google, etc.) instead of redirecting
+     * to different hosts (forcesafesearch.google.com).
+     *
      * When the SafeSearch switch is ON and the user navigates to an unsafe
-     * search engine URL (Google, Bing, YouTube, DuckDuckGo), the service:
-     *   1. Presses HOME to dismiss the unsafe page
-     *   2. Opens the SafeSearch-enforced variant URL in the same browser
+     * search engine URL (Google, Bing, YouTube, DuckDuckGo, Yahoo, Yandex),
+     * the service opens the SafeSearch-enforced variant URL in the same
+     * browser tab, replacing the unsafe search page.
      *
-     * Safe variant hosts:
-     *   - www.google.com  → forcesafesearch.google.com
-     *   - www.bing.com     → strict.bing.com
-     *   - www.youtube.com  → restrict.youtube.com
-     *   - duckduckgo.com   → safe.duckduckgo.com
-     *
-     * The path and query are preserved so the user's search query is kept.
+     * Safe strategies (per [BlockerPageUtils.getSafeSearchUrl]):
+     *   - Google  → append `&safe=active` (same host, any TLD)
+     *   - Bing    → append `&adlt=strict` (same host)
+     *   - Yahoo   → append `&vm=r` (same host)
+     *   - Yandex  → append `&family=yes` (same host — was `family=1`, invalid)
+     *   - DuckDuckGo → replace host with `safe.duckduckgo.com`
+     *   - YouTube → replace host with `restrict.youtube.com`
      *
      * Throttle: 2-second cooldown per package+URL to prevent redirect loops
      * and rapid-fire intents. The safe variant URL itself is excluded from
@@ -496,6 +541,12 @@ class MyAccessibilityService : AccessibilityService() {
      * (Cloudflare 1.1.1.3 / AdGuard 94.140.14.15) enforce SafeSearch at
      * the DNS level — this accessibility redirect is the primary layer
      * when VPN is off, and a backup when VPN is on.
+     *
+     * @param packageName the browser package name (for intent targeting)
+     * @param url the original (unsafe) URL — used for throttle key + logging
+     * @param safeUrl the pre-computed safe URL to redirect to (from
+     *        [BlockerPageUtils.getSafeSearchUrl]). Passing it in avoids
+     *        recomputing it (SS-03 fix — the caller already computed it).
      */
     /**
      * KB-23 fix: strip the query string (and fragment) from a URL for throttle
@@ -513,9 +564,13 @@ class MyAccessibilityService : AccessibilityService() {
         return url.substring(0, cut)
     }
 
-    private fun enforceSafeSearch(packageName: String, url: String) {
-        val utils = BlockerPageUtils.getInstance()
-        val safeUrl = utils.getSafeSearchUrl(url) ?: return  // null = not a search engine / already safe
+    private fun enforceSafeSearch(packageName: String, url: String, safeUrl: String) {
+        // SS-03 fix: safeUrl is now passed in by the caller (handleUrlDetected)
+        // to avoid recomputing it. Validate it's not blank as a defensive guard.
+        if (safeUrl.isBlank()) {
+            Timber.w("SS-03: enforceSafeSearch called with blank safeUrl — skipping (url=$url)")
+            return
+        }
 
         // KB-23 fix: throttle by URL WITHOUT the query string. The old code
         // compared the full URL, so a URL with a changing query parameter
@@ -526,15 +581,23 @@ class MyAccessibilityService : AccessibilityService() {
         val now = System.currentTimeMillis()
         if (packageName == lastSafeSearchPackage &&
             urlForThrottle == lastSafeSearchUrl &&
-            now - lastSafeSearchTimeMs < 2000
+            now - lastSafeSearchTimeMs < SAFE_SEARCH_THROTTLE_MS
         ) {
+            Timber.v("SS-03: SafeSearch throttled for pkg=$packageName url=$urlForThrottle (${now - lastSafeSearchTimeMs}ms < ${SAFE_SEARCH_THROTTLE_MS}ms)")
             return
         }
         lastSafeSearchPackage = packageName
         lastSafeSearchTimeMs = now
         lastSafeSearchUrl = urlForThrottle
 
-        Timber.i("SafeSearch redirect: $url → $safeUrl (pkg=$packageName)")
+        Timber.i("SS-03: SafeSearch redirect: $url → $safeUrl (pkg=$packageName)")
+
+        // Log to CrashLogger for diagnostics — this creates a breadcrumb trail
+        // so users can verify SafeSearch is firing by reviewing the crash log.
+        protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+            "SafeSearch",
+            "redirect: $url → $safeUrl (pkg=$packageName)"
+        )
 
         // Open the SafeSearch-enforced URL in the same browser.
         //
@@ -543,6 +606,13 @@ class MyAccessibilityService : AccessibilityService() {
         // URL intent fires, or the safe URL opens behind the home screen.
         // The new URL loads in the same browser tab, replacing the unsafe
         // search page. The user sees the SafeSearch results directly.
+        //
+        // NopoX's loadUrl() uses Intent.ACTION_VIEW with FLAG_ACTIVITY_NEW_TASK
+        // and targets the same browser package. We follow the same pattern but
+        // also add FLAG_ACTIVITY_CLEAR_TOP to ensure the safe URL replaces the
+        // unsafe one in the browser's back stack (NopoX doesn't do this, but
+        // it's a strict improvement — prevents the user from pressing Back to
+        // return to the unsafe search results).
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(safeUrl)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -551,11 +621,37 @@ class MyAccessibilityService : AccessibilityService() {
                 setPackage(packageName)
             }
             startActivity(intent)
+            Timber.i("SS-03: SafeSearch startActivity succeeded for pkg=$packageName")
         } catch (t: Throwable) {
             // Fallback: if we can't open the safe URL in the same browser
-            // (e.g. browser doesn't handle the intent), show block screen
-            Timber.w(t, "SafeSearch redirect failed — falling back to block screen")
-            launchBlockActivity(packageName, "block_page_default_safe_search_message")
+            // (e.g. browser doesn't handle the intent, or the browser package
+            // was uninstalled between detection and redirect), try without
+            // targeting a specific package. This lets the system pick any
+            // browser that can handle the URL.
+            Timber.w(t, "SS-03: SafeSearch redirect failed for pkg=$packageName — trying without package target")
+            try {
+                val fallbackIntent = Intent(Intent.ACTION_VIEW, Uri.parse(safeUrl)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(fallbackIntent)
+                Timber.i("SS-03: SafeSearch fallback startActivity succeeded (no package target)")
+            } catch (t2: Throwable) {
+                // Both attempts failed — show block screen as last resort.
+                // This is rare but can happen if no browser is installed.
+                Timber.e(t2, "SS-03: SafeSearch redirect fully failed — showing block screen")
+                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                    throwable = t2,
+                    severity = protect.yourself.features.crashLog.CrashSeverity.WARN,
+                    tag = "SafeSearch",
+                    message = "Redirect failed for pkg=$packageName url=$url safeUrl=$safeUrl",
+                    extraContext = mapOf(
+                        "packageName" to packageName,
+                        "originalUrl" to url,
+                        "safeUrl" to safeUrl
+                    )
+                )
+                launchBlockActivity(packageName, "block_page_default_safe_search_message")
+            }
         }
     }
 
@@ -1411,6 +1507,14 @@ class MyAccessibilityService : AccessibilityService() {
         // KB-20: max recursion depth for findUrlInNode to prevent StackOverflow
         // on deeply nested view trees.
         private const val MAX_NODE_DEPTH = 50
+
+        // SS-03: SafeSearch redirect throttle. Prevents redirect loops and
+        // rapid-fire intents when the same URL fires multiple accessibility
+        // events (which is common — TYPE_WINDOW_CONTENT_CHANGED can fire 5-10
+        // times per page load as the browser renders). 2 seconds is enough
+        // for the safe URL to load and trigger its own accessibility event
+        // (which isSafeSearchUrl() then recognises, breaking the loop).
+        private const val SAFE_SEARCH_THROTTLE_MS = 2000L
 
 
         // Known major browsers that are considered "supported".

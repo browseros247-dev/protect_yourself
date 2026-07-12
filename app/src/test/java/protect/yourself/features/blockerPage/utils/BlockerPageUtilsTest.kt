@@ -242,4 +242,268 @@ class BlockerPageUtilsTest {
     fun `getBlockAllWebsiteHint returns full string if under 20 chars`() {
         assertThat(utils.getBlockAllWebsiteHint("short")).isEqualTo("short")
     }
+
+    // ===== getSafeSearchUrl (SS-01 fix, v1.0.54) =====
+    //
+    // Tests verify the NopoX 1.0.53 reference behaviour:
+    //  - Google: append &safe=active (same host, requires /search path)
+    //  - Bing: append &adlt=strict (same host, requires /search path)
+    //  - Yahoo: append &vm=r (same host, requires /search path)
+    //  - Yandex: append &family=yes (same host, requires /search path)
+    //  - DuckDuckGo: replace host with safe.duckduckgo.com
+    //  - YouTube: replace host with restrict.youtube.com
+
+    @Test
+    fun `getSafeSearchUrl returns null for blank URL`() {
+        assertThat(utils.getSafeSearchUrl("")).isNull()
+        assertThat(utils.getSafeSearchUrl("   ")).isNull()
+    }
+
+    @Test
+    fun `getSafeSearchUrl returns null for non-search-engine URL`() {
+        assertThat(utils.getSafeSearchUrl("https://example.com/path")).isNull()
+        assertThat(utils.getSafeSearchUrl("https://github.com/repo")).isNull()
+    }
+
+    // --- Google ---
+
+    @Test
+    fun `getSafeSearchUrl Google appends safe=active for search path`() {
+        val safe = utils.getSafeSearchUrl("https://www.google.com/search?q=cats")
+        assertThat(safe).isNotNull()
+        assertThat(safe).contains("safe=active")
+        assertThat(safe).startsWith("https://www.google.com/search")
+    }
+
+    @Test
+    fun `getSafeSearchUrl Google preserves existing query params`() {
+        val safe = utils.getSafeSearchUrl("https://www.google.com/search?q=cats&hl=en")
+        assertThat(safe).isNotNull()
+        assertThat(safe).contains("q=cats")
+        assertThat(safe).contains("hl=en")
+        assertThat(safe).contains("safe=active")
+    }
+
+    @Test
+    fun `getSafeSearchUrl Google country TLD also matched (substring)`() {
+        // SS-01 fix: substring matching catches ALL country TLDs, not just
+        // the 20 that were hardcoded in the old SAFE_SEARCH_HOST_MAP.
+        val safe = utils.getSafeSearchUrl("https://www.google.co.za/search?q=cats")
+        assertThat(safe).isNotNull()
+        assertThat(safe).contains("safe=active")
+        assertThat(safe).contains("google.co.za")
+    }
+
+    @Test
+    fun `getSafeSearchUrl Google DOES NOT redirect homepage (no search path)`() {
+        // SS-01 fix: NopoX only redirects when path contains "search".
+        // Homepage must NOT be redirected.
+        assertThat(utils.getSafeSearchUrl("https://www.google.com/")).isNull()
+        assertThat(utils.getSafeSearchUrl("https://www.google.com")).isNull()
+    }
+
+    @Test
+    fun `getSafeSearchUrl Google returns null if already has safe=active`() {
+        assertThat(utils.getSafeSearchUrl("https://www.google.com/search?q=cats&safe=active")).isNull()
+    }
+
+    @Test
+    fun `getSafeSearchUrl Google returns null if already has safe=active at query start`() {
+        assertThat(utils.getSafeSearchUrl("https://www.google.com/search?safe=active&q=cats")).isNull()
+    }
+
+    // --- Bing ---
+
+    @Test
+    fun `getSafeSearchUrl Bing appends adlt=strict for search path`() {
+        val safe = utils.getSafeSearchUrl("https://www.bing.com/search?q=cats")
+        assertThat(safe).isNotNull()
+        assertThat(safe).contains("adlt=strict")
+        assertThat(safe).startsWith("https://www.bing.com/search")
+    }
+
+    @Test
+    fun `getSafeSearchUrl Bing does NOT redirect homepage`() {
+        assertThat(utils.getSafeSearchUrl("https://www.bing.com/")).isNull()
+    }
+
+    @Test
+    fun `getSafeSearchUrl Bing returns null if already has adlt=strict`() {
+        assertThat(utils.getSafeSearchUrl("https://www.bing.com/search?q=cats&adlt=strict")).isNull()
+    }
+
+    // --- Yahoo ---
+
+    @Test
+    fun `getSafeSearchUrl Yahoo appends vm=r for search path`() {
+        val safe = utils.getSafeSearchUrl("https://search.yahoo.com/search?p=cats")
+        assertThat(safe).isNotNull()
+        assertThat(safe).contains("vm=r")
+        assertThat(safe).startsWith("https://search.yahoo.com/search")
+    }
+
+    @Test
+    fun `getSafeSearchUrl Yahoo does NOT redirect homepage`() {
+        assertThat(utils.getSafeSearchUrl("https://search.yahoo.com/")).isNull()
+    }
+
+    @Test
+    fun `getSafeSearchUrl Yahoo returns null if already has vm=r`() {
+        assertThat(utils.getSafeSearchUrl("https://search.yahoo.com/search?p=cats&vm=r")).isNull()
+    }
+
+    // --- Yandex ---
+
+    @Test
+    fun `getSafeSearchUrl Yandex appends family=yes (NOT family=1) for search path`() {
+        // SS-01 fix: was "family=1" (invalid) — now "family=yes" (correct)
+        val safe = utils.getSafeSearchUrl("https://yandex.com/search/?text=cats")
+        assertThat(safe).isNotNull()
+        assertThat(safe).contains("family=yes")
+        assertThat(safe).doesNotContain("family=1")
+    }
+
+    @Test
+    fun `getSafeSearchUrl Yandex does NOT redirect homepage`() {
+        assertThat(utils.getSafeSearchUrl("https://yandex.com/")).isNull()
+    }
+
+    @Test
+    fun `getSafeSearchUrl Yandex returns null if already has family=yes`() {
+        assertThat(utils.getSafeSearchUrl("https://yandex.com/search/?text=cats&family=yes")).isNull()
+    }
+
+    // --- DuckDuckGo ---
+
+    @Test
+    fun `getSafeSearchUrl DuckDuckGo replaces host with safe dot duckduckgo dot com`() {
+        val safe = utils.getSafeSearchUrl("https://duckduckgo.com/?q=cats")
+        assertThat(safe).isNotNull()
+        assertThat(safe).contains("safe.duckduckgo.com")
+        assertThat(safe).contains("q=cats")
+    }
+
+    @Test
+    fun `getSafeSearchUrl DuckDuckGo DOES redirect homepage (no path check required)`() {
+        // Unlike Google/Bing/Yahoo/Yandex, DDG uses host replacement — no
+        // /search path requirement. This matches NopoX behaviour.
+        val safe = utils.getSafeSearchUrl("https://duckduckgo.com/")
+        assertThat(safe).isNotNull()
+        assertThat(safe).contains("safe.duckduckgo.com")
+    }
+
+    @Test
+    fun `getSafeSearchUrl DuckDuckGo returns null if already on safe host`() {
+        assertThat(utils.getSafeSearchUrl("https://safe.duckduckgo.com/?q=cats")).isNull()
+    }
+
+    // --- YouTube ---
+
+    @Test
+    fun `getSafeSearchUrl YouTube replaces host with restrict dot youtube dot com`() {
+        val safe = utils.getSafeSearchUrl("https://www.youtube.com/results?search_query=cats")
+        assertThat(safe).isNotNull()
+        assertThat(safe).contains("restrict.youtube.com")
+    }
+
+    @Test
+    fun `getSafeSearchUrl YouTube returns null if already on restrict host`() {
+        assertThat(utils.getSafeSearchUrl("https://restrict.youtube.com/results?search_query=cats")).isNull()
+    }
+
+    // ===== isSafeSearchUrl (SS-02 fix, v1.0.54) =====
+    //
+    // Tests verify the false-positive fixes:
+    //  - "vm=r" no longer matches "vm=red", "vm=remote"
+    //  - "family=1" no longer matches "family=10", "bfamily=1"
+    //  - "safe=active" no longer matches "bsafe=active"
+
+    @Test
+    fun `isSafeSearchUrl returns false for blank URL`() {
+        assertThat(utils.isSafeSearchUrl("")).isFalse()
+    }
+
+    @Test
+    fun `isSafeSearchUrl returns true for safe=active parameter`() {
+        assertThat(utils.isSafeSearchUrl("https://google.com/search?q=cats&safe=active")).isTrue()
+        assertThat(utils.isSafeSearchUrl("https://google.com/search?safe=active&q=cats")).isTrue()
+    }
+
+    @Test
+    fun `isSafeSearchUrl returns true for adlt=strict parameter`() {
+        assertThat(utils.isSafeSearchUrl("https://bing.com/search?q=cats&adlt=strict")).isTrue()
+    }
+
+    @Test
+    fun `isSafeSearchUrl returns true for vm=r parameter`() {
+        assertThat(utils.isSafeSearchUrl("https://yahoo.com/search?p=cats&vm=r")).isTrue()
+    }
+
+    @Test
+    fun `isSafeSearchUrl returns true for family=yes parameter`() {
+        assertThat(utils.isSafeSearchUrl("https://yandex.com/search?text=cats&family=yes")).isTrue()
+    }
+
+    @Test
+    fun `isSafeSearchUrl returns true for family=1 parameter (legacy support)`() {
+        // Legacy support: some old URLs may have family=1 — still recognized.
+        assertThat(utils.isSafeSearchUrl("https://yandex.com/search?text=cats&family=1")).isTrue()
+    }
+
+    @Test
+    fun `isSafeSearchUrl returns true for safe hosts`() {
+        assertThat(utils.isSafeSearchUrl("https://forcesafesearch.google.com/search?q=cats")).isTrue()
+        assertThat(utils.isSafeSearchUrl("https://strict.bing.com/search?q=cats")).isTrue()
+        assertThat(utils.isSafeSearchUrl("https://restrict.youtube.com/results?search_query=cats")).isTrue()
+        assertThat(utils.isSafeSearchUrl("https://safe.duckduckgo.com/?q=cats")).isTrue()
+    }
+
+    @Test
+    fun `isSafeSearchUrl returns false for non-safe URL`() {
+        assertThat(utils.isSafeSearchUrl("https://google.com/search?q=cats")).isFalse()
+        assertThat(utils.isSafeSearchUrl("https://example.com/path")).isFalse()
+    }
+
+    // --- SS-02 false-positive regression tests ---
+
+    @Test
+    fun `isSafeSearchUrl does NOT match vm=red as vm=r (SS-02 fix)`() {
+        // OLD BUG: .contains("vm=r") matched "vm=red" → redirect skipped
+        assertThat(utils.isSafeSearchUrl("https://yahoo.com/search?p=cats&vm=red")).isFalse()
+    }
+
+    @Test
+    fun `isSafeSearchUrl does NOT match vm=remote as vm=r (SS-02 fix)`() {
+        assertThat(utils.isSafeSearchUrl("https://yahoo.com/search?p=cats&vm=remote")).isFalse()
+    }
+
+    @Test
+    fun `isSafeSearchUrl does NOT match family=10 as family=1 (SS-02 fix)`() {
+        // OLD BUG: .contains("family=1") matched "family=10" → redirect skipped
+        assertThat(utils.isSafeSearchUrl("https://yandex.com/search?text=cats&family=10")).isFalse()
+    }
+
+    @Test
+    fun `isSafeSearchUrl does NOT match bfamily=1 as family=1 (SS-02 fix)`() {
+        // OLD BUG: .contains("family=1") matched "bfamily=1" → redirect skipped
+        assertThat(utils.isSafeSearchUrl("https://yandex.com/search?text=cats&bfamily=1")).isFalse()
+    }
+
+    @Test
+    fun `isSafeSearchUrl does NOT match bsafe=active as safe=active (SS-02 fix)`() {
+        // OLD BUG: .contains("safe=active") matched "bsafe=active" → redirect skipped
+        assertThat(utils.isSafeSearchUrl("https://google.com/search?q=cats&bsafe=active")).isFalse()
+    }
+
+    @Test
+    fun `isSafeSearchUrl does NOT match safe=active2 as safe=active (SS-02 fix)`() {
+        assertThat(utils.isSafeSearchUrl("https://google.com/search?q=cats&safe=active2")).isFalse()
+    }
+
+    @Test
+    fun `isSafeSearchUrl does NOT match safe=active in URL path (SS-02 fix)`() {
+        // "safe=active" appearing in the path (not as a query param) should
+        // NOT be considered SafeSearch-enforced.
+        assertThat(utils.isSafeSearchUrl("https://example.com/safe=active/page")).isFalse()
+    }
 }
