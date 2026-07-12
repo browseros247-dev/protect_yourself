@@ -129,8 +129,31 @@ class BlockerPageViewModel(
                 result
             }
 
-            _state.update { it.copy(settingItems = itemsWithValues, isLoading = false) }
-            Timber.i("BlockerPage loaded ${itemsWithValues.size} setting items")
+            // AL-02 fix: hide Touch ID and Disable Forgot Password cards when
+            // App Lock is NOT set up. These cards are meaningless without an
+            // app lock — the user can't enable Touch ID or disable forgot
+            // password if there's no lock configured. Showing them causes
+            // confusion (the user sees cards that can't be used) and was
+            // reported as "duplicate cards appearing when App Lock is not
+            // set up."
+            //
+            // NopoX 1.0.53 behavior: these toggles only appear after the user
+            // sets up an app lock. We replicate this by filtering them out
+            // when SET_APP_LOCK_SWITCH is false.
+            val appLockEnabled = itemsWithValues
+                .firstOrNull { it.identifier == SettingPageItemIdentifiers.SET_APP_LOCK }
+                ?.switchValue ?: false
+            val filteredItems = if (appLockEnabled) {
+                itemsWithValues
+            } else {
+                itemsWithValues.filterNot { item ->
+                    item.identifier == SettingPageItemIdentifiers.TOUCH_ID ||
+                        item.identifier == SettingPageItemIdentifiers.DISABLE_FORGOT_PASSWORD
+                }
+            }
+
+            _state.update { it.copy(settingItems = filteredItems, isLoading = false) }
+            Timber.i("BlockerPage loaded ${filteredItems.size} setting items (appLock=$appLockEnabled)")
         }
     }
 
@@ -366,17 +389,50 @@ class BlockerPageViewModel(
                 return@safeLaunch
             }
 
-            // SET_APP_LOCK OFF → disable lock entirely (clears hash + type + touch ID)
+            // SET_APP_LOCK OFF → disable lock entirely (clears hash + type +
+            // touch ID + disable forgot password).
+            //
+            // AL-01 fix: the previous implementation cleared app_lock_type and
+            // app_lock_stored_hash directly in the DB but NEVER stored
+            // SET_APP_LOCK_SWITCH=false. This meant isAppLockSwitchOn() still
+            // returned true on the next loadSettingItems() call, so the toggle
+            // visually stayed ON even though the feature was disabled.
+            //
+            // The fix uses AppLockManager.disableLock() which properly:
+            //   - clears app_lock_type to 0
+            //   - clears app_lock_stored_hash to ""
+            //   - stores SET_APP_LOCK_SWITCH=false
+            //   - stores TOUCH_ID_SWITCH=false
+            //   - stores DISABLE_FORGOT_PASSWORD_SWITCH=false (BUG-23 fix)
+            // Then we reload all setting items so the UI reflects the change
+            // immediately (toggle shows OFF, Touch ID / Disable Forgot Password
+            // cards disappear since App Lock is no longer set up).
             if (switchKey == SwitchIdentifier.SET_APP_LOCK_SWITCH && !newValue) {
-                // Clear lock type, stored hash, and touch ID directly in DB
-                db.switchStatusDao().upsert(protect.yourself.database.switchStatus.SwitchStatusItemModel(
-                    key = "app_lock_type", value = "0", type = "long"
-                ))
-                db.switchStatusDao().upsert(protect.yourself.database.switchStatus.SwitchStatusItemModel(
-                    key = "app_lock_stored_hash", value = "", type = "string"
-                ))
-                switchValues.storeSwitchStatus(SwitchIdentifier.TOUCH_ID_SWITCH, false)
+                try {
+                    val appLockManager = protect.yourself.features.appPasswordPage.AppLockManager(
+                        getApplication()
+                    )
+                    appLockManager.disableLock()
+                    Timber.i("AL-01: App Lock disabled via AppLockManager — SET_APP_LOCK_SWITCH, TOUCH_ID_SWITCH, DISABLE_FORGOT_PASSWORD_SWITCH all set to false")
+                } catch (t: Throwable) {
+                    Timber.e(t, "AL-01: AppLockManager.disableLock() failed — falling back to manual DB clear")
+                    // Fallback: manually clear the same fields AppLockManager would
+                    db.switchStatusDao().upsert(protect.yourself.database.switchStatus.SwitchStatusItemModel(
+                        key = "app_lock_type", value = "0", type = "long"
+                    ))
+                    db.switchStatusDao().upsert(protect.yourself.database.switchStatus.SwitchStatusItemModel(
+                        key = "app_lock_stored_hash", value = "", type = "string"
+                    ))
+                    switchValues.storeSwitchStatus(SwitchIdentifier.SET_APP_LOCK_SWITCH, false)
+                    switchValues.storeSwitchStatus(SwitchIdentifier.TOUCH_ID_SWITCH, false)
+                    switchValues.storeSwitchStatus(SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH, false)
+                }
                 _navigation.emit(BlockerPageNavigation.ShowToast("App lock disabled"))
+                // Reload all setting items so the UI reflects the change:
+                //   - SET_APP_LOCK toggle shows OFF
+                //   - TOUCH_ID and DISABLE_FORGOT_PASSWORD cards are hidden
+                //     (they only show when App Lock is set up — AL-02 fix)
+                loadSettingItems()
                 // Return here — don't fall through to normal toggle
                 return@safeLaunch
             }

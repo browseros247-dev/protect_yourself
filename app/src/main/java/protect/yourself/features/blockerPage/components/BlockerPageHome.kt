@@ -404,7 +404,16 @@ fun BlockerPageHome() {
             SelectAppPage(identifier = page.identifier, title = page.title, onBack = { currentPage = null })
         }
         SubPage.AppLockSetup -> {
-            protect.yourself.features.appPasswordPage.AppLockSetupPage(onBack = { currentPage = null })
+            // AL-02 fix: reload setting items when returning from App Lock
+            // setup. If the user just set up (or disabled) App Lock, the
+            // TOUCH_ID and DISABLE_FORGOT_PASSWORD cards need to appear or
+            // disappear. Without this reload, the cards would be stale.
+            protect.yourself.features.appPasswordPage.AppLockSetupPage(
+                onBack = {
+                    currentPage = null
+                    viewModel.loadSettingItems()
+                }
+            )
         }
         is SubPage.CategoryPage -> {
             CategoryDetailPage(
