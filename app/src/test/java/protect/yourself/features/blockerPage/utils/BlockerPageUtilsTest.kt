@@ -2,13 +2,23 @@ package protect.yourself.features.blockerPage.utils
 
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * Unit tests for BlockerPageUtils keyword matching + URL validation.
  *
  * Phase 2 covers core matching logic — 20 tests.
  * Phase 6 will add comprehensive instrumentation tests.
+ *
+ * Runs under Robolectric because [BlockerPageUtils.isValidUrl] uses
+ * `android.util.Patterns.WEB_URL` and [BlockerPageUtils.getSafeUrl] uses
+ * `android.net.Uri.parse` — both are Android framework classes that return
+ * null/stubs in pure JVM unit tests. Robolectric provides real implementations.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class BlockerPageUtilsTest {
 
     private val utils = BlockerPageUtils()
