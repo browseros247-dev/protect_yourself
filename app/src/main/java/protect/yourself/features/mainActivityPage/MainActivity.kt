@@ -89,6 +89,11 @@ class MainActivity : FragmentActivity() {
     // Observable state — Compose watches this for changes
     private var appState by mutableStateOf(AppState.LOADING)
 
+    // Deep-link target tab. Set when the activity is launched/re-launched
+    // via StreakWidget (which puts EXTRA_OPEN_TAB = "Streak" on the intent).
+    // Consumed by MainScreen on the next recomposition.
+    private var pendingTab by mutableStateOf<MainPageScreen?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -116,10 +121,16 @@ class MainActivity : FragmentActivity() {
                     AppState.LOCKED -> AppLockScreen(onUnlocked = {
                         appState = AppState.MAIN
                     })
-                    AppState.MAIN -> MainScreen()
+                    AppState.MAIN -> MainScreen(
+                        requestedTab = pendingTab,
+                        onTabConsumed = { pendingTab = null }
+                    )
                 }
             }
         }
+
+        // Read deep-link extra on initial launch (widget tap when app not running)
+        readTabExtra(intent)
 
         // Check app state on background thread
         checkAppState()
@@ -195,6 +206,22 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // Read deep-link extra when the activity is already running and the
+        // user taps a widget (e.g. StreakWidget → switch to Streak tab).
+        readTabExtra(intent)
+    }
+
+    /**
+     * Read the EXTRA_OPEN_TAB string from a launch/re-launch intent and set
+     * [pendingTab] so [MainScreen] can switch tabs on the next recomposition.
+     * No-op when the extra is absent (normal launcher launch).
+     */
+    private fun readTabExtra(intent: Intent?) {
+        val tabRoute = intent?.getStringExtra(EXTRA_OPEN_TAB)
+        if (!tabRoute.isNullOrBlank()) {
+            pendingTab = MainPageScreen.fromRoute(tabRoute)
+            Timber.i("Deep-link: requested tab '$tabRoute' → $pendingTab")
+        }
     }
 
     companion object {
@@ -366,8 +393,20 @@ private fun OnboardingPage(onAccept: (openAccessibilitySettings: Boolean) -> Uni
 }
 
 @Composable
-private fun MainScreen() {
+private fun MainScreen(
+    requestedTab: MainPageScreen? = null,
+    onTabConsumed: () -> Unit = {}
+) {
     var selectedTab by remember { mutableStateOf(MainPageScreen.Home) }
+
+    // Consume a deep-link tab request (e.g. from StreakWidget) by switching
+    // to the requested tab once, then clearing the request.
+    LaunchedEffect(requestedTab) {
+        if (requestedTab != null) {
+            selectedTab = requestedTab
+            onTabConsumed()
+        }
+    }
 
     Scaffold(
         bottomBar = { AppBottomBar(selectedTab) { selectedTab = it } }

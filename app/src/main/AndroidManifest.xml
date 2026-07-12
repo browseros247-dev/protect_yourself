@@ -229,11 +229,6 @@
                 android:value="VPN DNS filtering for content blocking" />
         </service>
 
-        <!-- Notification action service -->
-        <service
-            android:name="protect.yourself.commons.utils.notificationUtils.NotificationActionService"
-            android:exported="false" />
-
         <!-- ===== Broadcast Receivers ===== -->
 
         <!-- Connectivity change -->
@@ -373,13 +368,6 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
-
-        <!-- ===== Meta-data ===== -->
-
-        <!-- File provider paths (legacy) -->
-        <meta-data
-            android:name="android.support.FILE_PROVIDER_PATHS"
-            android:resource="@xml/file_paths" />
 
     </application>
 

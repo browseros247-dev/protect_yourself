@@ -2,27 +2,12 @@
 <resources>
 
     <!-- ============ Brand colors ============ -->
-    <color name="brand_orange">#FFFF7100</color>
-    <color name="brand_orange_light">#FFFF9900</color>
     <color name="accent_color">#FF3ACFFE</color>
 
     <!-- ============ Dark theme colors (matches original) ============ -->
     <color name="colorPrimary">#FF1F323F</color>
-    <color name="colorAccent">#FFFFFFFF</color>
-
-    <color name="bg_blue">#FF151F26</color>
     <color name="bg_blue_dark">#FF061620</color>
-    <color name="bg_blue_dark_overlay">#BF061620</color>
-
-    <color name="bottom_nav_active">#FF38D0FE</color>
-    <color name="bottom_nav_divider">#FF052233</color>
-    <color name="bottom_nav_inactive">#FF4D7389</color>
-    <color name="bottom_sheet_divider">#FF0A374A</color>
-
     <color name="sub_title_text_color">#FFB7BABD</color>
-    <color name="about_message_color">#FFB7BABD</color>
-    <color name="biometric_error_color">#FFFF5722</color>
-
     <color name="white">#FFFFFFFF</color>
     <color name="black">#FF000000</color>
 
@@ -32,16 +17,5 @@
 
     <!-- ============ Light theme colors (new — DayNight) ============ -->
     <color name="light_bg">#FFF5F7FA</color>
-    <color name="light_surface">#FFFFFFFF</color>
-    <color name="light_on_bg">#FF061620</color>
-    <color name="light_subtitle">#FF6B7785</color>
-    <color name="light_bottom_nav_active">#FF1FA8D9</color>
-    <color name="light_bottom_nav_inactive">#FF7A8B96</color>
-    <color name="light_bottom_nav_divider">#FFE0E5EA</color>
-
-    <!-- ============ Misc ============ -->
-    <color name="transparent">#00000000</color>
-    <color name="card_background_light">#FFFFFFFF</color>
-    <color name="divider_color_light">#FFE0E5EA</color>
 
 </resources>

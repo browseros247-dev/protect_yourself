@@ -6,15 +6,12 @@ package protect.yourself.features.blockerPage.identifiers
  * 60+ identifiers covering all setting items in the BlockerPage.
  * Used by BlockerPageViewModel.getSettingPageItemList() to render the page.
  *
- * PREMIUM_LOGIN_ICON + PREMIUM_OFFER + LOGIN_NOW are kept for compatibility
- * but not rendered (premium removed).
+ * Premium-related entries (PREMIUM_LOGIN_ICON, PREMIUM_OFFER, LOGIN_NOW) were
+ * removed when premium was stripped from the rebuild.
  */
 enum class SettingPageItemIdentifiers {
     // Alert section
-    PREMIUM_LOGIN_ICON,
     BLOCK_SCREEN_COUNT,
-    PREMIUM_OFFER,
-    LOGIN_NOW,
     SECTION_ALERT,
 
     // Permissions

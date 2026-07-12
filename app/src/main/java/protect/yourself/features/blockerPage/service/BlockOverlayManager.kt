@@ -214,11 +214,6 @@ class BlockOverlayManager(
     }
 
     /**
-     * Whether the overlay is currently visible.
-     */
-    fun isShowing(): Boolean = isOverlayShowing.get()
-
-    /**
      * Build the overlay view — a simple full-screen layout with:
      *   - App logo + name header
      *   - Block message (from string resource)

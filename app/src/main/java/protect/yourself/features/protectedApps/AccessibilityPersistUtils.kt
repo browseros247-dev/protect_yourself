@@ -360,9 +360,4 @@ object ProtectedAppsRegistry {
         if (removed) prefs(context).edit().putStringSet(KEY_COMPONENTS, current).apply()
         return removed
     }
-
-    @JvmStatic
-    fun clear(context: Context) {
-        prefs(context).edit().remove(KEY_COMPONENTS).apply()
-    }
 }

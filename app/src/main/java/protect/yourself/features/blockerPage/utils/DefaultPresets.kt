@@ -1,7 +1,5 @@
 package protect.yourself.features.blockerPage.utils
 
-import java.util.Locale
-
 /**
  * Default VPN DNS presets — ported from original Protect Yourself.
  *
@@ -128,26 +126,4 @@ object DefaultWhitelistApps {
         "com.android.packageinstaller",
         "com.google.android.packageinstaller"
     )
-}
-
-/**
- * Device brand detection — used to show brand-specific permission instructions.
- * (User chose to skip brand-specific guides, but we keep the detection for future use.)
- */
-object DeviceBrandIdentifiers {
-    enum class Brand { SAMSUNG, XIAOMI, HUAWEI, OPPO, VIVO, ONEPLUS, PIXEL, OTHER }
-
-    fun detect(): Brand {
-        val manufacturer = (android.os.Build.MANUFACTURER ?: "").lowercase(Locale.ROOT)
-        return when {
-            manufacturer.contains("samsung") -> Brand.SAMSUNG
-            manufacturer.contains("xiaomi") || manufacturer.contains("redmi") -> Brand.XIAOMI
-            manufacturer.contains("huawei") || manufacturer.contains("honor") -> Brand.HUAWEI
-            manufacturer.contains("oppo") -> Brand.OPPO
-            manufacturer.contains("vivo") -> Brand.VIVO
-            manufacturer.contains("oneplus") -> Brand.ONEPLUS
-            manufacturer.contains("google") || manufacturer.contains("pixel") -> Brand.PIXEL
-            else -> Brand.OTHER
-        }
-    }
 }

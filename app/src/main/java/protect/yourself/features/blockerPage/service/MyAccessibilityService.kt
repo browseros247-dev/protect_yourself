@@ -1389,11 +1389,6 @@ class MyAccessibilityService : AccessibilityService() {
         Timber.i("Stop Me end time set: $endTime (active=${endTime > 0})")
     }
 
-    /** Returns true if a Stop Me session is currently active. */
-    fun isStopMeActive(): Boolean {
-        return stopMeEndTime > 0 && System.currentTimeMillis() < stopMeEndTime
-    }
-
     companion object {
         const val EXTRA_BLOCK_PACKAGE = "extra_block_package"
         const val EXTRA_BLOCK_MESSAGE_KEY = "extra_block_message_key"
