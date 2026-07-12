@@ -113,6 +113,23 @@ class BlockOverlayManager(
     private val isOverlayShowing = AtomicBoolean(false)
 
     /**
+     * Main-thread handler for posting the kill-timer start with a settling
+     * delay (OV-01 fix). Also used by [KillTimer] to dispatch
+     * `performGlobalAction` calls on the main thread (THREAD-01 fix).
+     */
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * OV-01 fix: delay (in ms) between addView and starting the kill timer.
+     * Gives the window manager time to fully register the overlay and place
+     * it at the top of the z-order before HOME is pressed. See
+     * [showBlockOverlay] for the full rationale.
+     */
+    private companion object {
+        const val OVERLAY_SETTLING_DELAY_MS = 150L
+    }
+
+    /**
      * Coroutine scope for IO-bound DB / image decode work. Uses a
      * SupervisorJob so a failure loading the motivation image doesn't
      * cancel sibling work (e.g. the close-button countdown wiring).
@@ -178,16 +195,20 @@ class BlockOverlayManager(
             return false
         }
 
-        // Layout params — match NopoX: type=2032, flags=296, MATCH_PARENT
+        // Layout params — match NopoX exactly: type=2032, flags=296, MATCH_PARENT
+        // OV-01 fix: NopoX uses flags=0x128=296 which is exactly
+        //   FLAG_NOT_FOCUSABLE(8) | FLAG_LAYOUT_NO_LIMITS(32) | FLAG_LAYOUT_IN_SCREEN(256)
+        // The previous rebuild also added FLAG_SHOW_WHEN_LOCKED and FLAG_TURN_SCREEN_ON
+        // which NopoX does NOT use. While those extra flags are not the root cause
+        // of the z-order issue, removing them eliminates any divergence from the
+        // reference and avoids potential side-effects on lock-screen behavior.
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.CENTER
@@ -200,11 +221,59 @@ class BlockOverlayManager(
         return try {
             wm.addView(view, params)
             overlayView = view
-            Timber.i("BlockOverlayManager: overlay shown for pkg=%s messageKey=%s", packageName, messageResKey)
+            Timber.i("BlockOverlayManager: overlay addView succeeded for pkg=%s messageKey=%s", packageName, messageResKey)
 
-            // Start the kill timer — HOME×5 + BACK×1 every 500ms, for 3 seconds
-            // (6 iterations). This is what actually kills the offending activity.
-            killTimer = KillTimer(service).also { it.start() }
+            // OV-01 fix (overlay z-order): delay the kill timer start by a short
+            // settling period to let the window manager fully register the overlay
+            // and place it at the top of the z-order BEFORE HOME is pressed.
+            //
+            // ## Root cause of "overlay appears in background"
+            //
+            // The previous implementation started the KillTimer immediately after
+            // addView. The KillTimer's first iteration (at T+0) posts HOME×5 to
+            // the main thread handler. Because addView and the handler.post both
+            // run on the main thread, the HOME press can execute before the
+            // window manager has finished bringing the new overlay window to the
+            // foreground. When HOME fires, the system brings the launcher forward
+            // — and the overlay, not yet fully settled into its z-order position,
+            // can end up BEHIND the launcher instead of on top of it.
+            //
+            // NopoX 1.0.53 does not have this issue because its kill timer runs
+            // on a separate java.util.Timer thread (not the main thread), and
+            // the Timer thread spin-up + the first scheduleAtFixedRate callback
+            // naturally introduces a ~10-50ms delay during which the overlay
+            // settles. The rebuild's mainHandler.post is too fast — it executes
+            // on the very next main-thread loop iteration, before the window
+            // manager has processed the addView fully.
+            //
+            // ## Fix
+            //
+            // Post the kill-timer start to the main thread with a 150ms delay.
+            // This gives the window manager time to:
+            //   1. Process the addView call and create the overlay window
+            //   2. Assign it the correct z-order (top of application overlays)
+            //   3. Render the first frame so it's visible
+            // Only then does the kill timer start pressing HOME, which brings
+            // the launcher forward — but by now the overlay is already on top
+            // and stays on top because TYPE_APPLICATION_OVERLAY windows are
+            // always above the launcher in z-order.
+            //
+            // The 150ms value is conservative — it's long enough for the window
+            // manager to settle (typically <50ms on modern devices) but short
+            // enough that the user doesn't notice a gap between the offending
+            // app closing and the overlay appearing.
+            mainHandler.postDelayed({
+                try {
+                    if (overlayView != null && isOverlayShowing.get()) {
+                        killTimer = KillTimer(service).also { it.start() }
+                        Timber.d("BlockOverlayManager: kill timer started after settling delay (pkg=%s)", packageName)
+                    } else {
+                        Timber.w("BlockOverlayManager: overlay was hidden before kill timer could start (pkg=%s)", packageName)
+                    }
+                } catch (t: Throwable) {
+                    Timber.e(t, "BlockOverlayManager: failed to start kill timer after settling delay (pkg=%s)", packageName)
+                }
+            }, OVERLAY_SETTLING_DELAY_MS)
 
             // Asynchronously apply the user's custom message + motivation image.
             // This is non-blocking — the overlay is already visible with the
@@ -302,6 +371,13 @@ class BlockOverlayManager(
      */
     @Synchronized
     fun hideBlockOverlay() {
+        // OV-01 fix: cancel any pending kill-timer start callback that was
+        // posted with the settling delay. If the overlay is hidden before the
+        // settling period elapses, we must NOT start the kill timer (it would
+        // press HOME with no overlay visible, sending the user to the launcher
+        // for no reason).
+        mainHandler.removeCallbacksAndMessages(null)
+
         killTimer?.cancel()
         killTimer = null
 
