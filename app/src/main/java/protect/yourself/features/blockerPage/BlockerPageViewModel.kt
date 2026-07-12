@@ -808,9 +808,24 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP, "Blocklist whitelist detected apps", info = "Apps detected via accessibility events", actionLabel = "Manage"))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_APP_LOCK, "App Lock", isSection = true))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.SET_APP_LOCK, "Set app lock", info = "Require PIN, password, or pattern to open the app", switchKey = SwitchIdentifier.SET_APP_LOCK_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.TOUCH_ID, "Enable touch ID with app lock", info = "Use fingerprint or face to unlock the app", switchKey = SwitchIdentifier.TOUCH_ID_SWITCH))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.DISABLE_FORGOT_PASSWORD, "Disable the forgot password option", info = "Hide the forgot pin, password, or pattern option on the lock screen", switchKey = SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH))
+        add(SettingPageItemModel(
+            SettingPageItemIdentifiers.SET_APP_LOCK,
+            getApplication<Application>().getString(protect.yourself.R.string.set_app_lock_card_title),
+            info = getApplication<Application>().getString(protect.yourself.R.string.set_app_lock_card_info),
+            switchKey = SwitchIdentifier.SET_APP_LOCK_SWITCH
+        ))
+        add(SettingPageItemModel(
+            SettingPageItemIdentifiers.TOUCH_ID,
+            getApplication<Application>().getString(protect.yourself.R.string.set_touch_id_card_title),
+            info = getApplication<Application>().getString(protect.yourself.R.string.set_touch_id_card_info),
+            switchKey = SwitchIdentifier.TOUCH_ID_SWITCH
+        ))
+        add(SettingPageItemModel(
+            SettingPageItemIdentifiers.DISABLE_FORGOT_PASSWORD,
+            getApplication<Application>().getString(protect.yourself.R.string.disable_forgot_password_option),
+            info = getApplication<Application>().getString(protect.yourself.R.string.disable_forgot_password_option_info),
+            switchKey = SwitchIdentifier.DISABLE_FORGOT_PASSWORD_SWITCH
+        ))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_FAQ, "Keep Protect Yourself Live", isSection = true))
         add(SettingPageItemModel(SettingPageItemIdentifiers.KEEP_NOPOX_LIVE, "How to keep app running", info = "Battery + performance tips", actionLabel = "View"))

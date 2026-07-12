@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -55,6 +56,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import protect.yourself.R
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.features.appPasswordPage.identifiers.AppLockType
 import protect.yourself.theme.BrandOrange
@@ -302,7 +304,7 @@ fun AppLockSetupPage(onBack: () -> Unit) {
         )
 
         Text(
-            text = "Require a PIN, password, or pattern to open the app.",
+            text = stringResource(R.string.set_app_lock_page_card_message),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onBackground
         )

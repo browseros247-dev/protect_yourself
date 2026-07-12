@@ -143,7 +143,6 @@
     <string name="lock_screen_enter_pattern">Enter your pattern</string>
     <string name="lock_screen_no_lock_enabled">No lock enabled</string>
     <string name="lock_screen_use_touch_id">Use Touch ID</string>
-    <string name="lock_screen_use_biometric">Use Biometric</string>
     <string name="lock_screen_forgot_pin">Forgot PIN?</string>
     <string name="lock_screen_forgot_password">Forgot password?</string>
     <string name="lock_screen_unlock">Unlock</string>

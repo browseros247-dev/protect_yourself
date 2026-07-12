@@ -185,7 +185,7 @@ class AppLockViewModel(
                     _state.update {
                         it.copy(
                             error = if (nowLockedOut) formatLockoutMessage(remainingMs)
-                                    else "Incorrect. Attempt #$attempts",
+                                    else context.getString(R.string.lock_screen_incorrect_attempt, attempts),
                             input = "",
                             attempts = attempts,
                             isLockedOut = nowLockedOut,
@@ -201,7 +201,7 @@ class AppLockViewModel(
                 Timber.e(t, "tryUnlock failed")
                 _state.update {
                     it.copy(
-                        error = "Unlock failed. Please try again.",
+                        error = context.getString(R.string.lock_screen_unlock_failed),
                         input = "",
                         attempts = it.attempts + 1,
                         triggerShake = System.currentTimeMillis()
@@ -254,7 +254,7 @@ class AppLockViewModel(
                     _state.update {
                         it.copy(
                             error = if (nowLockedOut) formatLockoutMessage(remainingMs)
-                                    else "Incorrect. Attempt #$attempts",
+                                    else context.getString(R.string.lock_screen_incorrect_attempt, attempts),
                             input = "",
                             attempts = attempts,
                             isLockedOut = nowLockedOut,
@@ -268,7 +268,7 @@ class AppLockViewModel(
                 Timber.e(t, "tryUnlockWithInput failed")
                 _state.update {
                     it.copy(
-                        error = "Unlock failed. Please try again.",
+                        error = context.getString(R.string.lock_screen_unlock_failed),
                         input = "",
                         attempts = it.attempts + 1,
                         triggerShake = System.currentTimeMillis()
@@ -312,13 +312,16 @@ class AppLockViewModel(
 
     private fun formatLockoutMessage(remainingMs: Long): String {
         val seconds = (remainingMs + 999L) / 1000L
-        return if (seconds >= 60) {
+        // Format as "2m 30s" or "45s" — passed to the localized string
+        // R.string.lock_screen_locked_out which expects a %1$s duration.
+        val duration = if (seconds >= 60) {
             val minutes = seconds / 60
             val remSec = seconds % 60
-            "Too many failed attempts. Try again in ${minutes}m ${remSec}s."
+            "${minutes}m ${remSec}s"
         } else {
-            "Too many failed attempts. Try again in ${seconds}s."
+            "${seconds}s"
         }
+        return context.getString(R.string.lock_screen_locked_out, duration)
     }
 
     /**
@@ -406,8 +409,8 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
     LaunchedEffect(state.touchIdEnabled, state.lockType) {
         if (state.touchIdEnabled && state.lockType != AppLockType.OFF &&
             !state.isUnlocked && !biometricShown && !state.isLockedOut) {
-            val canAuth = canUseBiometric(context)
-            if (canAuth) {
+            val availability = checkBiometricAvailability(context)
+            if (availability == BiometricAvailability.AVAILABLE) {
                 biometricShown = true
                 Timber.i("Auto-launching biometric prompt")
                 try {
@@ -420,7 +423,7 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
                     Timber.w(t, "Auto-launch biometric prompt failed")
                 }
             } else {
-                Timber.w("Touch ID enabled but biometrics not available/enrolled — skipping auto-launch")
+                Timber.w("Touch ID enabled but biometric not available (availability=$availability) — skipping auto-launch")
             }
         }
     }
@@ -529,8 +532,8 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
 
             // Biometric button — only show if Touch ID is enabled AND device supports it
             if (state.touchIdEnabled) {
-                val canAuth = remember(context) { canUseBiometric(context) }
-                if (canAuth) {
+                val availability = remember(context) { checkBiometricAvailability(context) }
+                if (availability == BiometricAvailability.AVAILABLE) {
                     Button(
                         onClick = {
                             try {
@@ -541,17 +544,41 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
                                 )
                             } catch (t: Throwable) {
                                 Timber.e(t, "Failed to launch biometric prompt from button")
+                                // Show a user-facing error so the user knows why
+                                // the prompt did not appear and that they should
+                                // fall back to PIN/password entry.
+                                val fallbackName = when (state.lockType) {
+                                    AppLockType.PIN -> "PIN"
+                                    AppLockType.PASSWORD -> "password"
+                                    AppLockType.PATTERN -> "pattern"
+                                    AppLockType.OFF -> "credential"
+                                }
+                                android.widget.Toast.makeText(
+                                    context,
+                                    context.getString(
+                                        R.string.lock_screen_biometric_launch_failed,
+                                        fallbackName
+                                    ),
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = BrandOrange)
                     ) {
                         Icon(Icons.Filled.Fingerprint, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(stringResource(R.string.lock_screen_use_biometric))
+                        Text(stringResource(R.string.lock_screen_use_touch_id))
                     }
                 } else {
+                    // Show a more specific message based on the failure reason.
+                    val msgRes = when (availability) {
+                        BiometricAvailability.NONE_ENROLLED ->
+                            R.string.lock_screen_biometric_not_enrolled
+                        else ->
+                            R.string.lock_screen_biometric_not_available
+                    }
                     Text(
-                        text = stringResource(R.string.lock_screen_biometric_not_available),
+                        text = stringResource(msgRes),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -920,12 +947,29 @@ private fun PatternUI(
 }
 
 /**
+ * Result of a biometric availability check.
+ *
+ * Used so the UI can show a more specific message — e.g. "no biometrics
+ * enrolled" is more actionable than a generic "not available" because it
+ * tells the user to set up fingerprint/face unlock in system settings.
+ */
+enum class BiometricAvailability {
+    AVAILABLE,
+    NO_HARDWARE,
+    HW_UNAVAILABLE,
+    NONE_ENROLLED,
+    SECURITY_UPDATE_REQUIRED,
+    UNSUPPORTED,
+    UNKNOWN,
+}
+
+/**
  * Check whether biometric authentication can be used on this device.
  *
- * Returns true only when:
+ * Returns [BiometricAvailability.AVAILABLE] only when:
  *  - BiometricManager reports BIOMETRIC_SUCCESS (hardware available + enrolled)
  *
- * Returns false for:
+ * Returns the appropriate failure reason for:
  *  - ERROR_HW_UNAVAILABLE (hardware present but currently unavailable)
  *  - ERROR_NO_HARDWARE (no biometric hardware)
  *  - ERROR_NONE_ENROLLED (hardware present but no fingerprints/faces enrolled)
@@ -935,44 +979,47 @@ private fun PatternUI(
  * to auto-launch BiometricPrompt on devices without biometrics, causing the
  * prompt to silently fail (or crash on some OEM Android builds).
  */
-fun canUseBiometric(context: android.content.Context): Boolean {
+fun canUseBiometric(context: android.content.Context): Boolean =
+    checkBiometricAvailability(context) == BiometricAvailability.AVAILABLE
+
+fun checkBiometricAvailability(context: android.content.Context): BiometricAvailability {
     return try {
         val bm = BiometricManager.from(context)
         val authenticators = BiometricManager.Authenticators.BIOMETRIC_WEAK
         when (bm.canAuthenticate(authenticators)) {
-            BiometricManager.BIOMETRIC_SUCCESS -> true
+            BiometricManager.BIOMETRIC_SUCCESS -> BiometricAvailability.AVAILABLE
             BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE -> {
                 Timber.w("Biometric: no hardware")
-                false
+                BiometricAvailability.NO_HARDWARE
             }
             BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> {
                 Timber.w("Biometric: hardware unavailable")
-                false
+                BiometricAvailability.HW_UNAVAILABLE
             }
             BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> {
                 Timber.w("Biometric: none enrolled")
-                false
+                BiometricAvailability.NONE_ENROLLED
             }
             BiometricManager.BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED -> {
                 Timber.w("Biometric: security update required")
-                false
+                BiometricAvailability.SECURITY_UPDATE_REQUIRED
             }
             BiometricManager.BIOMETRIC_ERROR_UNSUPPORTED -> {
                 Timber.w("Biometric: unsupported")
-                false
+                BiometricAvailability.UNSUPPORTED
             }
             BiometricManager.BIOMETRIC_STATUS_UNKNOWN -> {
                 Timber.w("Biometric: status unknown")
-                false
+                BiometricAvailability.UNKNOWN
             }
             else -> {
                 Timber.w("Biometric: canAuthenticate returned unknown code")
-                false
+                BiometricAvailability.UNKNOWN
             }
         }
     } catch (t: Throwable) {
         Timber.e(t, "Biometric availability check failed")
-        false
+        BiometricAvailability.UNKNOWN
     }
 }
 
@@ -1006,9 +1053,9 @@ fun launchBiometricPrompt(
     )
 
     val info = BiometricPrompt.PromptInfo.Builder()
-        .setTitle("Unlock Protect Yourself")
-        .setSubtitle("Use your fingerprint or face to unlock")
-        .setNegativeButtonText("Use PIN/password instead")
+        .setTitle(activity.getString(R.string.lock_screen_biometric_title))
+        .setSubtitle(activity.getString(R.string.lock_screen_biometric_subtitle))
+        .setNegativeButtonText(activity.getString(R.string.lock_screen_biometric_negative))
         .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK)
         .build()
 
