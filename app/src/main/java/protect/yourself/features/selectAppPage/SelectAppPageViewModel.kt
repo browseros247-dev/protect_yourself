@@ -271,11 +271,27 @@ class SelectAppPageViewModel(
                 // whitelist, refresh the accessibility service so the service
                 // reloads cachedUnsupportedBrowserWhitelist from the DB.
                 Timber.tag(TAG).i("Unsupported browser whitelist changed — refreshing blocking config")
-                try {
-                    MyAccessibilityService.instance?.refreshBlockingConfig()
-                } catch (t: Throwable) {
-                    Timber.tag(TAG).w(t, "Failed to refresh blocking config after whitelist change")
-                }
+                refreshAccessibilityConfig()
+            } else if (identifier == SelectedAppListIdentifier.BLOCK_APPS ||
+                identifier == SelectedAppListIdentifier.BLOCK_NEW_INSTALL_APPS ||
+                identifier == SelectedAppListIdentifier.BLOCK_IN_APP_BROWSER_APPS ||
+                identifier == SelectedAppListIdentifier.WHITELIST_STOP_ME_APPS ||
+                identifier == SelectedAppListIdentifier.BLOCK_SETTING_PAGE_BY_TITLE_APPS ||
+                identifier == SelectedAppListIdentifier.BLOCK_WHITELIST_DETECTED_APPS ||
+                identifier == SelectedAppListIdentifier.BLOCKED_PACKAGE_NAMES
+            ) {
+                // Refresh the accessibility service's cached config so the
+                // change takes effect immediately. Without this, the service
+                // would keep using the stale cache until the next periodic
+                // refresh (24h) — meaning manual blocklist changes wouldn't
+                // work until the next day.
+                //
+                // This was a significant bug: previously, only VPN_WHITELIST_APPS
+                // and WHITELIST_UNSUPPORTED_BROWSER triggered a refresh. All
+                // other identifiers (including BLOCK_APPS and
+                // BLOCK_NEW_INSTALL_APPS) were missing the refresh call.
+                Timber.tag(TAG).i("App list ${identifier.value} changed — refreshing blocking config")
+                refreshAccessibilityConfig()
             }
         }
     }
@@ -287,6 +303,28 @@ class SelectAppPageViewModel(
     fun refresh() {
         UnsupportedBrowserDetector.invalidateCache()
         loadApps()
+    }
+
+    /**
+     * Refreshes the accessibility service's cached blocking config.
+     *
+     * If the service is not connected, logs a warning — the change will be
+     * picked up on the next `onServiceConnected`.
+     */
+    private fun refreshAccessibilityConfig() {
+        try {
+            val instance = MyAccessibilityService.instance
+            if (instance == null) {
+                Timber.tag(TAG).w(
+                    "refreshAccessibilityConfig: MyAccessibilityService.instance is null — " +
+                        "config not refreshed. Change will be picked up on next service connect."
+                )
+                return
+            }
+            instance.refreshBlockingConfig()
+        } catch (t: Throwable) {
+            Timber.tag(TAG).w(t, "Failed to refresh blocking config after app list change")
+        }
     }
 
     companion object {

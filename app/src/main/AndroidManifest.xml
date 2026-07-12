@@ -245,12 +245,28 @@
         </receiver>
 
         <!-- Package install/remove -->
+        <!--
+            IMPORTANT: The `<data android:scheme="package" />` filter applies
+            to ALL actions in the SAME intent-filter. ACTION_PACKAGE_ADDED
+            and ACTION_PACKAGE_REMOVED have a `package:` data URI, so they
+            match. But ACTION_MY_PACKAGE_REPLACED has NO data URI — if it's
+            in the same filter as `<data scheme="package">`, it will NOT
+            match and the receiver will never fire for app updates.
+
+            Fix: split into two intent-filters. The first handles
+            MY_PACKAGE_REPLACED (no data filter). The second handles
+            PACKAGE_ADDED + PACKAGE_REMOVED (with `package:` data filter).
+        -->
         <receiver
             android:name="protect.yourself.commons.utils.broadcastReceivers.AppSystemActionReceiverAllTimeWithData"
             android:enabled="true"
             android:exported="true">
+            <!-- MY_PACKAGE_REPLACED: no data URI, so no <data> filter -->
             <intent-filter android:priority="999">
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+            <!-- PACKAGE_ADDED + PACKAGE_REMOVED: have `package:` data URI -->
+            <intent-filter android:priority="999">
                 <action android:name="android.intent.action.PACKAGE_ADDED" />
                 <action android:name="android.intent.action.PACKAGE_REMOVED" />
                 <data android:scheme="package" />

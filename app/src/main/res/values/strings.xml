@@ -17,6 +17,20 @@
          the user sees the SafeSearch results directly. -->
     <string name="block_page_default_safe_search_message">SafeSearch enforcement is on. This search could not be redirected to SafeSearch.</string>
 
+    <!-- Block screen: feature-specific messages (referenced by MyAccessibilityService) -->
+    <!-- Each message explains WHY the block fired, so the user understands the
+         context rather than seeing a generic "blocked" screen. -->
+    <string name="block_page_default_block_apps_message">This app is on your blocklist.</string>
+    <string name="block_page_default_new_install_message">This app was just installed. Block new install apps is on.</string>
+    <string name="block_page_default_unsupported_browser_message">This browser isn\'t on your supported list. Use a supported browser or add it to the whitelist.</string>
+    <string name="block_page_default_in_app_browser_message">In-app browsers are blocked inside this app.</string>
+    <string name="block_page_default_stop_me_message">Stop Me is active. Apps not on your whitelist are blocked.</string>
+    <string name="block_page_default_pu_message">Prevent uninstall is on. You cannot uninstall Protect Yourself.</string>
+    <string name="block_page_default_system_keyword_message">This settings page is on your blocked list.</string>
+    <string name="block_page_default_notification_drawer_message">The notification drawer is blocked to prevent bypassing.</string>
+    <string name="block_phone_reboot_bw_message">Phone reboot is blocked to prevent bypassing via safe mode.</string>
+    <string name="block_recent_apps_bw_message">Recent apps is blocked to prevent force-stopping or uninstalling.</string>
+
     <!-- Block screen UI -->
     <string name="why">Why</string>
     <string name="close">Close</string>
