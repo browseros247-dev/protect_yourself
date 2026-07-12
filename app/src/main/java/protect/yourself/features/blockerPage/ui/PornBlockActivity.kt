@@ -368,8 +368,4 @@ class PornBlockActivity : AppCompatActivity() {
         // This override is kept for backward compatibility with Android < 13.
         onBackPressedDispatcher.onBackPressed()
     }
-
-    companion object {
-        private const val TAG = "PornBlockActivity"
-    }
 }

@@ -98,11 +98,6 @@ class MyVpnService : VpnService() {
     @Volatile
     private var restartJob: kotlinx.coroutines.Job? = null
 
-    // FIX 1.5: removed the setter's refreshNotification() call — it posted
-    // a notification via NotificationManager.notify() BEFORE startForeground()
-    // tied the notification ID to the foreground service, causing a brief
-    // "notification posted by a non-foreground service" warning on Android 14+.
-    // refreshNotification() is now called explicitly after startForeground().
     @Volatile private var vpnState: VpnState = VpnState.IDLE
 
     enum class VpnState { IDLE, CONNECTING, CONNECTED, FAILED }
@@ -418,32 +413,6 @@ class MyVpnService : VpnService() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
-    }
-
-    private fun refreshNotification() {
-        if (!isRunning && vpnState != VpnState.CONNECTING && vpnState != VpnState.FAILED) return
-        serviceScope.launch {
-            try {
-                val db = AppDatabase.getInstance(this@MyVpnService)
-                val switchValues = SwitchStatusValues(db.switchStatusDao())
-                val isHideNotification = switchValues.isVpnNotificationHideSwitchOn()
-                val customMessage = switchValues.getVpnNotificationCustomMessage()
-                val typeLabel = when (currentConnectionType) {
-                    VpnConnectionTypeIdentifiers.NORMAL -> getString(R.string.vpn_mode_balanced_label)
-                    VpnConnectionTypeIdentifiers.POWERFUL -> getString(R.string.vpn_mode_strict_label)
-                    VpnConnectionTypeIdentifiers.CUSTOM -> getString(R.string.vpn_mode_custom_label)
-                    VpnConnectionTypeIdentifiers.OFF -> ""
-                }
-                val notificationText = if (!customMessage.isNullOrBlank()) {
-                    "$customMessage ($typeLabel)"
-                } else {
-                    "${getString(R.string.vpn_notification_text)} ($typeLabel)"
-                }
-                val notification = buildNotification(notificationText, isHideNotification)
-                val nm = getSystemService(NotificationManager::class.java)
-                nm.notify(NOTIFICATION_ID, notification)
-            } catch (_: Throwable) {}
-        }
     }
 
     private fun createNotificationChannel() {

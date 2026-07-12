@@ -991,7 +991,7 @@ private fun TimeDelayDialog(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 CircularProgressIndicator(
-                    progress = 1f - (remaining.toFloat() / delaySeconds.toFloat()),
+                    progress = { 1f - (remaining.toFloat() / delaySeconds.toFloat()) },
                     color = BrandOrange,
                     strokeWidth = 4.dp
                 )

@@ -67,7 +67,6 @@ object AccessibilityPersistUtils {
 
     private val KEY_ENABLED_SERVICES = Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
     private const val KEY_ACCESSIBILITY_ENABLED = "accessibility_enabled"
-    private val URI_ENABLED_SERVICES = Settings.Secure.getUriFor(KEY_ENABLED_SERVICES)
 
     /**
      * The flat ComponentName of our accessibility service, e.g.
@@ -259,21 +258,6 @@ object AccessibilityPersistUtils {
     }
 
     /**
-     * Convenience overload for callers that don't have a Context handy —
-     * uses the PackageManagerProvider's application context. Kept for
-     * source-compatibility with the stub's `selfHealSafe()` signature.
-     */
-    fun selfHealSafe() {
-        try {
-            val ctx = protect.yourself.commons.utils.PackageManagerProvider.getApplicationContext()
-                ?: return
-            selfHealSafe(ctx)
-        } catch (t: Throwable) {
-            Timber.w(t, "$TAG: selfHealSafe() fallback threw")
-        }
-    }
-
-    /**
      * Enumerate every installed accessibility service (across all apps),
      * returning a list of `(flatComponent, appLabel, isOurs)` tuples.
      *
@@ -375,10 +359,5 @@ object ProtectedAppsRegistry {
         val removed = current.remove(flat)
         if (removed) prefs(context).edit().putStringSet(KEY_COMPONENTS, current).apply()
         return removed
-    }
-
-    @JvmStatic
-    fun clear(context: Context) {
-        prefs(context).edit().remove(KEY_COMPONENTS).apply()
     }
 }

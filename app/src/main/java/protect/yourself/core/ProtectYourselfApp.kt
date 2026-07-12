@@ -57,8 +57,6 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
     lateinit var appContainer: AppContainer
         private set
 
-    private var anrWatchdog: AnrWatchdog? = null
-
     override fun onCreate() {
         super<Application>.onCreate()
 
@@ -132,7 +130,7 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
         //     that don't throw and don't trigger the uncaught exception handler.
         safeInit("AnrWatchdog") {
             crashLogger?.let { logger ->
-                anrWatchdog = AnrWatchdog(this, logger).also { it.start() }
+                AnrWatchdog(logger).start()
             }
         }
 

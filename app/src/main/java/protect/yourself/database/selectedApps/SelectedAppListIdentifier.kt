@@ -6,7 +6,6 @@ package protect.yourself.database.selectedApps
  * The original used enum with string `value` persisted to Room.
  */
 enum class SelectedAppListIdentifier(val value: String) {
-    ALL_APPS("all_apps"),
     BLOCK_APPS("block_apps"),
     BLOCK_SETTING_PAGE_BY_TITLE_APPS("block_setting_page_by_title_apps"),
     VPN_WHITELIST_APPS("vpn_whitelist_apps"),

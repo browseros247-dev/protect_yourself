@@ -92,7 +92,7 @@ class PresetDataTest {
 
     @Test
     fun `device admin texts include admin keyword`() {
-        assertThat(BlockerPageUtils.DEVICE_ADMIN_TEXTS_TO_MATCH).contains("admin")
+        assertThat(BlockerPageUtils.DEVICE_ADMIN_TEXTS_TO_MATCH).contains("device admin")
     }
 
     @Test

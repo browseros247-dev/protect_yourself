@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+
     <!-- App identity -->
     <string name="app_name">Protect Yourself</string>
-
-    <!-- Bottom nav -->
-    <string name="nav_premium">Premium</string>
     <string name="streak">Streak</string>
     <string name="profile">Profile</string>
-    <string name="about">About</string>
+
 
     <!-- Block screen -->
     <string name="block_page_default_message">This page is blocked.</string>
@@ -24,147 +22,30 @@
     <string name="block_phone_reboot_bw_message">Your block phone reboot switch is on.</string>
     <string name="block_recent_apps_bw_message">Your block recent apps screen switch is on.</string>
 
+
     <!-- Block screen UI -->
     <string name="why">Why</string>
     <string name="close">Close</string>
     <string name="play_store_rating_message">Are you finding Protect Yourself helpful? Rate us!</string>
 
+
     <!-- Stop Me -->
     <string name="stop_me">Stop Me</string>
-    <string name="stop_me_widget_description">Quick toggle for Stop Me focus mode</string>
-    <string name="streak_widget_description">Today\'s streak counter</string>
-
-    <!-- Common -->
-    <string name="add">Add</string>
-    <string name="approve">Approve</string>
     <string name="active">Active</string>
-    <string name="alert">Alert</string>
-    <string name="best">Best</string>
-    <string name="best_value">Best value</string>
-    <string name="backup">Backup</string>
     <string name="blocklist">Blocklist</string>
 
-    <!-- Settings sections -->
-    <string name="section_alert">Alert</string>
-    <string name="section_accountability_partner">Protective Mode</string>
-    <string name="section_content_blocking">Content Blocking</string>
-    <string name="section_insta_yt_blocking">Social Media Blocking</string>
-    <string name="section_uninstall_protection">Uninstall Protection</string>
-    <string name="section_advance_feature">Advance feature</string>
-    <string name="section_faq">Keep Protect Yourself Live</string>
 
     <!-- Permissions -->
     <string name="accessibility_service_description">In order to block adult content on your device, Protect Yourself will need this permission (accessibility services). Protect Yourself will also be able to block specific websites/apps that you add to the list of blocked items with this permission.</string>
     <string name="accessibility_service_summary">In order to block adult content on your device, Protect Yourself will need this permission (accessibility services).</string>
-    <string name="accessibility_turn_off_alert_message">Protect Yourself uses a system-managed service called BIND_ACCESSIBILITY_SERVICE. To enable blocking, turn this service on / restart it by turning it off and on again.</string>
-    <string name="accessibility_turn_off_alert_title">Accessibility permission</string>
 
-    <!-- App version -->
-    <string name="app_version">App version</string>
-    <string name="app_update_version_available">Better, faster app version available</string>
-
-    <!-- Accessibility -->
-    <string name="accessibility_on_guide_common">Go to Protect Yourself</string>
-    <string name="accessibility_on_guide_samsung">Go to Installed Services -> Protect Yourself</string>
-    <string name="accessibility_on_guide_xiaomi">Go to More downloaded services -> Protect Yourself</string>
-    <string name="accessibility_on_skip">Skip</string>
-    <string name="accessibility_checkbox_alert_message">By checking this box, I grant Protect Yourself permission to use the Accessibility service to block adult content.</string>
-    <string name="accessibility_checkbox_error_message">Please read and check the box to turn on accessibility service.</string>
-
-    <!-- Block screen error messages -->
-    <string name="add_block_list_keyword_page_text_hint">E.g. Adult videos</string>
-    <string name="add_custom_dns_page_card_message">Enter 2 valid DNS to overcome porn addiction. To identify this preset, you can enter any name in the name field.</string>
-    <string name="add_custom_dns_page_title">Add your custom DNS</string>
-    <string name="add_custom_keyword_text_limit_error">There should be at least 2 character in the keyword.</string>
-    <string name="add_custom_long_sentence_text_limit_error">Messages must contain at least 20 characters.</string>
-    <string name="add_custom_message_hint">Enter message</string>
-    <string name="add_in_tag">Add in</string>
-    <string name="add_schedule_stop_me_page_title">Add Schedule Focus mode!</string>
-    <string name="add_stop_me_schedule_select_days_error">Please select days</string>
-    <string name="add_stop_me_schedule_select_duration_error">Please select duration</string>
-    <string name="add_stop_me_schedule_select_start_time_error">Please select start time</string>
-    <string name="add_white_list_keyword_page_text_hint">E.g. Quit porn</string>
-    <string name="add_widget">Add widget</string>
-    <string name="add_widget_select_app_guide">"Note: Add the 'Focus mode!' widget after watching the video."</string>
-    <string name="add_widget_select_app_guide_streak">"Note: Add the 'Streak' widget after watching the video."</string>
-
-    <!-- Cards -->
-    <string name="app_lock_card_info">By doing this, any unauthorized access to this app is prevented.</string>
-    <string name="app_lock_card_title">App lock</string>
-    <string name="backup_sync_card_info">"The purpose of this is to backup your keywords, selected apps, and other items. So you don't have to setup the app again and again."</string>
-    <string name="backup_sync_card_title">Sync and back up your data</string>
-    <string name="battery_level_maintain_message">Maintain a battery level of 20% or higher to keep Protect Yourself running uninterrupted.</string>
-    <string name="block_in_app_browsers_card_info">Add apps where you want to block in app browser. As this feature is in beta, it may not detect in-app browsers in all apps.</string>
-    <string name="block_in_app_browsers_card_title">Block in-app browsers</string>
-    <string name="block_new_install_App_card_info">Newly installed apps will automatically be blocked if this setting is enabled. You can unblock an app by long clicking it.</string>
-    <string name="block_new_install_app_card_title">Block new install apps</string>
-    <string name="block_recent_app_card_title">Block Recent Apps Screen</string>
-    <string name="block_recent_app_info">Using this feature, you will not be able to open recent apps. However, before enabling it, please lock Protect Yourself in recent apps.</string>
-    <string name="block_screen_count_card_info">As soon as we prevent you from accessing adult content, this number will increase by one.</string>
-    <string name="block_screen_count_card_title">Block screens</string>
-    <string name="block_screen_count_down_hint">Enter seconds</string>
-    <string name="block_screen_count_down_number_error">Please enter valid number</string>
-    <string name="block_settings_page_by_tile_card_info">"This feature does not allow you to open selected settings pages."</string>
-    <string name="block_settings_page_by_tile_card_title">Title-based block setting</string>
-    <string name="block_unsupported_browser_card_info">All browsers except supported ones will be blocked if the setting is On.</string>
-    <string name="block_unsupported_browser_card_title">Block unsupported browsers</string>
-    <string name="blocked_screen_countdown_card_info">To dismiss a block screen, you can set a custom duration. Add at least 3 seconds and no more than 300 seconds.</string>
-    <string name="blocked_screen_countdown_card_title">Blocked screen countdown</string>
-    <string name="blocked_screen_image_card_info">This image will appear above the block screen message on the blocked screen.</string>
-    <string name="blocked_screen_image_card_title">Blocked screen image for motivation</string>
-    <string name="blocked_screen_message_card_info">In the blocked screen, this message will appear.</string>
-    <string name="blocked_screen_message_card_title">Blocked screen message</string>
-    <string name="blocklist_app_card_info">The block screen will appear when the app you added opens.</string>
-    <string name="blocklist_app_card_title">Blocklist apps</string>
-    <string name="blocklist_whitelist_detected_apps_card_info">These are the apps we detect when some event is performed on your phone by them.</string>
-    <string name="blocklist_whitelist_detected_apps_card_title">Blocklist whitelist detected apps</string>
 
     <!-- DNS errors -->
     <string name="dns_1_empty_error">To create a preset, please enter DNS 1.</string>
     <string name="dns_2_empty_error">To create a preset, please enter DNS 2.</string>
     <string name="dns_name_empty_error">To create a preset, please enter your DNS name.</string>
-
-    <!-- Misc -->
-    <string name="active_dns_edit_delete_error">Active DNS cannot be edited or deleted.</string>
-    <string name="achievement">Achievement</string>
-    <string name="advance_feature">Advance feature</string>
-    <string name="all_tag">All</string>
-    <string name="a_to_z_tag">A to Z</string>
-    <string name="app_name_tag">App name</string>
-    <string name="delete_account_alert_message">Do you really want to delete your account? All data, including streak progress, will be cleared. Are you ready?</string>
-    <string name="instagram_search_reels_blocking_card_info">You will be able to be more productive with this.</string>
-    <string name="in_progress">In progress</string>
     <string name="low_rating_message">If you have any suggestions or feedback for improving Protect Yourself, please contact us by email.</string>
-    <string name="mi_allow_all_permission_message">Display pop-up window permissions are needed to block inappropriate content effectively with Protect Yourself.</string>
-    <string name="protective_mode">Protective Mode</string>
-    <string name="protective_mode_not_set_error">Please set protective Mode to modify any settings.</string>
-    <string name="protective_mode_request_history_card_info">The request history for all types of protective Modes can be viewed here.</string>
-    <string name="protective_mode_section_info">A switch/setting can only be disabled with the approval of a Protective Mode itself.</string>
-    <string name="protective_mode_suggest_card_info">Kindly recommend some effective protective modes you would like to have in the app.</string>
-    <string name="protective_mode_suggest_card_title">Suggest protective mode</string>
-    <string name="protective_mode_suggest_email_subject">Give Suggestion on Protect Yourself protective mode</string>
-    <string name="real_friend_card_info">The request to disable a switch/setting needs to be made after your real friend approved.</string>
-    <string name="request_already_in_pending_message">"Request already in progress. It can't be sent until first request is completed."</string>
-    <string name="request_approve">Approved the request</string>
-    <string name="uninstall_protection">Uninstall protection</string>
-    <string name="vpn_blocking_card_info">"By using VPN, you will be protected from adult content on all supported and unsupported browsers."</string>
-    <string name="daily_report_real_friend_not_set_error">To use this feature, please set Real friend as your protective Mode.</string>
-    <string name="disable_long_sentence_for_real_friend">Please disable long sentence to enable real friend as protective Mode.</string>
-    <string name="disable_time_delay_for_real_friend">Please disable time delay to enable real friend as protective Mode.</string>
-    <string name="long_sentence_message_set_error_not_ap_set">To change this setting, please set protective Mode as a long sentence.</string>
-    <string name="long_sentence_pending_request_message">Pending request of *** will approve after typing the correct sentence.</string>
-    <string name="real_friend_pending_request_message">Pending request of *** will approve after real friend take approve action on mail.</string>
-    <string name="time_delay_duration_set_error_not_ap_set">To change this setting, please set protective Mode as time delay.</string>
-    <string name="time_delay_pending_request_message">Pending request of *** will approve by $$$.</string>
-    <string name="time_delay_request_approve_tag">Approved on</string>
 
-    <!-- App lock notifications -->
-    <string name="app_lock_notification_alert_message">A solution is available to keep you safe from unauthorized access. This way, no one can enter the app without your permission. Would you like to enable it?</string>
-    <string name="app_lock_notification_alert_title">Protect Yourself: Protect the app from unauthorized access.</string>
-    <string name="pu_notification_alert_message">We have a solution to prevent you from uninstalling Protect Yourself. This will prevent excessive cravings and urges. Would you like to enable uninstall protection?</string>
-    <string name="pu_notification_alert_title">Protect Yourself: Extra protection against urges.</string>
-    <string name="real_friend_notification_alert_message">We have a solution: set up protective Modes. By doing so, you will be able to resist high urges more easily. Are you interested in enabling it?</string>
-    <string name="real_friend_notification_alert_title">Protect Yourself: Protective Mode (real friend).</string>
 
     <!-- VPN notification -->
     <string name="vpn_notification_title">Protect Yourself VPN active</string>
@@ -175,9 +56,11 @@
     <string name="vpn_stop">Stop VPN</string>
     <string name="vpn_restart">Restart</string>
 
+
     <!-- VPN management page -->
     <string name="vpn_page_title">VPN Management</string>
     <string name="vpn_page_subtitle">DNS-level filtering that blocks adult content across every browser and app on your device.</string>
+
 
     <!-- Status -->
     <string name="vpn_status_connected">Connected</string>
@@ -185,29 +68,35 @@
     <string name="vpn_status_connected_hint">Filtering active. Your internet connection is not affected.</string>
     <string name="vpn_status_disconnected_hint">Tap the switch above to start filtering.</string>
 
+
     <!-- Mode section -->
     <string name="vpn_mode_section_title">Filtering Mode</string>
     <string name="vpn_mode_section_subtitle">Choose how aggressively adult content, ads, and trackers are blocked at the DNS level.</string>
+
 
     <!-- Mode labels (user-facing). Backed by VpnConnectionTypeIdentifiers enum values. -->
     <string name="vpn_mode_balanced_label">Balanced</string>
     <string name="vpn_mode_strict_label">Strict</string>
     <string name="vpn_mode_custom_label">Custom DNS</string>
 
+
     <!-- Mode descriptions -->
     <string name="vpn_mode_balanced_description">Blocks adult content and malware using Cloudflare Family DNS. Recommended for most users — fast, reliable, and preserves SafeSearch on Google, Bing, YouTube and DuckDuckGo.</string>
     <string name="vpn_mode_strict_description">Maximum protection using AdGuard Family DNS. Blocks adult content, ads, trackers, and known malicious domains. Some benign sites may be blocked — switch to Balanced if you experience issues.</string>
     <string name="vpn_mode_custom_description">Pick a specific DNS provider from the list below. Use this if a built-in mode does not fit your needs, or if you want to use a family-safe DNS provider not covered by Balanced or Strict.</string>
+
 
     <!-- Mode DNS detail (shown as a small chip under each mode card) -->
     <string name="vpn_mode_balanced_dns">1.1.1.3 · Cloudflare Family</string>
     <string name="vpn_mode_strict_dns">94.140.14.15 · AdGuard Family</string>
     <string name="vpn_mode_custom_dns">User-selected DNS</string>
 
+
     <!-- Mode recommendation tags -->
     <string name="vpn_mode_balanced_tag">Recommended</string>
     <string name="vpn_mode_strict_tag">Max protection</string>
     <string name="vpn_mode_custom_tag">Advanced</string>
+
 
     <!-- Custom DNS manager -->
     <string name="vpn_custom_dns_section_title">Custom DNS Provider</string>
@@ -229,6 +118,7 @@
     <string name="vpn_custom_dns_delete_dialog_confirm">Delete</string>
     <string name="vpn_custom_dns_delete_dialog_cancel">Cancel</string>
 
+
     <!-- Advanced settings -->
     <string name="vpn_advanced_section_title">Advanced Settings</string>
     <string name="vpn_whitelist_apps_title">Apps that bypass VPN</string>
@@ -238,8 +128,10 @@
     <string name="vpn_hide_notification_title">Hide notification content</string>
     <string name="vpn_hide_notification_subtitle">Replace the detailed VPN status with just the app name to keep your filtering private.</string>
 
+
     <!-- Action row label on the Blocker settings page -->
     <string name="vpn_manage_action_label">Manage</string>
+
 
     <!-- Mode change toast -->
     <string name="vpn_mode_changed_toast">VPN mode changed to %1$s. Restarting VPN…</string>
@@ -250,43 +142,16 @@
     <string name="vpn_custom_dns_inactive_hint">Switch to Custom mode to use this provider</string>
     <string name="vpn_notification_changes_applied_toast">VPN notification updated. Restarting VPN…</string>
 
-    <!-- Stop Me notification -->
-    <string name="stop_me_notification_channel">Focus mode</string>
-    <string name="stop_me_notification_title">Focus mode active</string>
-    <string name="stop_me_notification_text">Time remaining: %1$s</string>
 
     <!-- Daily report notification -->
     <string name="daily_report_channel">Daily report</string>
     <string name="daily_report_title">Today\'s report</string>
     <string name="daily_report_text">Blocks today: %1$d. Current streak: %2$d days.</string>
-
-    <!-- Misc dialogs -->
-    <string name="ok">OK</string>
-    <string name="cancel">Cancel</string>
-    <string name="delete">Delete</string>
-    <string name="edit">Edit</string>
-    <string name="save">Save</string>
-    <string name="done">Done</string>
-    <string name="continue_button">Continue</string>
-    <string name="skip">Skip</string>
     <string name="next">Next</string>
-    <string name="back">Back</string>
-    <string name="yes">Yes</string>
     <string name="no">No</string>
-    <string name="error">Error</string>
-    <string name="success">Success</string>
-    <string name="loading">Loading…</string>
-    <string name="no_internet">No internet connection</string>
-    <string name="retry">Retry</string>
-    <string name="share">Share</string>
-    <string name="rate_us">Rate us</string>
-    <string name="contact_us">Contact us</string>
-    <string name="faq">FAQ</string>
-    <string name="privacy_policy">Privacy policy</string>
-    <string name="terms_of_service">Terms of service</string>
+
 
     <!-- App-specific -->
     <string name="streak_widget_initial_text">0</string>
     <string name="streak_widget_days_label">days</string>
-    <string name="streak_widget_tap_to_open">Tap to open</string>
 </resources>

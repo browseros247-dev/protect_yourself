@@ -45,30 +45,6 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
     suspend fun isSafeSearchSwitchOn(): Boolean =
         dao.get(SwitchIdentifier.SAFE_SEARCH_SWITCH)?.asBoolean() ?: false
 
-    suspend fun isBlockSnapchatStoriesSwitchOn(): Boolean =
-        dao.get(SwitchIdentifier.BLOCK_SNAPCHAT_STORIES_SWITCH)?.asBoolean() ?: false
-
-    suspend fun isBlockSnapchatSpotlightSwitchOn(): Boolean =
-        dao.get(SwitchIdentifier.BLOCK_SNAPCHAT_SPOTLIGHT_SWITCH)?.asBoolean() ?: false
-
-    suspend fun isBlockInstaReelsSwitchOn(): Boolean =
-        dao.get(SwitchIdentifier.BLOCK_INSTA_REELS_SWITCH)?.asBoolean() ?: false
-
-    suspend fun isBlockInstaSearchSwitchOn(): Boolean =
-        dao.get(SwitchIdentifier.BLOCK_INSTA_SEARCH_SWITCH)?.asBoolean() ?: false
-
-    suspend fun isBlockWhatsappStatusSwitchOn(): Boolean =
-        dao.get(SwitchIdentifier.BLOCK_WHATSAPP_STATUS_SWITCH)?.asBoolean() ?: false
-
-    suspend fun isBlockYtShortsSwitchOn(): Boolean =
-        dao.get(SwitchIdentifier.BLOCK_YT_SHORTS_SWITCH)?.asBoolean() ?: false
-
-    suspend fun isBlockYtSearchSwitchOn(): Boolean =
-        dao.get(SwitchIdentifier.BLOCK_YT_SEARCH_SWITCH)?.asBoolean() ?: false
-
-    suspend fun isBlockTelegramSearchSwitchOn(): Boolean =
-        dao.get(SwitchIdentifier.BLOCK_TELEGRAM_SEARCH_SWITCH)?.asBoolean() ?: false
-
     suspend fun isPreventUninstallSwitchOn(): Boolean =
         dao.get(SwitchIdentifier.PREVENT_UNINSTALL_SWITCH)?.asBoolean() ?: false
 
@@ -135,9 +111,6 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
 
     suspend fun isDailyReportSwitchOn(): Boolean =
         dao.get(SwitchIdentifier.DAILY_REPORT_SWITCH)?.asBoolean() ?: false
-
-    suspend fun isLongSentenceMessageSet(): Boolean =
-        dao.get(SwitchIdentifier.LONG_SENTENCE_MESSAGE_SET)?.asBoolean() ?: false
 
     suspend fun isTimeDelayDurationSet(): Boolean =
         dao.get(SwitchIdentifier.TIME_DELAY_DURATION_SET)?.asBoolean() ?: false

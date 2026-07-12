@@ -95,7 +95,6 @@ class MyAccessibilityService : AccessibilityService() {
     // cause ConcurrentModificationException.
     private val browserCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 
-    private var lastBlockedPackage: String? = null
     private var lastBlockTimeMs: Long = 0
 
     // SafeSearch redirect throttle — prevents redirect loops + rapid-fire intents
@@ -663,33 +662,6 @@ class MyAccessibilityService : AccessibilityService() {
         }
     }
 
-    /**
-     * Safe wrapper around [AccessibilityNodeInfo.findAccessibilityNodeInfosByViewId] —
-     * catches SecurityException and returns empty list. NopoX wraps every
-     * findAccessibilityNodeInfosByViewId call this way.
-     *
-     * UP-04 fix.
-     */
-    private fun safeFindByIds(viewId: String): List<AccessibilityNodeInfo> {
-        return try {
-            rootInActiveWindow?.findAccessibilityNodeInfosByViewId(viewId) ?: emptyList()
-        } catch (_: Throwable) {
-            emptyList()
-        }
-    }
-
-    /**
-     * Safe wrapper around [AccessibilityNodeInfo.findAccessibilityNodeInfosByText] —
-     * catches SecurityException and returns empty list.
-     */
-    private fun safeFindByText(text: String): List<AccessibilityNodeInfo> {
-        return try {
-            rootInActiveWindow?.findAccessibilityNodeInfosByText(text) ?: emptyList()
-        } catch (_: Throwable) {
-            emptyList()
-        }
-    }
-
     // ===== Detection helpers =====
 
     /**
@@ -827,7 +799,6 @@ class MyAccessibilityService : AccessibilityService() {
      *     not block, because a false positive on a legitimate Settings page
      *     is worse than a false negative)
      *   - OEM-specific class name checks (Samsung, MIUI, Huawei, OnePlus, OPLUS)
-     *   - View-ID-based detection via [safeFindByIds] (NopoX uses this heavily)
      *   - Node-tree text traversal via [safeCollectText] as a fallback when
      *     the event text is empty (some OEMs don't populate event.text)
      *   - App-name text search is NO LONGER gated behind a class-name guard
@@ -1128,11 +1099,6 @@ class MyAccessibilityService : AccessibilityService() {
         return knownBrowserPrefixes.any { packageName.startsWith(it) }
     }
 
-    private fun isBrowserPackage(packageName: String): Boolean {
-        // Legacy method kept for backward compatibility with other callers
-        return isBrowserPackageDetected(packageName)
-    }
-
     // ===== Block activity launcher =====
 
     /**
@@ -1228,7 +1194,6 @@ class MyAccessibilityService : AccessibilityService() {
         if (now - lastBlockTimeMs < BLOCK_THROTTLE_GLOBAL_MS) {
             return
         }
-        lastBlockedPackage = packageName
         lastBlockTimeMs = now
 
         val intent = Intent(this, protect.yourself.features.blockerPage.ui.PornBlockActivity::class.java).apply {
@@ -1443,7 +1408,6 @@ class MyAccessibilityService : AccessibilityService() {
         const val EXTRA_MATCHED_KEYWORD = "extra_matched_keyword"
 
         // KB-06: throttle constants.
-        private const val BLOCK_THROTTLE_PER_PACKAGE_MS = 500L
         private const val BLOCK_THROTTLE_GLOBAL_MS = 300L
 
         // KB-01: max content-text length we'll run keyword matching on. Avoids

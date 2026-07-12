@@ -27,7 +27,6 @@ import java.util.regex.Pattern
  *
  * Original behavior preserved:
  *  - decodeText(text): URL-decode + lowercase + trim
- *  - encodeText(text): URL-encode
  *  - isDetectWord(detectText, words): returns (found, matchedKeyword) — for text
  *  - matchKeywordInUrl(url, words): returns (found, matchedKeyword) — for URLs
  *  - isSafeUrl(url, whitelistKeywords): true if URL contains any whitelist keyword
@@ -113,17 +112,6 @@ class BlockerPageUtils {
         val regex = Regex("(xn--[a-zA-Z0-9-]+)")
         return regex.replace(url) { match ->
             try { IDN.toUnicode(match.value) } catch (_: Throwable) { match.value }
-        }
-    }
-
-    /**
-     * Encode text for URL usage.
-     */
-    fun encodeText(text: String): String {
-        return try {
-            java.net.URLEncoder.encode(text, "UTF-8")
-        } catch (t: Throwable) {
-            text
         }
     }
 
@@ -312,13 +300,6 @@ class BlockerPageUtils {
     }
 
     /**
-     * Get the device brand identifier.
-     */
-    fun getDeviceBrand(): DeviceBrandIdentifiers.Brand {
-        return DeviceBrandIdentifiers.detect()
-    }
-
-    /**
      * Get the SafeSearch-enforced URL for a given search-engine URL.
      *
      * NopoX behavior: when SafeSearch switch is ON, navigating to an unsafe
@@ -407,21 +388,6 @@ class BlockerPageUtils {
             lower.contains("strict.bing.com") ||
             lower.contains("restrict.youtube.com") ||
             lower.contains("safe.duckduckgo.com")
-    }
-
-    /**
-     * Check if a URL belongs to a search engine that SafeSearch can enforce.
-     */
-    fun isSearchEngineUrl(url: String): Boolean {
-        val lower = url.lowercase(Locale.ROOT)
-        return lower.contains("google.com") ||
-            lower.contains("bing.com") ||
-            lower.contains("youtube.com") ||
-            lower.contains("duckduckgo.com") ||
-            lower.contains("search.yahoo.com") ||
-            lower.contains("yahoo.com") ||
-            lower.contains("yandex.com") ||
-            lower.contains("ya.ru")
     }
 
     companion object {
@@ -678,29 +644,6 @@ class BlockerPageUtils {
         )
 
         /**
-         * Xiaomi autostart permission page text (per locale).
-         */
-        fun autoStartXiaomiTextToMatch(): String {
-            return when (java.util.Locale.getDefault().language) {
-                "de" -> "autostart"
-                "en" -> "autostart"
-                "es" -> "Inicio automático"
-                "fa" -> "راه‌اندازی خودکار"
-                "fr" -> "démarrage automatique"
-                "in" -> "Mulai otomatis"
-                "it" -> "Avvio automatico"
-                "iw" -> "הפעלה אוטומטית"
-                "ja" -> "自動起動"
-                "ko" -> "자동 시작"
-                "pl" -> "autostart"
-                "ru" -> "Автозапуск"
-                "tr" -> "Otomatik başlangıç"
-                "zh" -> "自启动"
-                else -> "autostart"
-            }
-        }
-
-        /**
          * Force-stop button text across locales.
          * The "Force stop" button appears on every app info page — detecting
          * it (combined with our app name in the event text) is a strong signal
@@ -720,26 +663,6 @@ class BlockerPageUtils {
             "принудительно остановить", // ru
             "强行停止",           // zh
             "zorla durdur"      // tr
-        )
-
-        /**
-         * Multi-user / guest mode text across locales.
-         * Detecting this prevents the user from switching to a guest user
-         * (which doesn't have our accessibility service enabled).
-         *
-         * UP-06 fix: added (was missing entirely).
-         */
-        val MULTI_USER_TEXTS_TO_MATCH: List<String> = listOf(
-            "you (owner)",
-            "Add user",
-            "Add guest",
-            "Switch user",
-            "Benutzer hinzufügen",   // de
-            "Ajouter un utilisateur", // fr
-            "Añadir usuario",        // es
-            "添加用户",               // zh
-            "ユーザーを追加",          // ja
-            "사용자 추가"              // ko
         )
 
         /**

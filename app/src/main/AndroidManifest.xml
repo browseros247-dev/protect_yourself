@@ -163,20 +163,6 @@
             android:screenOrientation="portrait"
             android:theme="@style/Theme.ProtectYourself.NoActionBar" />
 
-        <!-- Transparent activity for background overlays -->
-        <activity
-            android:name="protect.yourself.features.transparentPage.TransparentActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:theme="@style/Theme.Transparent" />
-
-        <!-- In-app review activity -->
-        <activity
-            android:name="protect.yourself.features.ratingPage.inAppReview.InAppReviewActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:theme="@style/Theme.Transparent" />
-
         <!-- Porn block activity (block screen overlay) -->
         <activity
             android:name="protect.yourself.features.blockerPage.ui.PornBlockActivity"
@@ -228,11 +214,6 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="VPN DNS filtering for content blocking" />
         </service>
-
-        <!-- Notification action service -->
-        <service
-            android:name="protect.yourself.commons.utils.notificationUtils.NotificationActionService"
-            android:exported="false" />
 
         <!-- ===== Broadcast Receivers ===== -->
 

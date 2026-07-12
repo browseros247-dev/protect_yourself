@@ -68,42 +68,6 @@ object OncePerSessionLogger {
     }
 
     /**
-     * Log an ERROR message only once per session.
-     */
-    fun error(key: String, message: String, t: Throwable? = null): Boolean {
-        if (loggedKeys.putIfAbsent(key, true) != null) {
-            return false
-        }
-        if (t != null) {
-            Timber.e(t, message)
-        } else {
-            Timber.e(message)
-        }
-        return true
-    }
-
-    /**
-     * Log an INFO message only once per session.
-     */
-    fun info(key: String, message: String): Boolean {
-        if (loggedKeys.putIfAbsent(key, true) != null) {
-            return false
-        }
-        Timber.i(message)
-        return true
-    }
-
-    /**
-     * Reset the dedup tracker for a specific key. Useful when a condition
-     * genuinely changes (e.g. the user grants a permission that was
-     * previously missing — you can reset the key so the next denial
-     * logs again).
-     */
-    fun reset(key: String) {
-        loggedKeys.remove(key)
-    }
-
-    /**
      * Reset all dedup keys. Called automatically when the application
      * is created (each new session starts fresh).
      */

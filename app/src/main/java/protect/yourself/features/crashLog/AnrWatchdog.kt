@@ -1,6 +1,5 @@
 package protect.yourself.features.crashLog
 
-import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
@@ -57,7 +56,6 @@ import java.util.concurrent.atomic.AtomicLong
  *   uncaught exception handler or next-launch detection.
  */
 class AnrWatchdog(
-    private val context: Context,
     private val crashLogger: CrashLogger,
     private val thresholdMs: Long = DEFAULT_THRESHOLD_MS,
     private val intervalMs: Long = DEFAULT_INTERVAL_MS

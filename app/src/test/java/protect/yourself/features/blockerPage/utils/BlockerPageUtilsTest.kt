@@ -82,37 +82,37 @@ class BlockerPageUtilsTest {
 
     @Test
     fun `isDetectWordInUrl finds keyword in URL`() {
-        val (found, _) = utils.isDetectWordInUrl("https://pornhub.com", listOf("porn"))
+        val (found, _) = utils.matchKeywordInUrl("https://pornhub.com", listOf("porn"))
         assertThat(found).isTrue()
     }
 
     @Test
     fun `isDetectWordInUrl finds keyword in domain name`() {
-        val (found, _) = utils.isDetectWordInUrl("pornhub.com/video", listOf("porn"))
+        val (found, _) = utils.matchKeywordInUrl("pornhub.com/video", listOf("porn"))
         assertThat(found).isTrue()
     }
 
     @Test
     fun `isDetectWordInUrl returns false for clean URL`() {
-        val (found, _) = utils.isDetectWordInUrl("https://google.com", listOf("porn"))
+        val (found, _) = utils.matchKeywordInUrl("https://google.com", listOf("porn"))
         assertThat(found).isFalse()
     }
 
     @Test
     fun `isDetectWordInUrl returns false for empty word list`() {
-        val (found, _) = utils.isDetectWordInUrl("https://anything.com", emptyList())
+        val (found, _) = utils.matchKeywordInUrl("https://anything.com", emptyList())
         assertThat(found).isFalse()
     }
 
     @Test
     fun `isDetectWordInUrl matches case-insensitively`() {
-        val (found, _) = utils.isDetectWordInUrl("HTTPS://PORNHUB.COM", listOf("porn"))
+        val (found, _) = utils.matchKeywordInUrl("HTTPS://PORNHUB.COM", listOf("porn"))
         assertThat(found).isTrue()
     }
 
     @Test
     fun `isDetectWordInUrl finds keyword in URL path`() {
-        val (found, _) = utils.isDetectWordInUrl("https://reddit.com/r/porn", listOf("porn"))
+        val (found, _) = utils.matchKeywordInUrl("https://reddit.com/r/porn", listOf("porn"))
         assertThat(found).isTrue()
     }
 
