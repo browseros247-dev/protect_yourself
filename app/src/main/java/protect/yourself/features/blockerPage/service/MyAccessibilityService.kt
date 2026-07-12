@@ -43,6 +43,24 @@ class MyAccessibilityService : AccessibilityService() {
         context = this
     )
 
+    // LC-01 fix (v1.0.56): dedicated scope for selfHealSafe calls that MUST
+    // outlive the service. Previously, selfHealSafe was launched on
+    // serviceScope, which is cancelled in onDestroy — so the coroutine was
+    // killed before it could complete the blocking IPC calls to
+    // Settings.Secure (the race condition that caused self-heal to silently
+    // fail during service teardown).
+    //
+    // This scope is NEVER cancelled by the service lifecycle. It is tied to
+    // the application process, so coroutines launched here continue running
+    // even after onDestroy() returns and serviceScope is cancelled. The OS
+    // will reap the scope when the process exits (which is the correct
+    // lifecycle — self-heal is meaningless after the process is gone).
+    private val selfHealScope = appCoroutineScope(
+        scopeName = "MyAccessibilityService-selfHeal",
+        dispatcher = kotlinx.coroutines.Dispatchers.IO,
+        context = this
+    )
+
     // Cached blocking config (refreshed periodically)
     // BUG-09 fix: all cached fields are @Volatile because they are written from
     // serviceScope.launch (Dispatchers.Default) and read from onAccessibilityEvent
@@ -147,17 +165,24 @@ class MyAccessibilityService : AccessibilityService() {
             ?.logBreadcrumb("AccessibilityService", "onServiceConnected")
         configureService()
         refreshBlockingConfig()
-        // BUGFIX (v1.0.49): moved selfHealSafe to a BACKGROUND coroutine.
+        // LC-01 fix (v1.0.56): launch selfHealSafe on selfHealScope (NOT
+        // serviceScope) so it survives any subsequent onDestroy cancellation.
         // selfHealSafe performs blocking IPC calls to Settings.Secure and
         // PackageManager.getInstalledPackages — each can block 100-500ms on
         // some OEMs (vivo, OPPO, Xiaomi). Combined, these exceeded the 5s
-        // ANR threshold on a vivo V2206 (crash_20260712_101552_0004).
-        serviceScope.launch {
+        // ANR threshold on a vivo V2206 (crash_20260712_101552_0004), which
+        // is why the v1.0.49 fix moved it off the main thread.
+        //
+        // NopoX 1.0.53 reference (decompiled line 1511):
+        //   AccessibilityPersistUtils.selfHealSafe();
+        // NopoX calls it synchronously on the main thread. We use a background
+        // coroutine to avoid the ANR — functionally equivalent, just async.
+        selfHealScope.launch {
             try {
                 protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this@MyAccessibilityService)
-                Timber.d("selfHealSafe completed in onServiceConnected (background)")
+                Timber.d("LC-01: selfHealSafe completed in onServiceConnected (background)")
             } catch (t: Throwable) {
-                Timber.w(t, "selfHealSafe in onServiceConnected failed")
+                Timber.w(t, "LC-01: selfHealSafe in onServiceConnected failed")
             }
         }
     }
@@ -171,12 +196,36 @@ class MyAccessibilityService : AccessibilityService() {
      * in the enabled list before the system finishes tearing us down.
      */
     override fun onUnbind(intent: Intent?): Boolean {
-        // BUGFIX (v1.0.49): moved to background coroutine to avoid main-thread blocking.
-        serviceScope.launch {
+        // LC-01/LC-03 fix (v1.0.56): launch on selfHealScope (NOT serviceScope)
+        // so the self-heal survives a subsequent onDestroy().
+        //
+        // NopoX 1.0.53 reference (decompiled line 144-146):
+        //   public boolean onUnbind(Intent intent) {
+        //       AccessibilityPersistUtils.selfHealSafe();
+        //       return super.onUnbind(intent);
+        //   }
+        // NopoX calls it synchronously. We use a background coroutine to avoid
+        // the main-thread ANR risk documented in crash_20260712_101552_0004.
+        //
+        // CRITICAL: this is the LAST reliable chance to re-arm the service
+        // before Android fully tears it down. onUnbind fires when the last
+        // client unbinds — typically because Android is disabling the service
+        // (user toggled it off in Settings, or OEM battery optimization
+        // killed it). If we don't re-arm here, the service stays disabled
+        // until the next app open / boot.
+        //
+        // The previous implementation launched on serviceScope, which gets
+        // cancelled by onDestroy() — so if onDestroy fired quickly after
+        // onUnbind (common when Android force-kills the service), the
+        // self-heal coroutine was cancelled mid-flight. selfHealScope is
+        // never cancelled by the service lifecycle, so this launch is
+        // guaranteed to run to completion (or until the process exits).
+        selfHealScope.launch {
             try {
                 protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this@MyAccessibilityService)
+                Timber.i("LC-01: selfHealSafe completed in onUnbind (background)")
             } catch (t: Throwable) {
-                Timber.w(t, "selfHealSafe in onUnbind failed")
+                Timber.w(t, "LC-01: selfHealSafe in onUnbind failed")
             }
         }
         return super.onUnbind(intent)
@@ -262,18 +311,48 @@ class MyAccessibilityService : AccessibilityService() {
         super.onDestroy()
         Timber.w("Accessibility service destroyed")
         instance = null
-        // BUGFIX (v1.0.49): moved selfHealSafe to background coroutine.
-        serviceScope.launch {
-            try {
-                protect.yourself.features.protectedApps.AccessibilityPersistUtils.selfHealSafe(this@MyAccessibilityService)
-            } catch (t: Throwable) {
-                Timber.w(t, "selfHealSafe in onDestroy failed")
-            }
-        }
+
+        // LC-01/LC-02 fix (v1.0.56): REMOVED the selfHealSafe launch that
+        // was previously on serviceScope. Two reasons:
+        //
+        // 1. RACE CONDITION (LC-01): the old code launched selfHealSafe on
+        //    serviceScope (line 266) then immediately cancelled serviceScope
+        //    (line 276). The coroutine was killed before it could complete
+        //    the blocking IPC calls to Settings.Secure — so self-heal NEVER
+        //    actually ran during destroy. The entire block was dead code.
+        //
+        // 2. NOPOX DIVERGENCE (LC-02): NopoX 1.0.53 (the mandatory reference)
+        //    does NOT call selfHealSafe in onDestroy at all. Decompiled
+        //    MyAccessibilityService.java line 1515-1529:
+        //      public void onDestroy() {
+        //          super.onDestroy();
+        //          try { unregisterReceiver(mAppSystemActionReceiverAllTimeWithData); }
+        //          catch (Throwable th) { ... }
+        //      }
+        //    NopoX relies on onUnbind (which fires BEFORE onDestroy) for the
+        //    final self-heal attempt. By the time onDestroy fires, the
+        //    service is already being torn down — re-arming is pointless.
+        //
+        // The selfHealScope coroutines launched in onServiceConnected and
+        // onUnbind continue running after onDestroy returns — they are NOT
+        // cancelled here. Only serviceScope is cancelled (for the blocking
+        // config refresh coroutines, which ARE service-bound and should stop).
+        //
+        // EDGE CASE: if onUnbind was somehow skipped (e.g. process killed
+        //    before onUnbind fired), the selfHealScope coroutine from
+        //    onServiceConnected still ran at startup, so the service was
+        //    re-armed then. The next process start (boot receiver, app open,
+        //    or scheduled work) will call selfHealSafe again.
+
+        // Hide the block overlay if it's visible (otherwise it would persist
+        // after the service is destroyed, locking the user out).
         try {
             blockOverlayManager?.hideBlockOverlay()
         } catch (_: Throwable) {}
+        // Cancel the service scope to stop blocking-config refresh coroutines.
+        // selfHealScope is intentionally NOT cancelled — see LC-01 fix above.
         try { serviceScope.cancel() } catch (_: Throwable) {}
+        Timber.i("LC-01: onDestroy complete — serviceScope cancelled, selfHealScope left running for pending self-heal coroutines")
     }
 
     // ===== Window state change handler =====
