@@ -623,41 +623,32 @@ class MyAccessibilityService : AccessibilityService() {
         // must each respect their own switch (see PB-01/PB-02 inline comments).
         if (!isPornBlockerOn && !isSafeSearchOn) return
 
-        // Scrape URLs from any detected browser. The "supported browsers" concept
-        // was removed — the accessibility service now scrapes from any app that
-        // declares a browser intent filter (or matches known browser signatures).
-        if (isBrowserPackageDetected(packageName)) {
-            val url = extractUrlFromEvent(event, packageName)
-            if (url != null && url.isNotBlank()) {
-                handleUrlDetected(packageName, url)
-            } else {
-                // PB-04: log when URL extraction fails for a known browser so
-                // users can diagnose "why isn't this browser being blocked?".
-                // Common causes: browser updated and changed its url bar view
-                // id, or the browser is a custom ROM variant. Verbose level so
-                // it doesn't spam release logs.
-                Timber.v("PB-04: browser pkg=$packageName detected but URL extraction returned null — url bar view id may have changed")
-            }
+        // SS-04 fix: the ANR-01 fix made isBrowserPackageDetected() return
+        // false for browsers not in the knownBrowserPrefixes set AND not yet
+        // in the cache. This broke SafeSearch because URL scraping was skipped
+        // for those browsers. The fix: when SafeSearch OR Porn Blocker is ON,
+        // ALWAYS attempt URL extraction — the URL extraction itself is cheap
+        // (it just traverses accessibility nodes looking for a URL), and if
+        // no URL is found, we fall through to the content-text check.
+        //
+        // NopoX 1.0.53 does NOT gate URL scraping on browser detection at all
+        // — it always calls getUrlNode() + extractUrlFromEvent() for every
+        // content-change event (decompiled onAccessibilityEvent line 6540+).
+        // We now follow the same approach: always attempt URL extraction.
+        val url = extractUrlFromEvent(event, packageName)
+        if (url != null && url.isNotBlank()) {
+            handleUrlDetected(packageName, url)
             return  // URL scrape takes priority — don't also do content-text match
         }
 
         // KB-01 fix: content-text keyword matching for non-browser apps.
-        // If this package is NOT a browser we scrape URLs from, check the page
-        // content text against the blocklist. This catches apps that display
-        // pornographic text in their UI (e.g. a search-results page in a
-        // social app) even though we can't extract a URL.
+        // If no URL was found, check the page content text against the
+        // blocklist. This catches apps that display pornographic text in
+        // their UI (e.g. a search-results page in a social app) even though
+        // we can't extract a URL.
         //
-        // PB-02 fix (v1.0.55): this check is now GATED by isPornBlockerOn.
-        // Previously it ran whenever EITHER porn blocker OR SafeSearch was on,
-        // which meant turning OFF the Porn Blocker but leaving SafeSearch ON
-        // still blocked non-browser apps based on keywords. That contradicted
-        // the user's explicit switch toggle. NopoX 1.0.53 gates this exact
-        // branch by `pornBlock` alone (decompiled checkPornClickedText line
-        // 978: `if (pornBlock) { ... }`).
-        //
-        // We only do this for apps that are NOT in the supported-browser list
-        // (browsers are handled by URL scraping above) and NOT system UI / our
-        // own app. We also skip if the event is stale (KB-07 fix).
+        // PB-02 fix (v1.0.55): this check is GATED by isPornBlockerOn.
+        // NopoX 1.0.53 gates this exact branch by `pornBlock` alone.
         if (isPornBlockerOn &&
             packageName != this.packageName &&
             packageName != "com.android.systemui" &&
