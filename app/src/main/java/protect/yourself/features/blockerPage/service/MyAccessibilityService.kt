@@ -356,6 +356,25 @@ class MyAccessibilityService : AccessibilityService() {
                 }
             }
 
+            // PU-02 fix: run prevent-uninstall check on ALL event types (not
+            // just WINDOW_STATE_CHANGED). NopoX 1.0.53 calls checkPreventUninstall
+            // for every event after the initial filtering. The previous rebuild
+            // only called isAppInfoPage from handleWindowStateChange, which meant
+            // if the user was already on the app info page and a content-change
+            // event fired (e.g. scrolling, tapping Uninstall button), the check
+            // never ran. Now it runs for every event, matching NopoX.
+            if (isPreventUninstallOn &&
+                packageName != this.packageName &&
+                packageName != "com.android.systemui"
+            ) {
+                val className = event.className?.toString() ?: ""
+                val text = event.text?.joinToString(" ").orEmpty()
+                if (isAppInfoPage(packageName, className, text)) {
+                    launchBlockActivity(packageName, "block_page_default_pu_message")
+                    return
+                }
+            }
+
             when (eventType) {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                     handleWindowStateChange(packageName, event)
@@ -498,13 +517,9 @@ class MyAccessibilityService : AccessibilityService() {
         // never fire on SystemUI windows — they're not user content)
         if (packageName == "com.android.systemui") return
 
-        // ===== Prevent Uninstall: detect when user is on our app info page =====
-        // This is the core anti-uninstall check. Runs after anti-circumvention
-        // so the escape paths are already blocked.
-        if (isPreventUninstallOn && isAppInfoPage(packageName, className, text)) {
-            launchBlockActivity(packageName, "block_page_default_pu_message")
-            return
-        }
+        // ===== Prevent Uninstall =====
+        // PU-02 fix: now handled in onAccessibilityEvent for ALL event types
+        // (not just WINDOW_STATE_CHANGED). No duplicate check here.
 
         // ===== Content-blocking checks =====
 
@@ -1573,32 +1588,63 @@ class MyAccessibilityService : AccessibilityService() {
         val lower = text.lowercase(Locale.ROOT)
         val lowerClass = className.lowercase(Locale.ROOT)
 
-        // PU-01 fix: compute appNameInText ONCE. Every check below requires
-        // this to be true. This ensures we ONLY block pages that are actually
-        // about OUR app — never other apps' info / device-admin / accessibility
-        // pages.
+        // PU-02 fix: the previous PU-01 fix only checked event.text for the app
+        // name, but event.text for a WINDOW_STATE_CHANGED event is often just
+        // "App info" — NOT "Protect Yourself". This caused the prevent-uninstall
+        // check to NEVER fire, so the user could uninstall freely.
+        //
+        // The NopoX 1.0.53 reference uses TWO sources for app-name detection:
+        //   1. event.text.contains(appName) — checks the event text payload
+        //   2. accessibilityNodeInfoByText(rootNode, appName) — searches the
+        //      ENTIRE node tree (all text on the page) for the app name
+        //
+        // We now use BOTH: if EITHER source contains the app name, we consider
+        // the page to be about our app. This matches the NopoX reference.
         val appName = try {
             getString(protect.yourself.R.string.app_name).lowercase(Locale.ROOT)
         } catch (_: Throwable) { "" }
         val appNameInText = appName.isNotBlank() && lower.contains(appName)
 
+        // PU-02 fix: also search the node tree for the app name. This is the
+        // KEY fix — the node tree contains ALL text on the page, including the
+        // app name in the title bar. NopoX uses accessibilityNodeInfoByText
+        // for this (decompiled line 5849).
+        val appNameInNodeTree = if (appName.isNotBlank() && !appNameInText) {
+            try {
+                val root = rootInActiveWindow
+                root?.findAccessibilityNodeInfosByText(appName)?.isNotEmpty() == true
+            } catch (_: Throwable) { false }
+        } else {
+            false
+        }
+        val appIsOnPage = appNameInText || appNameInNodeTree
+
+        // PU-02 fix: also check for the package uninstaller activity. NopoX
+        // checks if className == "com.android.packageinstaller.UninstallerActivity"
+        // AND the app name is in the node tree (decompiled line 5963-5988).
+        // This catches the "Do you want to uninstall this app?" confirmation
+        // dialog.
+        if (lowerClass == "com.android.packageinstaller.uninstalleractivity" ||
+            lowerClass.contains("uninstalleractivity")) {
+            if (appIsOnPage || appNameInNodeTree) {
+                Timber.i("PU: blocking uninstaller activity for our app (pkg=$packageName class=$className)")
+                return true
+            }
+        }
+
         // ===== Check 1: app info page for OUR app =====
-        // NopoX reference: requires appNameInText AND (className contains
-        // "appinfo"/"appdetails" OR an uninstall-related keyword is present).
-        // We NO LONGER block solely on className — that blocked every app's
-        // info page.
-        if (appNameInText) {
-            // The className check confirms we're on an app-info-style page.
+        // Requires appIsOnPage (app name in event text OR node tree) AND
+        // (className contains "appinfo"/"appdetails" OR an uninstall-related
+        // keyword is present).
+        if (appIsOnPage) {
             val isAppInfoClass = lowerClass.contains("appinfodashboard") ||
                 lowerClass.contains("installedappdetails") ||
                 lowerClass.contains("appinfoactivity") ||
                 lowerClass.contains("appinfopage") ||
                 lowerClass.contains("appinfo") ||
                 lowerClass.contains("appdetails") ||
-                lowerClass.contains("appdetail")
-            // OR the text contains an uninstall-related keyword (some OEMs
-            // use custom class names but the Uninstall button text is always
-            // present on the app info page).
+                lowerClass.contains("appdetail") ||
+                lowerClass.contains("subsettings")  // NopoX checks SubSettings
             val hasUninstallKeyword = lower.contains("uninstall") ||
                 lower.contains("disable") ||
                 lower.contains("force stop") ||
@@ -1610,17 +1656,13 @@ class MyAccessibilityService : AccessibilityService() {
                 lower.contains("storage") ||
                 lower.contains("permissions")
             if (isAppInfoClass || hasUninstallKeyword) {
-                Timber.i("PU: blocking app-info page for our app (pkg=$packageName class=$className)")
+                Timber.i("PU: blocking app-info page for our app (pkg=$packageName class=$className appNameInText=$appNameInText appNameInNodeTree=$appNameInNodeTree)")
                 return true
             }
         }
 
         // ===== Check 2: device admin deactivation page for OUR app =====
-        // NopoX reference: requires appNameInText AND device-admin text
-        // patterns. We NO LONGER block device-admin pages for other apps.
-        // The device admin deactivation page shows our app name + "deactivate"
-        // + "device admin" — all three are required.
-        if (appNameInText) {
+        if (appIsOnPage) {
             val deviceAdminTexts = BlockerPageUtils.DEVICE_ADMIN_TEXTS_TO_MATCH
             for (matchText in deviceAdminTexts) {
                 try {
@@ -1633,10 +1675,7 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         // ===== Check 3: force-stop on OUR app's info page =====
-        // NopoX reference: force-stop text alone is NOT enough — it appears
-        // on every app info page. Only block if our app name is also present.
-        // (appNameInText is already checked here.)
-        if (appNameInText) {
+        if (appIsOnPage) {
             val forceStopTexts = BlockerPageUtils.FORCE_STOP_TEXTS_TO_MATCH
             for (matchText in forceStopTexts) {
                 try {
@@ -1649,51 +1688,42 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         // ===== Check 4: accessibility settings page for OUR service =====
-        // NopoX reference: looks up our accessibility service DESCRIPTION text
-        // (a long distinctive string from R.string.accessibility_service_description)
-        // via accessibilityNodeInfoByText. The description appears ONLY on the
-        // accessibility settings entry for OUR service — not on other apps'
-        // entries. This is the key scoped check for the accessibility page.
-        // We match the description text against the event text directly.
+        // Match the accessibility service description text against both the
+        // event text AND the node tree.
         try {
             val accDesc = getString(protect.yourself.R.string.accessibility_service_description)
                 .lowercase(Locale.ROOT)
-            if (accDesc.isNotBlank() && lower.contains(accDesc)) {
-                Timber.i("PU: blocking accessibility settings page for our service (pkg=$packageName)")
-                return true
+            if (accDesc.isNotBlank()) {
+                if (lower.contains(accDesc)) {
+                    Timber.i("PU: blocking accessibility settings page for our service (pkg=$packageName — event text match)")
+                    return true
+                }
+                // Also search the node tree for the description
+                try {
+                    val root = rootInActiveWindow
+                    if (root?.findAccessibilityNodeInfosByText(accDesc)?.isNotEmpty() == true) {
+                        Timber.i("PU: blocking accessibility settings page for our service (pkg=$packageName — node tree match)")
+                        return true
+                    }
+                } catch (_: Throwable) {}
             }
         } catch (_: Throwable) {}
 
-        // ===== Check 5: node-tree text traversal (fallback) =====
-        // Some OEMs don't populate event.text. Walk the node tree to collect
-        // text and re-check. STILL requires our app name — never blocks other
-        // apps' pages.
-        if (lower.isBlank()) {
-            try {
-                val root = rootInActiveWindow ?: return false
-                val sb = StringBuilder()
-                safeCollectText(root, sb, 0, 5)
-                val nodeText = sb.toString().lowercase(Locale.ROOT)
-                if (nodeText.isNotBlank()) {
-                    if (appName.isNotBlank() && nodeText.contains(appName) &&
-                        (nodeText.contains("uninstall") || nodeText.contains("force stop") ||
-                            nodeText.contains("deactivate"))
-                    ) {
-                        Timber.i("PU: blocking (node-tree fallback) for our app (pkg=$packageName)")
-                        return true
-                    }
-                    // Also check accessibility description in node tree
-                    try {
-                        val accDesc = getString(protect.yourself.R.string.accessibility_service_description)
-                            .lowercase(Locale.ROOT)
-                        if (accDesc.isNotBlank() && nodeText.contains(accDesc)) {
-                            Timber.i("PU: blocking accessibility page (node-tree fallback) for our service (pkg=$packageName)")
-                            return true
-                        }
-                    } catch (_: Throwable) {}
+        // ===== Check 5: Samsung multi-select uninstall =====
+        // NopoX checks if the source node's viewIdResourceName is
+        // "com.sec.android.app.launcher:id/multi_select_uninstall" (decompiled
+        // line 5937-5955). This catches the Samsung launcher's batch-uninstall
+        // mode.
+        try {
+            val sourceNode = rootInActiveWindow
+            if (sourceNode != null) {
+                val viewId = sourceNode.viewIdResourceName
+                if (viewId == "com.sec.android.app.launcher:id/multi_select_uninstall") {
+                    Timber.i("PU: blocking Samsung multi-select uninstall (pkg=$packageName)")
+                    return true
                 }
-            } catch (_: Throwable) {}
-        }
+            }
+        } catch (_: Throwable) {}
 
         return false
     }
