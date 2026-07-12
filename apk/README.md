@@ -7,59 +7,53 @@ This directory contains the **latest** pre-built, signed APK of **Protect Yourse
 - **Only the latest version** is kept here. When a new version is built, the previous APKs are removed.
 - Each version has two files: `*-debug.apk` (debug build with logging) and `*-release.apk` (production build, recommended).
 
-## Current Version: 1.0.45 (versionCode 45)
+## Current Version: 1.0.48 (versionCode 48)
 
 | File | Size | Build Type | Description |
 |---|---|---|---|
-| `protect.yourself-v1.0.45-release.apk` | ~16 MB | Release | **Recommended for installation.** Merges crash-logging-enhancements branch: new AnrWatchdog (ANR detection), AppCoroutineExceptionHandler (routes uncaught coroutine exceptions to CrashLogger across 8+ scopes), disk-backed breadcrumbs (survive hard crashes), atomic file persistence, crash deduplication, service state capture (accessibility/VPN/device-admin status at crash time), OOM-resilient persistence, crash-detected notification on next launch, crash count badge on Profile menu, fixed exportToUri null-return bug (shared SafUtils helper). Also includes all prior fixes from v1.0.44 (uninstall prevention overlay + kill timer) and v1.0.40-v1.0.43 (backup import/export fixes, streak fixes, protective mode fixes, VPN DNS/modes/whitelist fixes). |
-| `protect.yourself-v1.0.44-release.apk` | ~16 MB | Release | Previous release — uninstall prevention overlay + 500ms kill timer + error handling. |
-| `protect.yourself-v1.0.43-release.apk` | ~16 MB | Release | VPN modes UI fix + accessibility WRITE_SECURE_SETTINGS self-heal. |
-| `protect.yourself-v1.0.42-release.apk` | ~16 MB | Release | VPN modes + UI/UX refinement. |
-| `protect.yourself-v1.0.41-release.apk` | ~15 MB | Release | VPN app whitelist fix. |
-| `protect.yourself-v1.0.40-release.apk` | ~15 MB | Release | Streak fixes + protective mode fixes + analysis docs. |
-| `protect.yourself-v1.0.39-release-uninstall-fix.apk` | ~15 MB | Release | Uninstall prevention fix. |
-| `protect.yourself-v1.0.38-release-accessibility-fix.apk` | ~15 MB | Release | Accessibility fix. |
+| `protect.yourself-v1.0.48-release.apk` | ~15.3 MB | Release | **Recommended for installation.** Integration of three fix branches on top of main: (1) `fix/test-failures-cleanup` — fixes 26 pre-existing test failures (BuildConfigSmokeTest semver validation, AllDaosTest method signature, Robolectric runner for ApplicationProvider + Patterns); (2) `chore/dead-code-cleanup` — 364 lines of dead code removed across 42 files; (3) `fix/dead-code-cleanup-complete` — comprehensive dead-code cleanup (22 orphaned SwitchStatusValues accessors, 11 orphaned Room DAO methods, 3 dead Composable pages, 148 unused strings, 20 unused colors, MyVpnService.refreshNotification dead function, MainActivity.EXTRA_OPEN_TAB deep-link wired up). 12 merge conflicts resolved, 2 regressions fixed (SelectedKeywordDao.getSelectedByIdentifier restored, LaunchedEffect import added). 181/181 tests pass. |
 
-## Build Targets
+## Build verification (v1.0.48)
 
-- **Min Android**: 8.0 (API 26)
-- **Target Android**: 15 (API 35)
-- **Compile SDK**: 35
-- **App label**: "Protect Yourself" (release) / "Protect Yourself DEBUG" (debug)
+- `./gradlew assembleRelease` → **BUILD SUCCESSFUL** in 41s
+- `./gradlew testDebugUnitTest` → **181/181 tests pass, 0 failures, 0 errors, 0 skipped**
+- APK signed with debug keystore (per `release { signingConfig = signingConfigs.getByName("debug") }` config — re-sign with your own release keystore for Play Store distribution)
+- package: `protect.yourself`
+- versionCode: 48
+- versionName: `1.0.48`
+- minSdk: 26, targetSdk: 35
 
-## Signing
+## Test breakdown (181/181 pass)
 
-Both APKs are signed with the embedded debug keystore (Android Debug certificate):
-- **Subject**: C=US, O=Android, CN=Android Debug
-- **Signature scheme**: v2
-- **Valid until**: July 1, 2056
+| Test class | Tests | Status |
+|---|---:|---|
+| BuildConfigSmokeTest | 4 | ✅ |
+| database.AllDaosTest | 22 | ✅ |
+| database.switchStatus.SwitchStatusDaoTest | 18 | ✅ |
+| blockerPage.identifiers.IdentifiersTest | 25 | ✅ |
+| blockerPage.service.MyAccessibilityServiceTest | 3 | ✅ |
+| blockerPage.utils.BlockerPageUtilsTest | 34 | ✅ |
+| blockerPage.utils.BlockingValidatorTest | 43 | ✅ |
+| blockerPage.utils.PresetDataTest | 14 | ✅ |
+| blockerPage.utils.StopMeManagerTest | 7 | ✅ |
+| streakPage.identifiers.StreakIdentifiersTest | 11 | ✅ |
+| **TOTAL** | **181** | **✅** |
 
-For Play Store distribution, re-sign with your own release keystore before uploading.
+## Removed APKs
 
-## Installation
+The following older APKs were removed when v1.0.48 was built (per the "only the latest version" policy):
 
-1. Transfer the APK to your Android device (via USB, cloud storage, or direct download)
-2. On the device, open the APK file
-3. If prompted, allow "Install unknown apps" for your file manager / browser
-4. Tap **Install**
-5. Open **Protect Yourself** from your app drawer
+- `protect.yourself-v1.0.38-release-accessibility-fix.apk`
+- `protect.yourself-v1.0.39-release-uninstall-fix.apk`
+- `protect.yourself-v1.0.40-debug.apk`
+- `protect.yourself-v1.0.40-release.apk`
+- `protect.yourself-v1.0.41-debug.apk`
+- `protect.yourself-v1.0.42-debug.apk`
+- `protect.yourself-v1.0.42-release.apk`
+- `protect.yourself-v1.0.43-release.apk`
+- `protect.yourself-v1.0.44-release.apk`
+- `protect.yourself-v1.0.45-release.apk`
+- `protect.yourself-v1.0.46-release.apk`
+- `protect.yourself-v1.0.47-release.apk`
 
-## Going-Forward Workflow
-
-When a new version is built:
-1. Remove the old `protect.yourself-v*.apk` files from this directory
-2. Copy the new `protect.yourself-v<NEW_VERSION>-debug.apk` and `protect.yourself-v<NEW_VERSION>-release.apk` here
-3. Update this README with the new version number + description
-4. Commit + push to GitHub
-
-This keeps the repo lean — only the latest APK is ever stored.
-
-## Rebuilding from Source
-
-```bash
-git clone https://github.com/258044aamm-Dev/Protect-Yourself.git
-cd Protect-Yourself
-./gradlew assembleRelease
-```
-
-Output: `app/build/outputs/apk/release/app-release.apk`
+Older versions are still accessible via git history (e.g. `git show v1.0.47:apk/protect.yourself-v1.0.47-release.apk > old.apk`).
