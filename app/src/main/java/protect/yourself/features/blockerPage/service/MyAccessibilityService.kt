@@ -131,7 +131,21 @@ class MyAccessibilityService : AccessibilityService() {
     // fires on the main thread while refreshBlockingConfig runs on
     // Dispatchers.Default — concurrent access to a plain MutableMap can
     // cause ConcurrentModificationException.
+    //
+    // ANR-01 fix (v1.0.61): this cache is now PRE-POPULATED on a background
+    // thread in onServiceConnected + refreshBlockingConfig. The main-thread
+    // isBrowserPackageDetected() call NEVER calls PackageManager directly —
+    // it checks this cache first, then falls back to the fast
+    // isBrowserByPackageSignature() set-lookup, then triggers an async
+    // cache refresh. This eliminates the 5200ms ANR caused by
+    // queryIntentActivities() running on the main thread.
     private val browserCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    // ANR-01 fix: set of packages that are currently being queried
+    // asynchronously. Prevents duplicate background queries for the same
+    // package.
+    private val pendingBrowserQueries =
+        java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     private var lastBlockTimeMs: Long = 0
 
@@ -189,6 +203,65 @@ class MyAccessibilityService : AccessibilityService() {
                 Timber.d("LC-01: selfHealSafe completed in onServiceConnected (background)")
             } catch (t: Throwable) {
                 Timber.w(t, "LC-01: selfHealSafe in onServiceConnected failed")
+            }
+        }
+
+        // ANR-01 fix: pre-populate the browser cache on a background thread.
+        // queryIntentActivities() can take 500ms-5s on devices with many
+        // installed apps. If we wait for the first onAccessibilityEvent to
+        // trigger it lazily, the main thread blocks and the system fires an
+        // ANR (crash_20260712_195019_0002: 5200ms block). Pre-populating
+        // ensures the cache is warm before any event fires.
+        prepopulateBrowserCache()
+    }
+
+    /**
+     * ANR-01 fix: pre-populate [browserCache] on a background thread.
+     *
+     * Queries PackageManager for ALL installed browser apps (apps that handle
+     * http/https VIEW intents) and adds them to the cache. This runs on
+     * [selfHealScope] (Dispatchers.Default) so it never blocks the main
+     * thread.
+     *
+     * Called from [onServiceConnected] and [refreshBlockingConfig].
+     */
+    private fun prepopulateBrowserCache() {
+        selfHealScope.launch {
+            try {
+                val startTime = System.currentTimeMillis()
+                val pm = packageManager
+                val httpIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    data = android.net.Uri.parse("http://www.google.com")
+                    addCategory(android.content.Intent.CATEGORY_BROWSABLE)
+                }
+                val httpsIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    data = android.net.Uri.parse("https://example.com")
+                    addCategory(android.content.Intent.CATEGORY_BROWSABLE)
+                }
+                val httpResolved = pm.queryIntentActivities(httpIntent, 0)
+                val httpsResolved = pm.queryIntentActivities(httpsIntent, 0)
+                val allBrowsers = mutableSetOf<String>()
+                httpResolved.forEach { allBrowsers.add(it.activityInfo.packageName) }
+                httpsResolved.forEach { allBrowsers.add(it.activityInfo.packageName) }
+                // Add all to cache
+                for (pkg in allBrowsers) {
+                    browserCache[pkg] = true
+                }
+                val elapsed = System.currentTimeMillis() - startTime
+                Timber.i("ANR-01: pre-populated browser cache with ${allBrowsers.size} packages in ${elapsed}ms")
+                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                    "ANR-01",
+                    "pre-populated browser cache: ${allBrowsers.size} packages in ${elapsed}ms"
+                )
+            } catch (t: Throwable) {
+                Timber.e(t, "ANR-01: failed to pre-populate browser cache")
+                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                    throwable = t,
+                    severity = protect.yourself.features.crashLog.CrashSeverity.ERROR,
+                    tag = "ANR-01",
+                    message = "Failed to pre-populate browser cache",
+                    extraContext = emptyMap()
+                )
             }
         }
     }
@@ -1710,40 +1783,110 @@ class MyAccessibilityService : AccessibilityService() {
      *
      * Cached per-package for performance.
      */
+    /**
+     * ANR-01 fix (v1.0.61): rewritten to NEVER call PackageManager on the
+     * main thread.
+     *
+     * ## Root cause of the ANR
+     *
+     * The previous implementation called `pm.queryIntentActivities()` on the
+     * main thread inside this method. `queryIntentActivities` is a PackageManager
+     * IPC call that queries ALL installed apps that handle http/https intents.
+     * On devices with many apps (100+), this can take 500ms-5s, blocking the
+     * main thread and triggering an ANR (crash_20260712_195019_0002: 5200ms
+     * block at this exact method).
+     *
+     * ## Fix
+     *
+     * This method is now strictly non-blocking:
+     *   1. Check [browserCache] — O(1) ConcurrentHashMap lookup, ~0ms.
+     *   2. If not cached, fall back to [isBrowserByPackageSignature] — a fast
+     *      set-lookup against known browser package prefixes, ~0ms.
+     *   3. Trigger an async cache refresh via [refreshBrowserCacheAsync] so
+     *      the next call finds the package in the cache.
+     *
+     * The cache is pre-populated on a background thread in
+     * [onServiceConnected] and [refreshBlockingConfig] via
+     * [prepopulateBrowserCache], so most packages will already be cached
+     * before the first event fires.
+     *
+     * The fast package-signature fallback ensures we still detect major
+     * browsers (Chrome, Firefox, Edge, Samsung Internet, Brave, Opera, etc.)
+     * immediately, even before the cache is populated. Less common browsers
+     * may be missed on the very first event, but will be caught on subsequent
+     * events after the async cache refresh completes — this is an acceptable
+     * trade-off vs. a 5-second ANR that freezes the entire phone.
+     */
     private fun isBrowserPackageDetected(packageName: String): Boolean {
         if (packageName.isBlank()) return false
         if (packageName == this.packageName) return false  // Don't block self
         if (packageName == "com.android.systemui") return false
 
-        // Check cache first
+        // Step 1: check cache — O(1), never blocks
         browserCache[packageName]?.let { return it }
 
-        val isBrowser = try {
-            val pm = packageManager
-            // NopoX uses http://www.google.com for browser detection.
-            // Some older browsers only declare intent filters for http://
-            // (not https://), so using http:// catches more browsers.
-            // We check both http and https to be thorough.
-            val httpIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                data = android.net.Uri.parse("http://www.google.com")
-                addCategory(android.content.Intent.CATEGORY_BROWSABLE)
-            }
-            val httpsIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                data = android.net.Uri.parse("https://example.com")
-                addCategory(android.content.Intent.CATEGORY_BROWSABLE)
-            }
-            val httpResolved = pm.queryIntentActivities(httpIntent, 0)
-            val httpsResolved = pm.queryIntentActivities(httpsIntent, 0)
-            val isBrowserByIntentFilter = httpResolved.any { it.activityInfo.packageName == packageName } ||
-                httpsResolved.any { it.activityInfo.packageName == packageName }
-            isBrowserByIntentFilter || isBrowserByPackageSignature(packageName)
-        } catch (t: Throwable) {
-            Timber.v(t, "Browser detection failed for $packageName")
-            isBrowserByPackageSignature(packageName)
+        // Step 2: fast package-signature fallback — O(K) set lookup where K
+        // = number of known browser prefixes (~20). This catches Chrome,
+        // Firefox, Edge, Samsung Internet, Brave, Opera, etc. immediately.
+        val isBrowserBySignature = isBrowserByPackageSignature(packageName)
+        if (isBrowserBySignature) {
+            // Cache the positive result so we don't re-check
+            browserCache[packageName] = true
+            return true
         }
 
-        browserCache[packageName] = isBrowser
-        return isBrowser
+        // Step 3: trigger async cache refresh for this package. The result
+        // will be available in the cache on the next event. This prevents
+        // the main-thread ANR while still eventually detecting the browser.
+        refreshBrowserCacheAsync(packageName)
+
+        // Return false for now — the async refresh will update the cache.
+        // If this is a browser, the next accessibility event for the same
+        // package will find it in the cache and block correctly.
+        // This is a deliberate trade-off: a possible 1-event miss vs. a
+        // 5-second ANR that freezes the phone.
+        return false
+    }
+
+    /**
+     * ANR-01 fix: asynchronously query PackageManager for a single package
+     * and update [browserCache]. Runs on [selfHealScope] (Dispatchers.Default)
+     * so it never blocks the main thread.
+     *
+     * Uses [pendingBrowserQueries] to prevent duplicate background queries
+     * for the same package.
+     */
+    private fun refreshBrowserCacheAsync(packageName: String) {
+        // Don't queue duplicate queries
+        if (!pendingBrowserQueries.add(packageName)) return
+
+        selfHealScope.launch {
+            try {
+                val pm = packageManager
+                val httpIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    data = android.net.Uri.parse("http://www.google.com")
+                    addCategory(android.content.Intent.CATEGORY_BROWSABLE)
+                }
+                val httpsIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    data = android.net.Uri.parse("https://example.com")
+                    addCategory(android.content.Intent.CATEGORY_BROWSABLE)
+                }
+                val httpResolved = pm.queryIntentActivities(httpIntent, 0)
+                val httpsResolved = pm.queryIntentActivities(httpsIntent, 0)
+                val isBrowser = httpResolved.any { it.activityInfo.packageName == packageName } ||
+                    httpsResolved.any { it.activityInfo.packageName == packageName }
+                browserCache[packageName] = isBrowser
+                if (isBrowser) {
+                    Timber.d("ANR-01: async browser detection — pkg=$packageName is a browser (cached)")
+                }
+            } catch (t: Throwable) {
+                Timber.v(t, "ANR-01: async browser detection failed for pkg=$packageName")
+                // Cache the negative result so we don't keep retrying
+                browserCache[packageName] = false
+            } finally {
+                pendingBrowserQueries.remove(packageName)
+            }
+        }
     }
 
     /**
@@ -1940,6 +2083,9 @@ class MyAccessibilityService : AccessibilityService() {
                 Timber.e(t, "Failed to refresh blocking config")
             }
         }
+        // ANR-01 fix: also refresh the browser cache in case new apps were
+        // installed/removed since the last refresh.
+        prepopulateBrowserCache()
     }
 
     /**
