@@ -375,6 +375,27 @@ class MyAccessibilityService : AccessibilityService() {
                 }
             }
 
+            // SET-03 fix: run settings-page-by-title check on ALL event types
+            // (not just WINDOW_STATE_CHANGED). NopoX 1.0.53 calls
+            // checkSettingAppKeywordClickBlock for event types 1 (VIEW_CLICKED),
+            // 8 (WINDOW_CONTENT_CHANGED), and 32 (WINDOW_STATE_CHANGED). The
+            // previous rebuild only called isSettingsPage from
+            // handleWindowStateChange, which meant if the user was already on
+            // a settings page and a content-change or click event fired (e.g.
+            // scrolling, tapping a settings item), the check never ran.
+            if (isBlockSettingsByTitleOn &&
+                (eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
+                    eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+                    eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) &&
+                packageName != this.packageName &&
+                packageName != "com.android.systemui"
+            ) {
+                if (isSettingsPage(packageName, event)) {
+                    launchBlockActivity(packageName, "block_page_default_system_keyword_message")
+                    return
+                }
+            }
+
             when (eventType) {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                     handleWindowStateChange(packageName, event)
@@ -524,14 +545,10 @@ class MyAccessibilityService : AccessibilityService() {
         // ===== Content-blocking checks =====
 
         // Settings page title blocking (SET-01 fix: rewritten to match NopoX
-        // 1.0.53 reference). Only fires for settings packages or user-selected
-        // apps, and only matches against the actual toolbar TITLE text — not
-        // the entire window text. This prevents the main device Settings from
-        // being blocked when a keyword happens to appear anywhere on screen.
-        if (isBlockSettingsByTitleOn && isSettingsPage(packageName, event)) {
-            launchBlockActivity(packageName, "block_page_default_system_keyword_message")
-            return
-        }
+        // ===== Settings page title blocking =====
+        // SET-03 fix: now handled in onAccessibilityEvent for ALL event types
+        // (VIEW_CLICKED, WINDOW_CONTENT_CHANGED, WINDOW_STATE_CHANGED).
+        // No duplicate check here.
 
         // Package + Intent name blocking (NEW feature)
         if (isBlockPackageIntentOn) {
@@ -1408,22 +1425,32 @@ class MyAccessibilityService : AccessibilityService() {
         val isUserSelected = cachedBlockSettingPageByTitleApps.contains(packageName)
         if (!isSettingsPkg && !isUserSelected) return false
 
-        // SET-02 fix: extract the actual page TITLE from specific Settings
-        // view IDs, not the entire window text. This is what NopoX does.
-        // The collapsing toolbar / extended title / alert title are the views
-        // that display the current settings page name (e.g. "Battery",
-        // "Display", "Apps"). Matching against just these views prevents
-        // false positives from other text on the page.
+        // SET-03 fix: extract the page title from BOTH rootNode AND sourceNode
+        // (NopoX uses both). Also combine event.text with the title text and
+        // remove spaces before matching — NopoX does exactly this.
         val titleText = extractSettingsPageTitle(event)
         if (titleText.isBlank()) return false
 
+        // SET-03 fix: NopoX concatenates event.text (lowercased, spaces
+        // removed) with the title text (lowercased, spaces removed), then
+        // runs isDetectWord on the combined string. This catches cases where
+        // the keyword appears in the event text but not in the toolbar title.
+        val eventTextStr = try {
+            event.text?.joinToString(" ") { it?.toString() ?: "" } ?: ""
+        } catch (_: Throwable) { "" }
+        val combinedText = "$eventTextStr,$titleText"
+        // NopoX: remove spaces and lowercase before matching
+        val normalizedText = combinedText
+            .lowercase(Locale.ROOT)
+            .replace(" ", "")
+
         // Use isDetectWord for word-boundary matching (NopoX pattern).
         val utils = BlockerPageUtils.getInstance()
-        val (found, matchedKeyword) = utils.isDetectWord(titleText, cachedSettingTitles)
+        val (found, matchedKeyword) = utils.isDetectWord(normalizedText, cachedSettingTitles)
         if (found) {
             Timber.i(
                 "SET: blocking settings page pkg=$packageName — " +
-                    "title='$titleText' matched keyword='$matchedKeyword'"
+                    "title='$titleText' eventText='$eventTextStr' matched keyword='$matchedKeyword'"
             )
             protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
                 "SET-Block",
@@ -1436,12 +1463,17 @@ class MyAccessibilityService : AccessibilityService() {
 
     /**
      * Extract the actual page title text from a Settings-app window by
-     * looking up known toolbar view IDs.
+     * looking up known toolbar view IDs on BOTH the rootNode AND sourceNode.
      *
-     * This mirrors the NopoX 1.0.53 reference, which looks up:
-     *   - `com.android.settings:id/collapsing_appbar_extended_title`
-     *   - `com.android.settings:id/collapsing_toolbar`
-     *   - `android:id/alertTitle`
+     * SET-03 fix: NopoX 1.0.53 looks up view IDs on both p2 (rootNode) and
+     * p3 (sourceNode) — the previous rebuild only used event.source. This
+     * caused the title extraction to fail on some OEMs where the toolbar
+     * views are only accessible via rootNode, not sourceNode.
+     *
+     * NopoX looks up:
+     *   - `com.android.settings:id/collapsing_appbar_extended_title` on rootNode
+     *   - `com.android.settings:id/collapsing_toolbar` on rootNode
+     *   - `android:id/alertTitle` on sourceNode
      *
      * The texts from all three are concatenated (comma-separated) so that
      * keyword matching can match against any of them.
@@ -1451,14 +1483,36 @@ class MyAccessibilityService : AccessibilityService() {
         val sourceNode: AccessibilityNodeInfo? = try {
             event.source
         } catch (_: Throwable) { null }
+        val rootNode: AccessibilityNodeInfo? = try {
+            rootInActiveWindow
+        } catch (_: Throwable) { null }
 
-        val viewIds = listOf(
+        // NopoX: look up collapsing_appbar_extended_title and collapsing_toolbar
+        // on rootNode, and alertTitle on sourceNode.
+        val viewIdsOnRoot = listOf(
             "com.android.settings:id/collapsing_appbar_extended_title",
-            "com.android.settings:id/collapsing_toolbar",
+            "com.android.settings:id/collapsing_toolbar"
+        )
+        val viewIdsOnSource = listOf(
             "android:id/alertTitle"
         )
 
-        for (viewId in viewIds) {
+        for (viewId in viewIdsOnRoot) {
+            try {
+                val nodes = rootNode?.findAccessibilityNodeInfosByViewId(viewId)
+                if (nodes != null) {
+                    for (node in nodes) {
+                        val t = node.text?.toString()
+                        if (!t.isNullOrBlank()) {
+                            if (sb.isNotEmpty()) sb.append(',')
+                            sb.append(t)
+                        }
+                    }
+                }
+            } catch (_: Throwable) {}
+        }
+
+        for (viewId in viewIdsOnSource) {
             try {
                 val nodes = sourceNode?.findAccessibilityNodeInfosByViewId(viewId)
                 if (nodes != null) {
