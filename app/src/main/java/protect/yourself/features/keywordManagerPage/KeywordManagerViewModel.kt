@@ -365,20 +365,61 @@ data class KeywordManagerState(
      * "Setting Titles" tab. When OFF, setting-title keywords are stored but
      * NOT enforced by the accessibility service.
      */
-    val isSettingTitleSwitchOn: Boolean = false
+    val isSettingTitleSwitchOn: Boolean = false,
+    /**
+     * UB-01 fix: when true, system-defined (preset) keywords are hidden from
+     * the list — only user-added keywords are shown. This makes the list
+     * manageable (the preset blocklist has 1189+ entries) and lets the user
+     * focus on the keywords THEY added. The system keywords are still
+     * enforced by the accessibility service — they're just hidden from the UI.
+     */
+    val hideSystemKeywords: Boolean = true
 ) {
-    /** Returns the keywords for the active tab, filtered by search query. */
+    /**
+     * UB-01 fix: returns true if the keyword was system-defined (preset),
+     * false if it was user-added. System-defined keywords have keys starting
+     * with "preset_block_" or "preset_whitelist_". User-added keywords have
+     * keys starting with "block_", "white_", or "setting_".
+     */
+    fun isSystemDefined(item: SelectedKeywordItemModel): Boolean {
+        return item.key.startsWith("preset_block_") ||
+            item.key.startsWith("preset_whitelist_")
+    }
+
+    /**
+     * Returns the keywords for the active tab, filtered by search query.
+     *
+     * UB-01 fix: when [hideSystemKeywords] is true, system-defined (preset)
+     * keywords are filtered out — only user-added keywords are returned.
+     */
     fun filteredKeywords(): List<SelectedKeywordItemModel> {
         val source = when (activeTab) {
             KeywordTab.BLOCKLIST -> blockKeywords
             KeywordTab.WHITELIST -> whitelistKeywords
             KeywordTab.SETTING_TITLES -> settingTitleKeywords
         }
-        return if (searchQuery.isBlank()) source
-        else source.filter { it.keyword.contains(searchQuery, ignoreCase = true) }
+        val userOnly = if (hideSystemKeywords) {
+            source.filterNot { isSystemDefined(it) }
+        } else {
+            source
+        }
+        return if (searchQuery.isBlank()) userOnly
+        else userOnly.filter { it.keyword.contains(searchQuery, ignoreCase = true) }
     }
 
-    /** Total count across all tabs. */
+    /**
+     * Total count of USER-ADDED keywords across all tabs (excludes system
+     * presets). Used for the header badge so the user sees how many keywords
+     * they've added, not the 1189+ presets.
+     */
+    fun userKeywordCount(): Int {
+        val blockCount = if (hideSystemKeywords) blockKeywords.count { !isSystemDefined(it) } else blockKeywords.size
+        val whiteCount = if (hideSystemKeywords) whitelistKeywords.count { !isSystemDefined(it) } else whitelistKeywords.size
+        val settingCount = settingTitleKeywords.size  // setting titles are always user-added
+        return blockCount + whiteCount + settingCount
+    }
+
+    /** Total count across all tabs (including system presets). */
     fun totalCount(): Int = blockKeywords.size + whitelistKeywords.size + settingTitleKeywords.size
 }
 

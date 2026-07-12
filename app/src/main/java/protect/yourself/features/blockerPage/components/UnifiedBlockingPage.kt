@@ -168,7 +168,7 @@ fun UnifiedBlockingPage(
                     Column {
                         Text("Blocking Lists")
                         Text(
-                            text = "${keywordState.totalCount()} keywords • " +
+                            text = "${keywordState.userKeywordCount()} custom entries • " +
                                 "${packageIntentState.blockedPackages.size} packages • " +
                                 "${packageIntentState.blockedIntents.size} intents",
                             style = MaterialTheme.typography.bodySmall,
@@ -392,15 +392,18 @@ enum class UnifiedBlockingTab(
     ): TabData {
         return when (this) {
             BLOCKLIST -> TabData(
-                items = keywordState.blockKeywords.map {
-                    it.toItem(accent = accentColor, subtitle = "Blocklist keyword")
-                },
+                // UB-01 fix: filter out system-defined (preset) keywords —
+                // only show user-added keywords in the UI.
+                items = keywordState.blockKeywords
+                    .filterNot { keywordState.isSystemDefined(it) }
+                    .map { it.toItem(accent = accentColor, subtitle = "Blocklist keyword") },
                 masterSwitchState = null // blocklist is gated by PornBlocker switch elsewhere
             )
             WHITELIST -> TabData(
-                items = keywordState.whitelistKeywords.map {
-                    it.toItem(accent = accentColor, subtitle = "Whitelist keyword")
-                },
+                // UB-01 fix: filter out system-defined (preset) keywords.
+                items = keywordState.whitelistKeywords
+                    .filterNot { keywordState.isSystemDefined(it) }
+                    .map { it.toItem(accent = accentColor, subtitle = "Whitelist keyword") },
                 masterSwitchState = null
             )
             SETTING_TITLES -> TabData(
@@ -548,9 +551,11 @@ private fun UnifiedBlockingCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 UnifiedBlockingTab.entries.forEach { tab ->
+                    // UB-01 fix: show USER-ADDED count, not total (which includes
+                    // 1189+ system presets). This gives the user meaningful numbers.
                     val count = when (tab) {
-                        UnifiedBlockingTab.BLOCKLIST -> keywordState.blockKeywords.size
-                        UnifiedBlockingTab.WHITELIST -> keywordState.whitelistKeywords.size
+                        UnifiedBlockingTab.BLOCKLIST -> keywordState.blockKeywords.count { !keywordState.isSystemDefined(it) }
+                        UnifiedBlockingTab.WHITELIST -> keywordState.whitelistKeywords.count { !keywordState.isSystemDefined(it) }
                         UnifiedBlockingTab.SETTING_TITLES -> keywordState.settingTitleKeywords.size
                         UnifiedBlockingTab.PACKAGES -> packageIntentState.blockedPackages.size
                         UnifiedBlockingTab.INTENTS -> packageIntentState.blockedIntents.size
@@ -857,8 +862,8 @@ private fun EmptyState(
  * Per-tab help text shown in the empty state (no items + no search).
  */
 private fun UnifiedBlockingTab.emptyHelpText(): String = when (this) {
-    UnifiedBlockingTab.BLOCKLIST -> "Add keywords above to start blocking URLs and content that match them."
-    UnifiedBlockingTab.WHITELIST -> "Add keywords above to whitelist specific URLs (overrides the blocklist)."
+    UnifiedBlockingTab.BLOCKLIST -> "No custom blocklist keywords yet. Add keywords above to block URLs and content that match them. System-defined keywords are hidden but still active."
+    UnifiedBlockingTab.WHITELIST -> "No custom whitelist keywords yet. Add keywords above to whitelist specific URLs (overrides the blocklist). System-defined keywords are hidden but still active."
     UnifiedBlockingTab.SETTING_TITLES -> "Add settings page titles above (e.g. 'battery', 'apps') to block access to those pages."
     UnifiedBlockingTab.PACKAGES -> "Add package names above (e.g. com.tiktok.android) to block those apps on launch."
     UnifiedBlockingTab.INTENTS -> "Add class names above (e.g. MainActivity) to block apps whose activities contain that name."
