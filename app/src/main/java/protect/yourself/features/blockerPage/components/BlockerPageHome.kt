@@ -328,6 +328,12 @@ fun BlockerPageHome() {
                         viewModel.onDeviceAdminResult(false)
                     }
                 }
+                is BlockerPageNavigation.VpnCustomDnsPresetAdded -> {
+                    // BUG-05 fix: handled by VpnManagementPage's LaunchedEffect
+                    // collector which dismisses the Add Custom DNS dialog.
+                    // No action needed here — this branch just satisfies the
+                    // exhaustive when expression.
+                }
             }
         }
     }

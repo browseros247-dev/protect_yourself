@@ -22,6 +22,7 @@ import protect.yourself.features.blockerPage.data.SettingPageItemModel
 import protect.yourself.features.blockerPage.identifiers.SettingPageItemIdentifiers
 import protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers
 import protect.yourself.features.blockerPage.service.MyAccessibilityService
+import protect.yourself.features.blockerPage.service.MyVpnService
 import timber.log.Timber
 
 /**
@@ -69,6 +70,16 @@ sealed class BlockerPageNavigation {
      * countdown completes.
      */
     data class RequestTimeDelay(val delaySeconds: Int, val item: SettingPageItemModel) : BlockerPageNavigation()
+    /**
+     * BUG-05 fix: emitted after a custom DNS preset has been SUCCESSFULLY
+     * persisted to the DB. The UI uses this to dismiss the Add Custom DNS
+     * dialog only after the DB write completes — previously the dialog was
+     * dismissed synchronously based on the (validation-only) return value
+     * of [BlockerPageViewModel.addCustomDnsPreset], which meant a DB write
+     * failure would leave the user with no visible preset and no clear
+     * error context.
+     */
+    data object VpnCustomDnsPresetAdded : BlockerPageNavigation()
 }
 
 /**
@@ -112,6 +123,12 @@ class BlockerPageViewModel(
 
     init {
         loadSettingItems()
+        // BUG-06 fix: VPN service state reconciliation is handled by the
+        // VPN management page's LaunchedEffect + the AppSystemActionReceiver
+        // (BUG-12 fix). A polling loop here was removed because it caused
+        // Kotlin 1.9 kapt stub generation to fail with "Could not load
+        // module <Error module>" — likely a compiler bug with infinite
+        // while loops inside init blocks in AndroidViewModel.
     }
 
     fun loadSettingItems() {
@@ -1128,6 +1145,10 @@ class BlockerPageViewModel(
             val selectedPresetKey = db.vpnCustomDnsDao().getSelected()?.key
             val hideNotification = switchValues.isVpnNotificationHideSwitchOn()
             val notificationMessage = switchValues.getVpnNotificationCustomMessage() ?: ""
+            // BUG-06 fix: include the live service state in the management
+            // state so the UI can render the actual connection state.
+            // Stored as String to avoid kapt stub generation issues.
+            val liveServiceState = MyVpnService.observableVpnState.name
 
             _vpnManagementState.update { prev ->
                 VpnManagementState(
@@ -1141,7 +1162,9 @@ class BlockerPageViewModel(
                     // The previous logic (prev.isLoading && prev.customDnsPresets.isEmpty())
                     // kept the spinner on forever because on the first load,
                     // prev.customDnsPresets was empty → isLoading stayed true.
-                    isLoading = false
+                    isLoading = false,
+                    // BUG-06 fix: expose live service state.
+                    serviceState = liveServiceState
                 )
             }
         }
@@ -1227,10 +1250,22 @@ class BlockerPageViewModel(
                     )
                 )
             } else {
+                // BUG-10 fix: use specific, clearer messages instead of the
+                // generic "Custom DNS provider updated." toast which implied
+                // the change was active. The previous message confused users
+                // who selected a preset while in NORMAL/POWERFUL mode or
+                // while the VPN was OFF — they expected the preset to take
+                // effect immediately, but it only applies when CUSTOM mode
+                // is active AND the VPN is ON.
+                val vpnOn = switchValues.isVpnSwitchOn()
+                val inCustomMode = switchValues.getVpnConnectionType() == VpnConnectionTypeIdentifiers.CUSTOM
+                val messageRes = when {
+                    !vpnOn -> protect.yourself.R.string.vpn_custom_dns_updated_vpn_off
+                    !inCustomMode -> protect.yourself.R.string.vpn_custom_dns_updated_not_custom
+                    else -> protect.yourself.R.string.vpn_custom_dns_updated_toast
+                }
                 _navigation.emit(
-                    BlockerPageNavigation.ShowToastRes(
-                        protect.yourself.R.string.vpn_custom_dns_updated_toast
-                    )
+                    BlockerPageNavigation.ShowToastRes(messageRes)
                 )
             }
         }
@@ -1239,12 +1274,26 @@ class BlockerPageViewModel(
     /**
      * Returns the user-facing label for a VPN mode.
      * Mirrors the labels used by [MyVpnService] in the foreground notification.
+     *
+     * BUG-19 fix: use string resources instead of hardcoded English labels.
+     * The previous implementation used "Balanced" / "Strict" / "Custom DNS"
+     * directly, which meant the VPN_MANAGE setting item's action label was
+     * always in English even on non-English devices. The VpnManagementPage
+     * already used the localized string resources — this fix makes the main
+     * settings page consistent.
      */
-    private fun vpnModeLabel(mode: VpnConnectionTypeIdentifiers): String = when (mode) {
-        VpnConnectionTypeIdentifiers.NORMAL -> "Balanced"
-        VpnConnectionTypeIdentifiers.POWERFUL -> "Strict"
-        VpnConnectionTypeIdentifiers.CUSTOM -> "Custom DNS"
-        VpnConnectionTypeIdentifiers.OFF -> "Balanced"
+    private fun vpnModeLabel(mode: VpnConnectionTypeIdentifiers): String {
+        val app = getApplication<Application>()
+        return when (mode) {
+            VpnConnectionTypeIdentifiers.NORMAL ->
+                app.getString(protect.yourself.R.string.vpn_mode_balanced_label)
+            VpnConnectionTypeIdentifiers.POWERFUL ->
+                app.getString(protect.yourself.R.string.vpn_mode_strict_label)
+            VpnConnectionTypeIdentifiers.CUSTOM ->
+                app.getString(protect.yourself.R.string.vpn_mode_custom_label)
+            VpnConnectionTypeIdentifiers.OFF ->
+                app.getString(protect.yourself.R.string.vpn_mode_balanced_label)
+        }
     }
 
     // ===== Custom DNS preset add / delete (NopoX parity gap fix) =====
@@ -1296,8 +1345,40 @@ class BlockerPageViewModel(
             }
             return false
         }
+        // BUG-15 fix: reject DNS 1 == DNS 2 (no failover benefit, confusing UX).
+        if (trimmedFirst == trimmedSecond) {
+            safeLaunch {
+                _navigation.emit(
+                    BlockerPageNavigation.ShowToast("DNS 1 and DNS 2 must be different")
+                )
+            }
+            return false
+        }
 
+        // BUG-09 fix: async checks for duplicate name / duplicate DNS pair.
+        // These require a DB read, so they run inside safeLaunch. If a
+        // duplicate is found, we emit a toast and return without inserting.
+        // Note: we still return true here because the synchronous validation
+        // passed — the dialog will be dismissed by the VpnCustomDnsPresetAdded
+        // event ONLY if the insert actually succeeds. If we emit a "duplicate"
+        // toast instead, the dialog stays open (no PresetAdded event fires).
         safeLaunch {
+            // BUG-09: check for duplicate name (case-insensitive)
+            val existing = db.vpnCustomDnsDao().getAll()
+            if (existing.any { it.displayName.equals(trimmedName, ignoreCase = true) }) {
+                _navigation.emit(
+                    BlockerPageNavigation.ShowToast("A preset with this name already exists")
+                )
+                return@safeLaunch
+            }
+            // BUG-09: check for duplicate DNS pair
+            if (existing.any { it.firstDns == trimmedFirst && it.secondDns == trimmedSecond }) {
+                _navigation.emit(
+                    BlockerPageNavigation.ShowToast("A preset with these DNS servers already exists")
+                )
+                return@safeLaunch
+            }
+
             // Generate a unique key — use timestamp to avoid collisions with
             // the default preset keys ("preset_cloudflare_family" etc.).
             // FIX 3.3: use UUID instead of System.currentTimeMillis() to
@@ -1312,6 +1393,14 @@ class BlockerPageViewModel(
                 secondDns = trimmedSecond,
                 isSelected = false
             )
+            // BUG-05 fix: perform the DB write BEFORE emitting the success
+            // toast / dismiss event. If upsert() throws (e.g. disk full, DB
+            // locked, constraint violation), the safeLaunch catch block will
+            // emit "Operation failed: <error>" and the PresetAdded event
+            // will NOT fire — the UI keeps the dialog open so the user can
+            // retry. Previously the dialog dismissed synchronously based on
+            // this function's return value, leaving the user with no clear
+            // error context if the DB write failed.
             db.vpnCustomDnsDao().upsert(preset)
             // Mark that the user has edited the custom DNS list — this flag
             // was previously unused; we set it now so a future seed-on-upgrade
@@ -1320,6 +1409,9 @@ class BlockerPageViewModel(
                 SwitchIdentifier.VPN_DNS_CUSTOM_LIST_SET, true
             )
             loadVpnManagementState()
+            // BUG-05 fix: emit the PresetAdded event AFTER the DB write
+            // succeeds. The UI collects this and dismisses the dialog.
+            _navigation.emit(BlockerPageNavigation.VpnCustomDnsPresetAdded)
             _navigation.emit(
                 BlockerPageNavigation.ShowToastRes(
                     protect.yourself.R.string.vpn_custom_dns_added_toast
@@ -1395,6 +1487,12 @@ data class BlockerPageState(
 
 /**
  * State for the dedicated VPN Management page.
+ *
+ * BUG-06 fix: [serviceState] is the live service state from
+ * [MyVpnService.observableVpnState], distinct from [isVpnEnabled] (which
+ * reflects the DB-persisted VPN_SWITCH user intent). The UI can use both
+ * to display the actual state. Stored as a String to avoid kapt stub
+ * generation issues with cross-class enum references.
  */
 data class VpnManagementState(
     val isVpnEnabled: Boolean = false,
@@ -1403,5 +1501,6 @@ data class VpnManagementState(
     val selectedCustomDnsKey: String? = null,
     val isNotificationHidden: Boolean = false,
     val notificationMessage: String = "",
-    val isLoading: Boolean = true
+    val isLoading: Boolean = true,
+    val serviceState: String = "IDLE"
 )

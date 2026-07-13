@@ -44,12 +44,30 @@ class VpnRestartWorker(
             val db = AppDatabase.getInstance(applicationContext)
             val switchValues = SwitchStatusValues(db.switchStatusDao())
             if (switchValues.isVpnSwitchOn()) {
-                MyVpnService.start(applicationContext)
-                Timber.i("VPN restarted by VpnRestartWorker")
+                // BUG-18 fix: pre-check VPN permission before starting the
+                // service. If the user revoked VPN permission (e.g. via
+                // system Settings → VPN → Forget), VpnService.prepare()
+                // returns a non-null Intent. In that case, starting the
+                // service would show a brief "Connecting…" notification
+                // followed by a silent failure (establish() returns null).
+                // Instead, sync VPN_SWITCH=false now so the UI reflects
+                // reality and no misleading notification is shown.
+                if (android.net.VpnService.prepare(applicationContext) != null) {
+                    Timber.w("BUG-18: VPN permission was revoked — syncing VPN_SWITCH=false instead of starting service")
+                    switchValues.storeSwitchStatus(
+                        protect.yourself.database.switchStatus.SwitchIdentifier.VPN_SWITCH,
+                        false
+                    )
+                    Result.success()
+                } else {
+                    MyVpnService.start(applicationContext)
+                    Timber.i("VPN restarted by VpnRestartWorker")
+                    Result.success()
+                }
             } else {
                 Timber.i("VPN switch is OFF — VpnRestartWorker no-op")
+                Result.success()
             }
-            Result.success()
         } catch (t: Throwable) {
             Timber.e(t, "VpnRestartWorker failed")
             // Retry once after 30 seconds, then give up.

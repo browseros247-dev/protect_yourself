@@ -166,6 +166,9 @@
     <string name="vpn_mode_changed_no_restart_toast">VPN mode changed to %1$s.</string>
     <string name="vpn_custom_dns_changed_toast">Custom DNS provider updated. Restarting VPN…</string>
     <string name="vpn_custom_dns_updated_toast">Custom DNS provider updated.</string>
+    <!-- BUG-10 fix: more accurate toasts for selectCustomDnsPreset when no restart will happen -->
+    <string name="vpn_custom_dns_updated_vpn_off">Preset saved. Turn on the VPN to use it.</string>
+    <string name="vpn_custom_dns_updated_not_custom">Preset saved. Switch to Custom mode to use it.</string>
     <string name="vpn_mode_active">Active</string>
     <string name="vpn_custom_dns_inactive_hint">Switch to Custom mode to use this provider</string>
     <string name="vpn_notification_changes_applied_toast">VPN notification updated. Restarting VPN…</string>

@@ -479,6 +479,14 @@ class BackupManager(private val context: Context) {
     private suspend fun restoreAllTables(tables: BackupTables): RestoredCounts {
         // Clear all tables first (so restore is a clean replace, not a merge)
         // Done inside the transaction → rolled back if any later step fails.
+        //
+        // BUG-03 fix: vpn_custom_dns delete is CONDITIONAL on the backup
+        // containing a non-null vpnCustomDns list. Old/partial backups that
+        // predate the vpn_custom_dns table (DB v8 and earlier) or that omit
+        // the table for any reason would otherwise silently destroy the
+        // user's existing custom DNS presets. The other tables are still
+        // unconditionally deleted because they are core tables present in
+        // every backup version.
         db.switchStatusDao().deleteAll()
         db.selectedKeywordDao().deleteAll()
         db.selectedAppsListDao().deleteAll()
@@ -487,7 +495,11 @@ class BackupManager(private val context: Context) {
         db.stopMeDurationDao().deleteAll()
         db.stopMeSessionCountDao().deleteAll()
         db.streakDatesDao().deleteAll()
-        db.vpnCustomDnsDao().deleteAll()
+        if (!tables.vpnCustomDns.isNullOrEmpty()) {
+            db.vpnCustomDnsDao().deleteAll()
+        } else {
+            Timber.i("BUG-03: backup does not contain vpn_custom_dns — preserving existing presets")
+        }
 
         // Restore each table — use upsertAll for bulk insert (Room compiles to single INSERT)
         var switchCount = 0
@@ -653,22 +665,65 @@ class BackupManager(private val context: Context) {
         // IMPORTANT: displayName is nullable in the entity but the DB column is
         // NOT NULL DEFAULT '' (see AppDatabase.MIGRATION_8_9). Coerce null → ""
         // so SQLite doesn't reject the insert.
+        //
+        // BUG-07 fix: validate DNS IPs and normalize isSelected during restore.
+        // 1. Skip presets with invalid DNS IPs (would crash the VPN later
+        //    via InetAddress.getByName throwing UnknownHostException).
+        // 2. Ensure at most ONE preset has isSelected=true (if multiple,
+        //    keep only the first by key order and deselect the rest).
+        // 3. If no preset is selected, fall back to Cloudflare Family
+        //    (matches the AppDatabaseCallback default).
         tables.vpnCustomDns?.let { list ->
             if (list.isNotEmpty()) {
+                val utils = protect.yourself.features.blockerPage.utils.BlockerPageUtils.getInstance()
                 val sanitized = list.mapNotNull { item ->
                     val key = item.key ?: return@mapNotNull null
                     if (key.isBlank()) return@mapNotNull null
+                    val firstDns = item.firstDns ?: ""
+                    val secondDns = item.secondDns ?: ""
+                    // Skip presets with invalid DNS IPs — they'd crash the VPN later
+                    if (!utils.isValidDNS(firstDns)) {
+                        Timber.w("BUG-07: skipping preset '$key' during restore — invalid firstDns '$firstDns'")
+                        return@mapNotNull null
+                    }
+                    if (!utils.isValidDNS(secondDns)) {
+                        Timber.w("BUG-07: skipping preset '$key' during restore — invalid secondDns '$secondDns'")
+                        return@mapNotNull null
+                    }
                     item.copy(
                         key = key,
                         displayName = item.displayName ?: "",
-                        firstDns = item.firstDns ?: "",
-                        secondDns = item.secondDns ?: "",
+                        firstDns = firstDns,
+                        secondDns = secondDns,
                         isSelected = item.isSelected
                     )
                 }
                 if (sanitized.isNotEmpty()) {
-                    db.vpnCustomDnsDao().upsertAll(sanitized)
-                    vpnCustomDnsCount = sanitized.size
+                    // BUG-07: normalize isSelected — at most one selected.
+                    val selectedCount = sanitized.count { it.isSelected }
+                    val normalized = when {
+                        selectedCount > 1 -> {
+                            // Multiple selected — keep only the first (by key order) selected
+                            val firstSelectedKey = sanitized.sortedBy { it.key }.first { it.isSelected }.key
+                            Timber.w("BUG-07: backup had $selectedCount selected DNS presets — keeping only '$firstSelectedKey'")
+                            sanitized.map {
+                                if (it.isSelected && it.key != firstSelectedKey) it.copy(isSelected = false)
+                                else it
+                            }
+                        }
+                        selectedCount == 0 -> {
+                            // None selected — default to Cloudflare Family if present
+                            val defaultKey = protect.yourself.features.blockerPage.utils.DefaultDnsPresets.CLOUDFLARE_FAMILY.key
+                            Timber.w("BUG-07: backup had no selected DNS preset — defaulting to '$defaultKey'")
+                            sanitized.map {
+                                if (it.key == defaultKey) it.copy(isSelected = true)
+                                else it
+                            }
+                        }
+                        else -> sanitized
+                    }
+                    db.vpnCustomDnsDao().upsertAll(normalized)
+                    vpnCustomDnsCount = normalized.size
                 }
             }
         }

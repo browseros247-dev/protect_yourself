@@ -64,6 +64,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import protect.yourself.R
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.vpnCustomDns.VpnCustomDnsItemModel
+import protect.yourself.features.blockerPage.BlockerPageNavigation
 import protect.yourself.features.blockerPage.BlockerPageViewModel
 import protect.yourself.features.blockerPage.identifiers.VpnConnectionTypeIdentifiers
 import protect.yourself.features.blockerPage.service.MyVpnService
@@ -112,6 +113,19 @@ fun VpnManagementPage(
 
     // Load the VPN management state when the page opens.
     LaunchedEffect(Unit) { viewModel.loadVpnManagementState() }
+
+    // BUG-05 fix: collect ONLY the VpnCustomDnsPresetAdded event here to
+    // dismiss the Add Custom DNS dialog after the DB write succeeds. The
+    // parent (BlockerPageHome) does NOT handle this event, so there is no
+    // double-handling risk. Other navigation events (RestartVpn, ShowToast,
+    // etc.) are still handled by the parent only — see FIX 2.1 comment above.
+    LaunchedEffect(Unit) {
+        viewModel.navigation.collect { nav ->
+            if (nav is BlockerPageNavigation.VpnCustomDnsPresetAdded) {
+                showAddDialog = false
+            }
+        }
+    }
 
     // FIX 2.1: Do NOT collect navigation events here. The parent
     // (BlockerPageHome) already collects from the same SharedFlow and
@@ -314,11 +328,15 @@ fun VpnManagementPage(
         AddCustomDnsDialog(
             onDismiss = { showAddDialog = false },
             onSave = { name, dns1, dns2 ->
-                if (viewModel.addCustomDnsPreset(name, dns1, dns2)) {
-                    showAddDialog = false
-                }
-                // If validation failed, the ViewModel already showed a toast —
-                // keep the dialog open so the user can fix their input.
+                // BUG-05 fix: do NOT auto-dismiss here. addCustomDnsPreset
+                // returns true after validation passes, but the DB write is
+                // still in flight (async via safeLaunch). The dialog is
+                // dismissed by the VpnCustomDnsPresetAdded event collector
+                // above, which fires only after the DB write succeeds. If
+                // the DB write fails, the dialog stays open and the safeLaunch
+                // catch block emits "Operation failed: <error>" so the user
+                // can retry.
+                viewModel.addCustomDnsPreset(name, dns1, dns2)
             }
         )
     }
@@ -699,6 +717,19 @@ private fun AddCustomDnsDialog(
     var dns1 by remember { mutableStateOf("") }
     var dns2 by remember { mutableStateOf("") }
 
+    // BUG-17 fix: live validation so the Save button is disabled and the
+    // user sees inline error messages while typing, instead of only getting
+    // a toast error after pressing Save. This requires a BlockerPageUtils
+    // instance — obtain it once via remember so we don't re-instantiate on
+    // every recomposition.
+    val utils = remember { protect.yourself.features.blockerPage.utils.BlockerPageUtils.getInstance() }
+    val isNameValid = name.isNotBlank()
+    val isDns1Valid = dns1.isNotBlank() && utils.isValidDNS(dns1.trim())
+    val isDns2Valid = dns2.isNotBlank() && utils.isValidDNS(dns2.trim())
+    // BUG-15 fix: also disable Save when DNS 1 == DNS 2 (no failover benefit).
+    val isDnsPairDistinct = dns1.trim() != dns2.trim()
+    val isFormValid = isNameValid && isDns1Valid && isDns2Valid && isDnsPairDistinct
+
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.vpn_custom_dns_add_dialog_title)) },
@@ -710,6 +741,7 @@ private fun AddCustomDnsDialog(
                     label = { Text(stringResource(R.string.vpn_custom_dns_add_dialog_hint_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
+                    isError = name.isNotEmpty() && !isNameValid,
                     colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = BrandOrange,
                         focusedLabelColor = BrandOrange,
@@ -723,6 +755,15 @@ private fun AddCustomDnsDialog(
                     label = { Text(stringResource(R.string.vpn_custom_dns_add_dialog_hint_dns1)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
+                    isError = dns1.isNotEmpty() && !isDns1Valid,
+                    supportingText = {
+                        if (dns1.isNotEmpty() && !isDns1Valid) {
+                            Text(
+                                "Enter a valid IPv4 or IPv6 address",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
                     colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = BrandOrange,
                         focusedLabelColor = BrandOrange,
@@ -736,6 +777,19 @@ private fun AddCustomDnsDialog(
                     label = { Text(stringResource(R.string.vpn_custom_dns_add_dialog_hint_dns2)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
+                    isError = dns2.isNotEmpty() && (!isDns2Valid || (dns2.isNotBlank() && !isDnsPairDistinct)),
+                    supportingText = {
+                        when {
+                            dns2.isNotEmpty() && !isDns2Valid -> Text(
+                                "Enter a valid IPv4 or IPv6 address",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            dns2.isNotBlank() && !isDnsPairDistinct -> Text(
+                                "DNS 2 must be different from DNS 1",
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
                     colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = BrandOrange,
                         focusedLabelColor = BrandOrange,
@@ -747,7 +801,8 @@ private fun AddCustomDnsDialog(
         confirmButton = {
             Button(
                 onClick = { onSave(name, dns1, dns2) },
-                enabled = name.isNotBlank() && dns1.isNotBlank() && dns2.isNotBlank(),
+                // BUG-17 fix: gate on live validation, not just non-blank.
+                enabled = isFormValid,
                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                     containerColor = BrandOrange,
                     contentColor = Color.White

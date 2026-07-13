@@ -86,12 +86,21 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
     /**
      * Returns the persisted VPN connection mode (NORMAL / POWERFUL / CUSTOM).
      * Defaults to NORMAL when nothing has been set yet.
+     *
+     * BUG-11 fix: log when the persisted value is OFF so it's visible in
+     * logs. OFF is not a valid runtime mode (the OFF state is represented
+     * by VPN_SWITCH=false), so encountering OFF here typically indicates
+     * either a fresh install (no value set yet) or a backup-restore issue
+     * from an older app version that used OFF as a stored value.
      */
     suspend fun getVpnConnectionType(): VpnConnectionTypeIdentifiers {
         val raw = dao.get(SwitchIdentifier.VPN_CONNECTION_TYPE)?.asString()
-        return VpnConnectionTypeIdentifiers.fromString(raw).let {
-            if (it == VpnConnectionTypeIdentifiers.OFF) VpnConnectionTypeIdentifiers.NORMAL else it
+        val parsed = VpnConnectionTypeIdentifiers.fromString(raw)
+        if (parsed == VpnConnectionTypeIdentifiers.OFF) {
+            Timber.w("VPN_CONNECTION_TYPE was OFF (raw='$raw') — coercing to NORMAL. This may indicate a fresh install or a backup-restore issue.")
+            return VpnConnectionTypeIdentifiers.NORMAL
         }
+        return parsed
     }
 
     /** Persists the VPN connection mode. */

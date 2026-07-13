@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import protect.yourself.R
@@ -113,6 +114,20 @@ class MyVpnService : VpnService() {
     // way to update a foreground service's notification.
     @Volatile private var vpnState: VpnState = VpnState.IDLE
 
+    /**
+     * Update [vpnState] AND mirror the new value to the companion-level
+     * [observableVpnState] so the UI can read the actual service state.
+     * BUG-06 fix: the UI previously only saw the DB-persisted VPN_SWITCH
+     * (which can be out of sync — see BUG-02), not the live service state.
+     *
+     * Use this method instead of assigning `vpnState = ...` directly so the
+     * companion-level mirror is always in sync.
+     */
+    private fun setVpnState(state: VpnState) {
+        vpnState = state
+        observableVpnState = state
+    }
+
     enum class VpnState { IDLE, CONNECTING, CONNECTED, FAILED }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -122,7 +137,19 @@ class MyVpnService : VpnService() {
         // "Connecting…" notification BEFORE the async startVpn() coroutine.
         // This prevents the system from killing the service during the
         // startup window (DB reads + establish() can take 500ms+).
-        if (intent?.action == ACTION_START || intent?.action == ACTION_RESTART || intent?.action == null) {
+        //
+        // BUG-01b fix: ACTION_STOP must also call startForeground() because
+        // BUG-01 fix changed stop() to use startForegroundService() on API
+        // 26+. The system requires any service started via
+        // startForegroundService() to call startForeground() within 5
+        // seconds, regardless of whether the service intends to stop
+        // itself immediately. Without this, the system throws
+        // ForegroundServiceDidNotStartInTimeException.
+        if (intent?.action == ACTION_START ||
+            intent?.action == ACTION_RESTART ||
+            intent?.action == ACTION_STOP ||
+            intent?.action == null
+        ) {
             try {
                 val placeholderNotif = buildNotification(
                     getString(R.string.vpn_notification_text),
@@ -183,7 +210,7 @@ class MyVpnService : VpnService() {
             return
         }
 
-        vpnState = VpnState.CONNECTING
+        setVpnState(VpnState.CONNECTING)
         protect.yourself.core.ProtectYourselfApp.getCrashLogger()
             ?.logBreadcrumb("VpnService", "startVpn requested")
         serviceScope.launch {
@@ -234,7 +261,7 @@ class MyVpnService : VpnService() {
                 if (!utils.isValidDNS(firstDns) || !utils.isValidDNS(secondDns)) {
                     Timber.e("Invalid DNS addresses: $firstDns, $secondDns")
                     isStarting.set(false)
-                    vpnState = VpnState.FAILED
+                    setVpnState(VpnState.FAILED)
                     stopSelf()
                     return@launch
                 }
@@ -308,15 +335,34 @@ class MyVpnService : VpnService() {
                 if (vpnInterface == null) {
                     Timber.e("Failed to establish VPN interface — user may have revoked permission")
                     isStarting.set(false)
-                    vpnState = VpnState.FAILED
+                    setVpnState(VpnState.FAILED)
                     switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
                     stopSelf()
                     return@launch
                 }
 
+                // BUG-04 fix: post-establish staleness check. If a newer
+                // restart was issued while we were inside establish() (which
+                // can take 500ms+), stopVpn() would have reset isStarting to
+                // false. Detect that here and tear down our stale establish()
+                // result so the newer startVpn() can take over with the
+                // updated DNS / connection type. Without this check, the VPN
+                // would end up running with the OLD DNS while the UI shows
+                // the NEW mode — a silent protection failure.
+                if (!isStarting.get()) {
+                    Timber.w("startVpn: stale establish() — a newer restart was requested during establish(), tearing down")
+                    try { vpnInterface?.close() } catch (_: Throwable) {}
+                    vpnInterface = null
+                    isRunning = false
+                    setVpnState(VpnState.IDLE)
+                    // Do NOT call stopSelf() — the newer startVpn() will
+                    // re-establish. Just return from this stale invocation.
+                    return@launch
+                }
+
                 isRunning = true
                 isStarting.set(false)
-                vpnState = VpnState.CONNECTED
+                setVpnState(VpnState.CONNECTED)
 
                 // 8. Get notification message (custom or default)
                 val isHideNotification = switchValues.isVpnNotificationHideSwitchOn()
@@ -341,7 +387,7 @@ class MyVpnService : VpnService() {
             } catch (t: Throwable) {
                 Timber.e(t, "Failed to start VPN")
                 isStarting.set(false)
-                vpnState = VpnState.FAILED
+                setVpnState(VpnState.FAILED)
                 protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
                     throwable = t,
                     tag = "VpnService",
@@ -372,8 +418,18 @@ class MyVpnService : VpnService() {
             vpnInterface?.close()
             vpnInterface = null
             isRunning = false
+            // BUG-04 fix: reset isStarting so that a restart issued while a
+            // previous startVpn() is still in-flight (e.g. establish() is
+            // taking 500ms+) is NOT skipped by the AtomicBoolean guard in
+            // startVpn(). Without this reset, the second startVpn() call
+            // would see isStarting=true and return early, leaving the VPN
+            // running with the OLD DNS after establish() from the first
+            // call completes. The post-establish staleness check below
+            // (also part of BUG-04 fix) catches the case where establish()
+            // already returned by the time stopVpn() runs.
+            isStarting.set(false)
             currentConnectionType = VpnConnectionTypeIdentifiers.OFF
-            vpnState = VpnState.IDLE
+            setVpnState(VpnState.IDLE)
             Timber.i("VPN stopped")
         } catch (t: Throwable) {
             Timber.w(t, "Error stopping VPN")
@@ -459,12 +515,30 @@ class MyVpnService : VpnService() {
         super.onRevoke()
         stopVpn()
 
-        serviceScope.launch {
-            try {
+        // BUG-02 fix: persist VPN_SWITCH=false SYNCHRONOUSLY before stopSelf().
+        // The previous implementation launched a coroutine on serviceScope to
+        // do this, but stopSelf() immediately triggers onDestroy() which
+        // cancels serviceScope — the coroutine was being cancelled mid-DB
+        // write, leaving VPN_SWITCH=true in the database while the VPN was
+        // actually dead. This caused the UI to show "Connected" indefinitely
+        // and VpnRestartWorker to repeatedly fail on every boot.
+        //
+        // runBlocking is safe here because:
+        //  - onRevoke() is called on a system binder thread, not the main
+        //    thread (no ANR risk from main-thread blocking).
+        //  - The DB write is fast (~10ms) and the DB is already open.
+        //  - The cost of blocking the binder thread for 10ms is far less
+        //    than the cost of leaving the user's protection state silently
+        //    out of sync.
+        try {
+            kotlinx.coroutines.runBlocking {
                 val db = AppDatabase.getInstance(this@MyVpnService)
                 SwitchStatusValues(db.switchStatusDao())
                     .storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
-            } catch (_: Throwable) {}
+            }
+            Timber.i("VPN_SWITCH set to false (revoked by system)")
+        } catch (t: Throwable) {
+            Timber.e(t, "Failed to sync VPN_SWITCH=false on revoke — DB may be out of sync")
         }
 
         stopSelf()
@@ -484,25 +558,77 @@ class MyVpnService : VpnService() {
         private const val VPN_PREFIX_LENGTH = 24
         private const val VPN_MTU = 1500
 
+        // BUG-06 fix: companion-level observable state. The instance-level
+        // setVpnState() method mirrors vpnState here so the UI can read the
+        // actual service state (IDLE / CONNECTING / CONNECTED / FAILED)
+        // rather than the DB-persisted VPN_SWITCH (which can be out of sync
+        // — see BUG-02 / BUG-06). This is a simple @Volatile var instead of
+        // a StateFlow to keep the implementation simple and compatible with
+        // the Kotlin 1.9 kapt fallback.
+        @Volatile
+        var observableVpnState: VpnState = VpnState.IDLE
+            private set
+
         fun start(context: Context) {
             val intent = Intent(context, MyVpnService::class.java).apply {
                 action = ACTION_START
             }
-            context.startService(intent)
+            // BUG-01 fix: use startForegroundService() on API 26+ so the
+            // system knows to enforce the 5-second startForeground() deadline.
+            // Without this, startService() throws IllegalStateException on
+            // Android 8+ when the app is in the background (e.g. when called
+            // from VpnRestartWorker after a reboot), which means the VPN
+            // silently fails to auto-restart after boot. NopoX 1.0.53 does
+            // this correctly via VpnServiceUtils.vpnServiceAction().
+            startForegroundServiceCompat(context, intent)
         }
 
         fun stop(context: Context) {
             val intent = Intent(context, MyVpnService::class.java).apply {
                 action = ACTION_STOP
             }
-            context.startService(intent)
+            // BUG-01 fix: see start() above for rationale.
+            // Note: onStartCommand handles ACTION_STOP by calling
+            // startForegroundCompat() early (BUG-01b fix) before stopSelf(),
+            // satisfying the 5-second deadline.
+            startForegroundServiceCompat(context, intent)
         }
 
         fun restart(context: Context) {
             val intent = Intent(context, MyVpnService::class.java).apply {
                 action = ACTION_RESTART
             }
-            context.startService(intent)
+            // BUG-01 fix: see start() above for rationale.
+            startForegroundServiceCompat(context, intent)
+        }
+
+        /**
+         * Helper: starts the VPN service using the correct API for the
+         * Android version. On API 26+ uses
+         * [ContextCompat.startForegroundService] (which internally calls
+         * [Context.startForegroundService]); below API 26 uses
+         * [Context.startService] (because startForegroundService does not
+         * exist on older APIs).
+         *
+         * The caller MUST ensure that [MyVpnService.onStartCommand] calls
+         * [MyVpnService.startForegroundCompat] within 5 seconds when invoked
+         * via this method, otherwise the system throws
+         * ForegroundServiceDidNotStartInTimeException on API 26+.
+         */
+        private fun startForegroundServiceCompat(context: Context, intent: Intent) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    ContextCompat.startForegroundService(context, intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (t: Throwable) {
+                // Last-resort: catch SecurityException / IllegalStateException
+                // so a failure to start the service does not crash the caller
+                // (typically the UI thread). The user will see the VPN toggle
+                // remain OFF, which is correct feedback.
+                Timber.e(t, "Failed to start VPN service (action=${intent.action})")
+            }
         }
 
         fun isRunning(): Boolean = instance?.isRunning ?: false
