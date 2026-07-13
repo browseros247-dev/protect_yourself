@@ -21,6 +21,7 @@
     <!-- Each message explains WHY the block fired, so the user understands the
          context rather than seeing a generic "blocked" screen. -->
     <string name="block_page_default_block_apps_message">This app is on your blocklist.</string>
+    <string name="block_page_default_scheduled_app_message">This app is scheduled to be blocked right now.</string>
     <string name="block_page_default_new_install_message">This app was just installed. Block new install apps is on.</string>
     <string name="block_page_default_unsupported_browser_message">This browser isn\'t on your supported list. Use a supported browser or add it to the whitelist.</string>
     <string name="block_page_default_in_app_browser_message">In-app browsers are blocked inside this app.</string>

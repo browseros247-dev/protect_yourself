@@ -570,6 +570,16 @@ class MyAccessibilityService : AccessibilityService() {
             return
         }
 
+        // Phase 4: Scheduled launch blocking.
+        // If this app is in the scheduled block set (managed by ScheduleEngine),
+        // block it immediately. This mirrors the cachedBlockApps pattern but
+        // is driven by the Scheduler Engine rather than the static blocklist.
+        if (cachedScheduledBlockApps.contains(packageName)) {
+            Timber.i("Scheduled block: blocking app $packageName (scheduled launch restriction active)")
+            launchBlockActivity(packageName, "block_page_default_scheduled_app_message")
+            return
+        }
+
         // Block new install apps
         // NIB-03 fix (v1.0.60): add diagnostic logging at every decision branch
         // so "new install blocking not working" reports can be traced through
