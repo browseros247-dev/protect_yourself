@@ -18,8 +18,6 @@ import protect.yourself.database.stopMeDuration.StopMeDurationDao
 import protect.yourself.database.stopMeDuration.StopMeDurationItemModel
 import protect.yourself.database.stopMeSessionCount.StopMeSessionCountDao
 import protect.yourself.database.stopMeSessionCount.StopMeSessionCountItemModel
-import protect.yourself.database.streakDates.StreakDatesDao
-import protect.yourself.database.streakDates.StreakDatesItemModel
 import protect.yourself.database.switchStatus.SwitchStatusDao
 import protect.yourself.database.switchStatus.SwitchStatusItemModel
 import protect.yourself.database.vpnCustomDns.VpnCustomDnsDao
@@ -47,11 +45,10 @@ import timber.log.Timber
         SelectedKeywordItemModel::class,
         StopMeDurationItemModel::class,
         StopMeSessionCountItemModel::class,
-        StreakDatesItemModel::class,
         SwitchStatusItemModel::class,
         VpnCustomDnsItemModel::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -62,7 +59,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun selectedKeywordDao(): SelectedKeywordDao
     abstract fun stopMeDurationDao(): StopMeDurationDao
     abstract fun stopMeSessionCountDao(): StopMeSessionCountDao
-    abstract fun streakDatesDao(): StreakDatesDao
     abstract fun switchStatusDao(): SwitchStatusDao
     abstract fun vpnCustomDnsDao(): VpnCustomDnsDao
 
@@ -79,11 +75,11 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     // v8 → v9: add display_name column to vpn_custom_dns.
                     // IMPORTANT: we add the migration BEFORE fallbackToDestructiveMigration()
-                    // so that existing v1.0.33 users keep their data (streak, block count,
+                    // so that existing v1.0.33 users keep their data (block count,
                     // keywords, app lists, etc.) when they upgrade to v1.0.34+.
                     // fallbackToDestructiveMigration() is only a last-resort fallback
                     // for any future schema bumps that don't have a migration written.
-                    .addMigrations(MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_10_11).addMigrations(MIGRATION_8_9, MIGRATION_9_10)
                     .fallbackToDestructiveMigration()
                     .addCallback(AppDatabaseCallback(context.applicationContext))
                     .build()
@@ -105,6 +101,12 @@ abstract class AppDatabase : RoomDatabase() {
          * This catches users upgrading from pre-v1.0.49 builds that had
          * snake_case columns.
          */
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("DROP TABLE IF EXISTS streak_dates_table")
+            }
+        }
+
         private val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 Timber.i("Running migration v8 → v9: adding displayName to vpn_custom_dns")

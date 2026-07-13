@@ -303,18 +303,6 @@
                 android:resource="@xml/stop_me_widget_info" />
         </receiver>
 
-        <!-- Streak widget -->
-        <receiver
-            android:name="protect.yourself.features.streakPage.widget.StreakWidget"
-            android:exported="false"
-            android:label="@string/streak">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/streak_widget_info" />
-        </receiver>
 
         <!-- Stop Me alarm receiver (for session start/end) -->
         <receiver

@@ -198,7 +198,6 @@ fun BackupRestorePage(
                     "Blocklist + whitelist keywords (${state.stats.keywordCount} entries)",
                     "Selected apps: browsers, social media, block list, VPN whitelist (${state.stats.appCount} entries)",
                     "Stop Me sessions + schedule (${state.stats.stopMeDurationCount} entries)",
-                    "Streak history + relapse records (${state.stats.streakDatesCount} entries)",
                     "VPN custom DNS presets (${state.stats.vpnCustomDnsCount} entries)",
                     "Block screen count: ${state.stats.blockScreenCountCount}",
                     "Stop Me session count: ${state.stats.stopMeSessionCountCount}",
@@ -317,7 +316,6 @@ fun BackupRestorePage(
                     Text("• Switch settings: ${success.stats.switchCount}", style = MaterialTheme.typography.bodySmall)
                     Text("• Keywords: ${success.stats.keywordCount}", style = MaterialTheme.typography.bodySmall)
                     Text("• Apps: ${success.stats.appCount}", style = MaterialTheme.typography.bodySmall)
-                    Text("• Streak history: ${success.stats.streakDatesCount}", style = MaterialTheme.typography.bodySmall)
                     Text("• Stop Me sessions: ${success.stats.stopMeDurationCount}", style = MaterialTheme.typography.bodySmall)
                     Text("• VPN DNS presets: ${success.stats.vpnCustomDnsCount}", style = MaterialTheme.typography.bodySmall)
                     Spacer(modifier = Modifier.height(8.dp))

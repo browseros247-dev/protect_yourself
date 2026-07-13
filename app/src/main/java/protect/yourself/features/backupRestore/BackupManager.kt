@@ -20,7 +20,6 @@ import protect.yourself.database.selectedApps.SelectedAppItemModel
 import protect.yourself.database.selectedKeywords.SelectedKeywordItemModel
 import protect.yourself.database.stopMeDuration.StopMeDurationItemModel
 import protect.yourself.database.stopMeSessionCount.StopMeSessionCountItemModel
-import protect.yourself.database.streakDates.StreakDatesItemModel
 import protect.yourself.database.switchStatus.SwitchStatusItemModel
 import protect.yourself.database.vpnCustomDns.VpnCustomDnsItemModel
 import timber.log.Timber
@@ -57,7 +56,6 @@ import java.util.Locale
  *     "partner_pending_request_table": [...],
  *     "stop_me_duration_table": [...],
  *     "stop_me_session_count_table": [...],
- *     "streak_dates_table": [...],
  *     "vpn_custom_dns": [...]
  *   },
  *   "stats": {
@@ -243,7 +241,6 @@ class BackupManager(private val context: Context) {
                 pendingRequestCount = restoredCounts.pendingRequestCount,
                 stopMeDurationCount = restoredCounts.stopMeDurationCount,
                 stopMeSessionCountCount = restoredCounts.stopMeSessionCount,
-                streakDatesCount = restoredCounts.streakDatesCount,
                 vpnCustomDnsCount = restoredCounts.vpnCustomDnsCount,
                 totalRows = restoredCounts.totalRows
             )
@@ -303,7 +300,6 @@ class BackupManager(private val context: Context) {
             pendingRequests = db.pendingRequestDao().getAll(),
             stopMeDuration = db.stopMeDurationDao().getAll(),
             stopMeSessionCount = db.stopMeSessionCountDao().getAll(),
-            streakDates = db.streakDatesDao().getAll(),
             vpnCustomDns = db.vpnCustomDnsDao().getAll()
         )
     }
@@ -317,12 +313,11 @@ class BackupManager(private val context: Context) {
             pendingRequestCount = data.pendingRequests.size,
             stopMeDurationCount = data.stopMeDuration.size,
             stopMeSessionCountCount = data.stopMeSessionCount.size,
-            streakDatesCount = data.streakDates.size,
             vpnCustomDnsCount = data.vpnCustomDns.size,
             totalRows = data.switchStatus.size + data.selectedKeywords.size +
                 data.selectedApps.size + data.blockScreenCount.size +
                 data.pendingRequests.size + data.stopMeDuration.size +
-                data.stopMeSessionCount.size + data.streakDates.size +
+                data.stopMeSessionCount.size +
                 data.vpnCustomDns.size
         )
 
@@ -344,7 +339,6 @@ class BackupManager(private val context: Context) {
                 pendingRequests = data.pendingRequests,
                 stopMeDuration = data.stopMeDuration,
                 stopMeSessionCount = data.stopMeSessionCount,
-                streakDates = data.streakDates,
                 vpnCustomDns = data.vpnCustomDns
             ),
             stats = stats
@@ -494,7 +488,6 @@ class BackupManager(private val context: Context) {
         db.pendingRequestDao().deleteAll()
         db.stopMeDurationDao().deleteAll()
         db.stopMeSessionCountDao().deleteAll()
-        db.streakDatesDao().deleteAll()
         if (!tables.vpnCustomDns.isNullOrEmpty()) {
             db.vpnCustomDnsDao().deleteAll()
         } else {
@@ -509,7 +502,6 @@ class BackupManager(private val context: Context) {
         var pendingRequestCount = 0
         var stopMeDurationCount = 0
         var stopMeSessionCount = 0
-        var streakDatesCount = 0
         var vpnCustomDnsCount = 0
 
         // switch_status — PK: key (String, required)
@@ -639,25 +631,6 @@ class BackupManager(private val context: Context) {
             }
         }
 
-        // streak_dates_table — PK: startTime (Long, required)
-        tables.streakDates?.let { list ->
-            if (list.isNotEmpty()) {
-                val sanitized = list.filter { item ->
-                    // startTime is a Long — can't be null in JVM after Gson (defaults to 0L)
-                    // but we keep the filter for symmetry + future-proofing
-                    true
-                }.map { item ->
-                    item.copy(
-                        startTime = item.startTime,
-                        endTime = item.endTime,
-                        type = item.type ?: "",
-                        freeText = item.freeText ?: ""
-                    )
-                }
-                if (sanitized.isNotEmpty()) {
-                    db.streakDatesDao().upsertAll(sanitized)
-                    streakDatesCount = sanitized.size
-                }
             }
         }
 
@@ -730,7 +703,7 @@ class BackupManager(private val context: Context) {
 
         val total = switchCount + keywordCount + appCount + blockScreenCount +
             pendingRequestCount + stopMeDurationCount + stopMeSessionCount +
-            streakDatesCount + vpnCustomDnsCount
+            vpnCustomDnsCount
 
         return RestoredCounts(
             switchCount = switchCount,
@@ -740,7 +713,6 @@ class BackupManager(private val context: Context) {
             pendingRequestCount = pendingRequestCount,
             stopMeDurationCount = stopMeDurationCount,
             stopMeSessionCount = stopMeSessionCount,
-            streakDatesCount = streakDatesCount,
             vpnCustomDnsCount = vpnCustomDnsCount,
             totalRows = total
         )
@@ -801,7 +773,6 @@ data class BackupTables(
     val pendingRequests: List<PendingRequestItemModel>? = null,
     val stopMeDuration: List<StopMeDurationItemModel>? = null,
     val stopMeSessionCount: List<StopMeSessionCountItemModel>? = null,
-    val streakDates: List<StreakDatesItemModel>? = null,
     val vpnCustomDns: List<VpnCustomDnsItemModel>? = null
 )
 
@@ -816,7 +787,6 @@ private data class BackupTablesContainer(
     val pendingRequests: List<PendingRequestItemModel>,
     val stopMeDuration: List<StopMeDurationItemModel>,
     val stopMeSessionCount: List<StopMeSessionCountItemModel>,
-    val streakDates: List<StreakDatesItemModel>,
     val vpnCustomDns: List<VpnCustomDnsItemModel>
 )
 
@@ -831,7 +801,6 @@ data class BackupStats(
     val pendingRequestCount: Int = 0,
     val stopMeDurationCount: Int = 0,
     val stopMeSessionCountCount: Int = 0,
-    val streakDatesCount: Int = 0,
     val vpnCustomDnsCount: Int = 0,
     val totalRows: Int = 0
 )
@@ -844,7 +813,6 @@ private data class RestoredCounts(
     val pendingRequestCount: Int,
     val stopMeDurationCount: Int,
     val stopMeSessionCount: Int,
-    val streakDatesCount: Int,
     val vpnCustomDnsCount: Int,
     val totalRows: Int
 )

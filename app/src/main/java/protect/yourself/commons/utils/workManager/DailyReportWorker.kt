@@ -15,7 +15,6 @@ import timber.log.Timber
  *
  * Behavior:
  *  - Reads block_screen_count from DB
- *  - Reads current streak days
  *  - Shows daily_report_channel notification with summary
  *
  * Also checks Stop Me scheduled sessions + accessibility service state.
@@ -82,20 +81,12 @@ class DailyReportWorker(
                 0
             }
 
-            // 2. Get current streak (active days)
-            val streakDays = try {
-                db.streakDatesDao().countActiveStreakDays()
-            } catch (t: Throwable) {
-                Timber.w(t, "DailyReportWorker: failed to read streak days — defaulting to 0")
-                0
-            }
 
             // 3. Show daily report notification
             try {
                 NotificationHelper.showDailyReportNotification(
                     context = context,
                     blockCount = blockCount,
-                    streakDays = streakDays
                 )
             } catch (t: Throwable) {
                 Timber.e(t, "DailyReportWorker: failed to show daily report notification")
@@ -106,12 +97,11 @@ class DailyReportWorker(
                     message = "Failed to show daily report notification",
                     extraContext = mapOf(
                         "blockCount" to blockCount.toString(),
-                        "streakDays" to streakDays.toString()
                     )
                 )
             }
 
-            Timber.i("DailyReportWorker completed: blockCount=$blockCount streakDays=$streakDays")
+            Timber.i("DailyReportWorker completed: blockCount=$blockCount")
             Result.success()
         } catch (t: Throwable) {
             Timber.e(t, "DailyReportWorker failed")

@@ -21,7 +21,6 @@ import protect.yourself.database.selectedKeywords.SelectedKeywordIdentifier
 import protect.yourself.database.selectedKeywords.SelectedKeywordItemModel
 import protect.yourself.database.stopMeDuration.StopMeDurationItemModel
 import protect.yourself.database.stopMeSessionCount.StopMeSessionCountItemModel
-import protect.yourself.database.streakDates.StreakDatesItemModel
 import protect.yourself.database.vpnCustomDns.VpnCustomDnsItemModel
 
 /**
@@ -200,41 +199,6 @@ class AllDaosTest {
         assertThat(active!!.key).isEqualTo("active")
     }
 
-    // ===== StreakDatesDao =====
-
-    @Test
-    fun `streakDatesDao upsert and observeAll`() = runBlocking {
-        val now = System.currentTimeMillis()
-        db.streakDatesDao().upsert(StreakDatesItemModel(now - 86400000L, now - 86400000L + 86399999L, "", ""))
-        db.streakDatesDao().upsert(StreakDatesItemModel(now, now + 86399999L, "", ""))
-        val all = db.streakDatesDao().observeAll().first()
-        assertThat(all).hasSize(2)
-    }
-
-    @Test
-    fun `streakDatesDao separates active and relapse days`() = runBlocking {
-        val now = System.currentTimeMillis()
-        db.streakDatesDao().upsert(StreakDatesItemModel(now - 86400000L * 2, now - 86400000L * 2 + 86399999L, "", ""))
-        db.streakDatesDao().upsert(StreakDatesItemModel(now - 86400000L, now - 86400000L + 86399999L, "URGE", "gave in"))
-        db.streakDatesDao().upsert(StreakDatesItemModel(now, now + 86399999L, "", ""))
-
-        val active = db.streakDatesDao().observeActiveStreakDays().first()
-        val relapse = db.streakDatesDao().observeRelapseDays().first()
-
-        assertThat(active).hasSize(2)
-        assertThat(relapse).hasSize(1)
-        assertThat(relapse[0].type).isEqualTo("URGE")
-    }
-
-    @Test
-    fun `streakDatesDao countActiveStreakDays returns correct count`() = runBlocking {
-        val now = System.currentTimeMillis()
-        db.streakDatesDao().upsert(StreakDatesItemModel(now - 86400000L * 2, 0, "", ""))
-        db.streakDatesDao().upsert(StreakDatesItemModel(now - 86400000L, 0, "", ""))
-        db.streakDatesDao().upsert(StreakDatesItemModel(now, 0, "URGE", ""))
-
-        assertThat(db.streakDatesDao().countActiveStreakDays()).isEqualTo(2)
-    }
 
     // ===== VpnCustomDnsDao =====
 

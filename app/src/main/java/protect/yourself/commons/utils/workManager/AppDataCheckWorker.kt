@@ -16,7 +16,6 @@ import timber.log.Timber
  *  - Runs every 24 hours
  *  - Checks DB integrity
  *  - Re-applies accessibility blocking values if drifted
- *  - Updates streak data (rolls over to next day if needed)
  *  - Checks for due Stop Me scheduled sessions
  *
  * Phase 2: minimal implementation — just logs + ensures DB is healthy.
@@ -58,26 +57,8 @@ class AppDataCheckWorker(
                 Timber.w("Porn blocker switch missing — DB may need re-population")
             }
 
-            // PM-04 fix: streak date rollover. If today is a new day and no
-            // streak entry exists for today, insert one. This ensures the streak
-            // counter increments even if the user doesn't open the Streak page.
-            val now = System.currentTimeMillis()
-            val todayStart = getDayStart(now)
-            val existingToday = db.streakDatesDao().getAll().any { it.startTime == todayStart }
-            if (!existingToday) {
-                db.streakDatesDao().upsert(
-                    protect.yourself.database.streakDates.StreakDatesItemModel(
-                        startTime = todayStart,
-                        endTime = now,
-                        type = "",
-                        freeText = ""
-                    )
-                )
-                Timber.i("PM-04: Inserted streak entry for today (startTime=$todayStart)")
-            }
-
             // PM-04 fix: check due Stop Me scheduled sessions
-            protect.yourself.features.blockerPage.utils.StopMeManager
+                        protect.yourself.features.blockerPage.utils.StopMeManager
                 .getInstance(applicationContext).checkDueSchedules()
 
             // PM-04 fix: re-apply accessibility blocking config
@@ -109,8 +90,7 @@ class AppDataCheckWorker(
 
         /**
          * Returns the start of the day (midnight local time) for the given
-         * timestamp. Used by streak date rollover to determine if a streak
-         * entry already exists for "today".
+         * timestamp for determining if an entry already exists for "today".
          */
         private fun getDayStart(timestamp: Long): Long {
             val cal = java.util.Calendar.getInstance()

@@ -82,7 +82,6 @@ class AppSystemActionReceiverAllTime : BroadcastReceiver() {
                                         AppDatabase.getInstance(context).blockScreenCountDao()
                                             .getCount()?.count ?: 0
                                     } catch (_: Throwable) { 0 },
-                                    streakDays = 0
                                 )
                         } catch (_: Throwable) {}
                     }

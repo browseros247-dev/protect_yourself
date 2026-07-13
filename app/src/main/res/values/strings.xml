@@ -5,7 +5,7 @@
     <string name="app_name">Protect Yourself</string>
 
     <!-- Bottom nav -->
-    <string name="streak">Streak</string>
+    <string name="schedule">Schedule</string>
     <string name="profile">Profile</string>
 
     <!-- Block screen -->
@@ -176,11 +176,9 @@
     <!-- Daily report notification -->
     <string name="daily_report_channel">Daily report</string>
     <string name="daily_report_title">Today\'s report</string>
-    <string name="daily_report_text">Blocks today: %1$d. Current streak: %2$d days.</string>
+    <string name="daily_report_text">Blocks today: %1$d.</string>
 
     <!-- App-specific -->
-    <string name="streak_widget_initial_text">0</string>
-    <string name="streak_widget_days_label">days</string>
 
     <!-- App Lock settings cards (mirrors NopoX 1.0.53 reference) -->
     <string name="set_app_lock_card_title">Set app lock</string>

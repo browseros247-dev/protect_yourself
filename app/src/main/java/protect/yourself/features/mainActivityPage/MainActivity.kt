@@ -17,9 +17,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -59,7 +59,6 @@ import protect.yourself.features.blockerPage.components.BlockerPageHome
 // About tab removed — About info is in Profile page
 import protect.yourself.features.mainActivityPage.repository.MainPageScreen
 import protect.yourself.features.profilePage.components.ProfilePage
-import protect.yourself.features.streakPage.components.StreakPage
 import protect.yourself.theme.AppTheme
 import protect.yourself.theme.BrandOrange
 import timber.log.Timber
@@ -87,7 +86,7 @@ class MainActivity : FragmentActivity() {
     private var appState by mutableStateOf(AppState.LOADING)
 
     // Deep-link target tab. Set when the activity is launched/re-launched
-    // via StreakWidget (which puts EXTRA_OPEN_TAB = "Streak" on the intent).
+    // via a widget deep-link.
     // Consumed by MainScreen on the next recomposition.
     private var pendingTab by mutableStateOf<MainPageScreen?>(null)
 
@@ -204,7 +203,7 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         // Read deep-link extra when the activity is already running and the
-        // user taps a widget (e.g. StreakWidget → switch to Streak tab).
+        // user taps a widget deep-link.
         readTabExtra(intent)
     }
 
@@ -289,7 +288,6 @@ private fun OnboardingPage(onAccept: (openAccessibilitySettings: Boolean) -> Uni
                 Text("• Block adult content via keyword matching (1,189+ keywords)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                 Text("• VPN DNS filtering (Cloudflare Family, OpenDNS, etc.)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                 Text("• Stop Me focus mode with widgets", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-                Text("• Streak tracking with achievements", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                 Text("• App lock (PIN/Password/Pattern + Biometric)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                 Text("• Anti-uninstall protection", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
             }
@@ -396,7 +394,7 @@ private fun MainScreen(
 ) {
     var selectedTab by remember { mutableStateOf(MainPageScreen.Home) }
 
-    // Consume a deep-link tab request (e.g. from StreakWidget) by switching
+    // Consume a deep-link tab request by switching
     // to the requested tab once, then clearing the request.
     LaunchedEffect(requestedTab) {
         if (requestedTab != null) {
@@ -415,7 +413,7 @@ private fun MainScreen(
         ) {
             when (selectedTab) {
                 MainPageScreen.Home -> BlockerPageHome()
-                MainPageScreen.Streak -> StreakPage()
+                MainPageScreen.Schedule -> Text("Schedule")
                 MainPageScreen.Profile -> ProfilePage()
             }
         }
@@ -446,6 +444,6 @@ private fun AppBottomBar(
 
 private fun MainPageScreen.vectorIcon(): ImageVector = when (this) {
     MainPageScreen.Home -> Icons.Filled.Shield
-    MainPageScreen.Streak -> Icons.Filled.LocalFireDepartment
+    MainPageScreen.Schedule -> Icons.Filled.Schedule
     MainPageScreen.Profile -> Icons.Filled.Person
 }
