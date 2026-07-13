@@ -206,7 +206,7 @@ fun ProfilePage() {
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Delete account?") },
             text = {
-                Text("All data, including streak progress, will be cleared. This cannot be undone.")
+                Text("All data, including schedule history and settings, will be cleared. This cannot be undone.")
             },
             confirmButton = {
                 TextButton(onClick = {

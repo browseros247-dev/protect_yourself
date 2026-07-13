@@ -13,12 +13,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -59,7 +60,6 @@ import protect.yourself.features.blockerPage.components.BlockerPageHome
 // About tab removed — About info is in Profile page
 import protect.yourself.features.mainActivityPage.repository.MainPageScreen
 import protect.yourself.features.profilePage.components.ProfilePage
-import protect.yourself.features.streakPage.components.StreakPage
 import protect.yourself.theme.AppTheme
 import protect.yourself.theme.BrandOrange
 import timber.log.Timber
@@ -289,7 +289,7 @@ private fun OnboardingPage(onAccept: (openAccessibilitySettings: Boolean) -> Uni
                 Text("• Block adult content via keyword matching (1,189+ keywords)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                 Text("• VPN DNS filtering (Cloudflare Family, OpenDNS, etc.)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                 Text("• Stop Me focus mode with widgets", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-                Text("• Streak tracking with achievements", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                Text("• Scheduled app restrictions (internet + launch blocking)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                 Text("• App lock (PIN/Password/Pattern + Biometric)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                 Text("• Anti-uninstall protection", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
             }
@@ -415,7 +415,7 @@ private fun MainScreen(
         ) {
             when (selectedTab) {
                 MainPageScreen.Home -> BlockerPageHome()
-                MainPageScreen.Streak -> StreakPage()
+                MainPageScreen.Schedule -> SchedulePlaceholderPage()
                 MainPageScreen.Profile -> ProfilePage()
             }
         }
@@ -446,6 +446,43 @@ private fun AppBottomBar(
 
 private fun MainPageScreen.vectorIcon(): ImageVector = when (this) {
     MainPageScreen.Home -> Icons.Filled.Shield
-    MainPageScreen.Streak -> Icons.Filled.LocalFireDepartment
+    MainPageScreen.Schedule -> Icons.Filled.Schedule
     MainPageScreen.Profile -> Icons.Filled.Person
+}
+
+/**
+ * Placeholder for the Schedule tab — will be replaced by the full
+ * SchedulePage UI in Phase 5 of the Scheduled App Restrictions plan.
+ * This exists so the tab is visible and tappable during Phases 1-4.
+ */
+@Composable
+private fun SchedulePlaceholderPage() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Schedule,
+            contentDescription = null,
+            tint = BrandOrange,
+            modifier = Modifier.size(64.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Scheduled App Restrictions",
+            style = MaterialTheme.typography.headlineSmall,
+            color = BrandOrange,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Coming soon — this feature is being implemented.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }

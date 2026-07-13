@@ -6,13 +6,14 @@ import protect.yourself.R
 /**
  * Bottom nav screens.
  *
- * 3 tabs: Home, Streak, Profile.
- * About tab removed per user request — About info is accessible from Profile page.
+ * 3 tabs: Home, Schedule, Profile.
  *
- * The `route` field is used as a stable string identifier for deep-linking
- * (e.g. `EXTRA_OPEN_TAB = "Streak"` from StreakWidget). The `icon` field was
- * removed because MainActivity uses the `vectorIcon()` extension function for
- * ImageVector-based icons instead of @DrawableRes ints.
+ * Streak tab removed per user request — replaced by Schedule (Scheduled App
+ * Restrictions feature). The `route` field is used as a stable string
+ * identifier for deep-linking (e.g. `EXTRA_OPEN_TAB = "Schedule"` from a
+ * future Schedule widget). The `icon` field was removed because MainActivity
+ * uses the `vectorIcon()` extension function for ImageVector-based icons
+ * instead of @DrawableRes ints.
  */
 enum class MainPageScreen(
     val route: String,
@@ -22,9 +23,9 @@ enum class MainPageScreen(
         route = "Home",
         resourceId = R.string.app_name
     ),
-    Streak(
-        route = "Streak",
-        resourceId = R.string.streak
+    Schedule(
+        route = "Schedule",
+        resourceId = R.string.schedule_tab_label
     ),
     Profile(
         route = "Profile",

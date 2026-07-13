@@ -18,8 +18,6 @@ import protect.yourself.database.stopMeDuration.StopMeDurationDao
 import protect.yourself.database.stopMeDuration.StopMeDurationItemModel
 import protect.yourself.database.stopMeSessionCount.StopMeSessionCountDao
 import protect.yourself.database.stopMeSessionCount.StopMeSessionCountItemModel
-import protect.yourself.database.streakDates.StreakDatesDao
-import protect.yourself.database.streakDates.StreakDatesItemModel
 import protect.yourself.database.switchStatus.SwitchStatusDao
 import protect.yourself.database.switchStatus.SwitchStatusItemModel
 import protect.yourself.database.vpnCustomDns.VpnCustomDnsDao
@@ -47,11 +45,10 @@ import timber.log.Timber
         SelectedKeywordItemModel::class,
         StopMeDurationItemModel::class,
         StopMeSessionCountItemModel::class,
-        StreakDatesItemModel::class,
         SwitchStatusItemModel::class,
         VpnCustomDnsItemModel::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -62,7 +59,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun selectedKeywordDao(): SelectedKeywordDao
     abstract fun stopMeDurationDao(): StopMeDurationDao
     abstract fun stopMeSessionCountDao(): StopMeSessionCountDao
-    abstract fun streakDatesDao(): StreakDatesDao
     abstract fun switchStatusDao(): SwitchStatusDao
     abstract fun vpnCustomDnsDao(): VpnCustomDnsDao
 
@@ -83,7 +79,7 @@ abstract class AppDatabase : RoomDatabase() {
                     // keywords, app lists, etc.) when they upgrade to v1.0.34+.
                     // fallbackToDestructiveMigration() is only a last-resort fallback
                     // for any future schema bumps that don't have a migration written.
-                    .addMigrations(MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                     .fallbackToDestructiveMigration()
                     .addCallback(AppDatabaseCallback(context.applicationContext))
                     .build()
@@ -173,6 +169,30 @@ abstract class AppDatabase : RoomDatabase() {
                 } catch (t: Throwable) {
                     Timber.e(t, "Migration v9 → v10 failed — fallbackToDestructiveMigration will handle")
                     throw t
+                }
+            }
+        }
+
+        /**
+         * Migration v10 → v11: drops the streak_dates_table (Streak feature
+         * removed in favor of Scheduled App Restrictions).
+         *
+         * This migration is purely destructive — it drops the streak table
+         * and its data. Streak history is NOT migrated to the new feature
+         * (Scheduled App Restrictions is a different feature, not a rename).
+         *
+         * The new scheduled_restrictions + scheduled_restriction_apps tables
+         * will be created by Room automatically from the @Entity declarations
+         * added in Phase 1.
+         */
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                Timber.i("Running migration v10 → v11: dropping streak_dates_table (Streak feature removed)")
+                try {
+                    database.execSQL("DROP TABLE IF EXISTS streak_dates_table")
+                    Timber.i("Migration v10 → v11 complete — streak_dates_table dropped")
+                } catch (t: Throwable) {
+                    Timber.w(t, "MIGRATION_10_11: DROP TABLE streak_dates_table failed (table may not exist) — continuing")
                 }
             }
         }

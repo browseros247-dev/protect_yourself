@@ -48,7 +48,7 @@ object NotificationHelper {
                 context.getString(R.string.daily_report_channel),
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Daily summary of blocking activity + streak status"
+                description = "Daily summary of blocking activity"
                 setShowBadge(false)
             }
         )
@@ -80,11 +80,12 @@ object NotificationHelper {
 
     /**
      * Show daily report notification.
+     *
+     * Streak feature removed in v1.0.62 — no longer includes streak days.
      */
     fun showDailyReportNotification(
         context: Context,
-        blockCount: Int,
-        streakDays: Int
+        blockCount: Int
     ) {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -98,7 +99,7 @@ object NotificationHelper {
             .setSmallIcon(R.drawable.ic_fire)
             .setContentTitle(context.getString(R.string.daily_report_title))
             .setContentText(
-                context.getString(R.string.daily_report_text, blockCount, streakDays)
+                context.getString(R.string.daily_report_text, blockCount)
             )
             .setContentIntent(pending)
             .setAutoCancel(true)
