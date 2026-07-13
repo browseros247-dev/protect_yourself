@@ -55,6 +55,20 @@ class WorkerUtils {
      * Initialize the periodic DailyReportWorker.
      * Runs every 24 hours, shows daily summary notification.
      */
+
+    /**
+     * Initialize the periodic ScheduleCheckWorker.
+     * Runs every 30 minutes as a safety-net for scheduled restriction
+     * re-evaluation (defence-in-depth if AlarmManager alarms are lost).
+     */
+    fun initScheduleCheckWorker(context: Context) {
+        try {
+            protect.yourself.commons.utils.workManager.ScheduleCheckWorker.enqueue(context)
+        } catch (t: Throwable) {
+            Timber.e(t, "Failed to schedule ScheduleCheckWorker")
+        }
+    }
+
     private fun initDailyReportWorker(context: Context) {
         try {
             protect.yourself.commons.utils.notificationUtils.NotificationHelper

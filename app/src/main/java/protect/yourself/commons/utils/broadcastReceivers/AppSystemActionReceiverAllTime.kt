@@ -8,6 +8,7 @@ import protect.yourself.core.appCoroutineScope
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.switchStatus.SwitchStatusValues
 import protect.yourself.features.blockerPage.service.MyAccessibilityService
+import protect.yourself.core.ScheduleEngine
 import timber.log.Timber
 
 /**
@@ -71,6 +72,14 @@ class AppSystemActionReceiverAllTime : BroadcastReceiver() {
                             }
                         } catch (t: Throwable) {
                             Timber.w(t, "Failed to check VPN state after boot")
+                        }
+
+                        // Re-evaluate scheduled restrictions after boot
+                        try {
+                            ScheduleEngine.onBootCompleted(context)
+                            Timber.i("Scheduled restrictions re-evaluated after boot")
+                        } catch (t: Throwable) {
+                            Timber.w(t, "Failed to re-evaluate scheduled restrictions after boot")
                         }
 
                         // Show notification that protection is active

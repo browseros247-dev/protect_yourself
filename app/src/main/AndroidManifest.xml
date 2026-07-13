@@ -314,6 +314,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- Schedule alarm receiver (for restriction re-evaluation) -->
+        <receiver
+            android:name="protect.yourself.commons.utils.broadcastReceivers.ScheduleAlarmReceiver"
+            android:exported="false" />
+
         <!-- ===== Content Providers ===== -->
 
         <!-- App file provider -->

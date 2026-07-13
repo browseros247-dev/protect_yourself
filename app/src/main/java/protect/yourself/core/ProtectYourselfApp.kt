@@ -134,6 +134,21 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
                 .initAppDataCheckWorker(this)
         }
 
+        // 8b. Initialize ScheduleEngine — verifies DB and applies active restrictions
+        safeInit("ScheduleEngine") {
+            protect.yourself.core.appCoroutineScope(
+                scopeName = "ScheduleEngine-init",
+                dispatcher = kotlinx.coroutines.Dispatchers.IO
+            ).launch {
+                protect.yourself.core.ScheduleEngine.reevaluateAndApply(this@ProtectYourselfApp)
+            }
+        }
+
+        // 8c. Schedule periodic ScheduleCheckWorker (30-min safety net)
+        safeInit("ScheduleCheckWorker") {
+            protect.yourself.commons.utils.workManager.ScheduleCheckWorker.enqueue(this)
+        }
+
         // 9. Create notification channels
         safeInit("NotificationChannels") {
             protect.yourself.commons.utils.notificationUtils.NotificationHelper
