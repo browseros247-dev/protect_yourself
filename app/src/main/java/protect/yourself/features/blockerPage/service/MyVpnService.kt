@@ -361,7 +361,18 @@ class MyVpnService : VpnService() {
                     Timber.e("Failed to establish VPN interface — user may have revoked permission")
                     isStarting.set(false)
                     setVpnState(VpnState.FAILED)
-                    switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
+                    // AUDIT FIX: Only clear VPN_SWITCH if the VPN was started by
+                    // the user (not by scheduled blocking). If scheduledBlockApps
+                    // is non-empty, the VPN was started for per-app-block mode —
+                    // clearing VPN_SWITCH would incorrectly disable the user's
+                    // DNS filtering preference. The scheduled block will retry
+                    // on the next ScheduleCheckWorker cycle.
+                    if (scheduledBlockApps.isEmpty()) {
+                        switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
+                    } else {
+                        Timber.w("VPN establish failed in per-app-block mode — NOT clearing VPN_SWITCH " +
+                            "(scheduled block will retry). scheduledBlockApps=${scheduledBlockApps.size}")
+                    }
                     stopSelf()
                     return@launch
                 }
@@ -658,12 +669,36 @@ class MyVpnService : VpnService() {
         /**
          * Called by ScheduleEngine when all scheduled internet-block rules end.
          * Clears the set and restarts the VPN in normal DNS-filter mode.
+         *
+         * AUDIT FIX: Only restart if the VPN was actually in per-app-block mode
+         * (scheduledBlockApps was non-empty). Also check if the user's VPN_SWITCH
+         * is on — if it is, restart in DNS-filter mode. If not, stop the VPN
+         * entirely (it was only running for scheduled blocking).
          */
         fun clearScheduledBlockApps(context: Context) {
-            if (scheduledBlockApps.isNotEmpty()) {
-                scheduledBlockApps = emptySet()
-                Timber.i("MyVpnService: scheduledBlockApps cleared — restarting VPN in DNS-filter mode")
-                restart(context)
+            val wasPerAppBlockMode = scheduledBlockApps.isNotEmpty()
+            scheduledBlockApps = emptySet()
+            if (wasPerAppBlockMode) {
+                // The VPN was running in per-app-block mode. Check if the user
+                // also wants DNS filtering (VPN_SWITCH=true). If so, restart
+                // in DNS-filter mode. If not, stop the VPN.
+                kotlinx.coroutines.runBlocking {
+                    try {
+                        val db = AppDatabase.getInstance(context)
+                        val switchValues = SwitchStatusValues(db.switchStatusDao())
+                        val vpnSwitchOn = switchValues.isVpnSwitchOn()
+                        if (vpnSwitchOn) {
+                            Timber.i("MyVpnService: scheduledBlockApps cleared — restarting VPN in DNS-filter mode (VPN_SWITCH is ON)")
+                            restart(context)
+                        } else {
+                            Timber.i("MyVpnService: scheduledBlockApps cleared — stopping VPN (VPN_SWITCH is OFF)")
+                            stop(context)
+                        }
+                    } catch (t: Throwable) {
+                        Timber.w(t, "MyVpnService: failed to check VPN_SWITCH in clearScheduledBlockApps — defaulting to restart")
+                        restart(context)
+                    }
+                }
             }
         }
 

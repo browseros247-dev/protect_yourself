@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -57,11 +58,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.withContext
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.features.schedulePage.SchedulePageViewModel
 import protect.yourself.features.schedulePage.identifiers.ScheduleTypeIdentifiers
@@ -399,80 +402,150 @@ private fun AppPickerDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    var installedApps by remember { mutableStateOf<List<Triple<String, String, Boolean>>>(emptyList()) }
+    // data class to hold app info + loaded icon
+    data class AppInfo(
+        val name: String,
+        val pkg: String,
+        val icon: android.graphics.drawable.Drawable?
+    )
+
+    var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
+    var filteredApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
+    var searchQuery by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
 
+    // Load apps on a background thread (Dispatchers.IO) to avoid blocking the UI
     LaunchedEffect(Unit) {
         loading = true
         try {
             val pm = context.packageManager
-            val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                .filter { it.packageName != context.packageName } // exclude self
-                .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 || pm.getLaunchIntentForPackage(it.packageName) != null }
-                .map { ai ->
-                    val name = pm.getApplicationLabel(ai).toString()
-                    val pkg = ai.packageName
-                    val isSelected = selectedApps.any { it.first == pkg }
-                    Triple(name, pkg, isSelected)
-                }
-                .sortedBy { it.first.lowercase() }
-            installedApps = packages
+            val packages = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                    .filter { it.packageName != context.packageName } // exclude self
+                    .filter {
+                        // Only show launchable apps (user-facing apps)
+                        it.flags and ApplicationInfo.FLAG_SYSTEM == 0 ||
+                            pm.getLaunchIntentForPackage(it.packageName) != null
+                    }
+                    .map { ai ->
+                        AppInfo(
+                            name = pm.getApplicationLabel(ai).toString(),
+                            pkg = ai.packageName,
+                            icon = try { pm.getApplicationIcon(ai) } catch (_: Throwable) { null }
+                        )
+                    }
+                    .sortedBy { it.name.lowercase() }
+            }
+            allApps = packages
+            filteredApps = packages
         } catch (t: Throwable) {
             // Ignore
         }
         loading = false
     }
 
+    // Filter apps when search query changes
+    LaunchedEffect(searchQuery, allApps) {
+        filteredApps = if (searchQuery.isBlank()) {
+            allApps
+        } else {
+            allApps.filter {
+                it.name.contains(searchQuery, ignoreCase = true) ||
+                    it.pkg.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
+
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Done") }
+            TextButton(onClick = onDismiss) { Text("Done (${selectedApps.size})") }
         },
         title = { Text("Select Apps") },
         text = {
-            if (loading) {
-                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = BrandOrange)
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().height(400.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(installedApps, key = { it.second }) { (appName, pkg, isSelected) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val existing = selectedApps.indexOfFirst { it.first == pkg }
-                                    if (existing >= 0) {
-                                        selectedApps.removeAt(existing)
-                                    } else {
-                                        selectedApps.add(pkg to appName)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Search field
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search apps...") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = {
+                        Icon(Icons.Filled.Search, contentDescription = null, tint = BrandOrange)
+                    },
+                    colors = OutlinedTextFieldDefaultsColors()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (loading) {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = BrandOrange)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().height(400.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        items(filteredApps, key = { it.pkg }) { appInfo ->
+                            val isSelected = selectedApps.any { it.first == appInfo.pkg }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val existing = selectedApps.indexOfFirst { it.first == appInfo.pkg }
+                                        if (existing >= 0) {
+                                            selectedApps.removeAt(existing)
+                                        } else {
+                                            selectedApps.add(appInfo.pkg to appInfo.name)
+                                        }
                                     }
-                                }
-                                .padding(vertical = 8.dp, horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            androidx.compose.material3.Checkbox(
-                                checked = selectedApps.any { it.first == pkg },
-                                onCheckedChange = {
-                                    val existing = selectedApps.indexOfFirst { it.first == pkg }
-                                    if (existing >= 0) {
-                                        selectedApps.removeAt(existing)
-                                    } else {
-                                        selectedApps.add(pkg to appName)
+                                    .padding(vertical = 6.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = isSelected,
+                                    onCheckedChange = {
+                                        val existing = selectedApps.indexOfFirst { it.first == appInfo.pkg }
+                                        if (existing >= 0) {
+                                            selectedApps.removeAt(existing)
+                                        } else {
+                                            selectedApps.add(appInfo.pkg to appInfo.name)
+                                        }
                                     }
+                                )
+                                Spacer(modifier = Modifier.size(8.dp))
+                                // App icon
+                                appInfo.icon?.let { drawable ->
+                                    androidx.compose.foundation.Image(
+                                        bitmap = drawableToBitmap(drawable).asImageBitmap(),
+                                        contentDescription = appInfo.name,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                    Spacer(modifier = Modifier.size(8.dp))
                                 }
-                            )
-                            Spacer(modifier = Modifier.size(8.dp))
-                            Text(appName, style = MaterialTheme.typography.bodyMedium)
+                                Text(appInfo.name, style = MaterialTheme.typography.bodyMedium)
+                            }
                         }
                     }
                 }
             }
         }
     )
+}
+
+/** Convert a Drawable to a Bitmap for Compose Image. */
+private fun drawableToBitmap(drawable: android.graphics.drawable.Drawable): android.graphics.Bitmap {
+    if (drawable is android.graphics.drawable.BitmapDrawable) {
+        return drawable.bitmap
+    }
+    val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 96
+    val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 96
+    val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bitmap)
+    drawable.setBounds(0, 0, canvas.width, canvas.height)
+    drawable.draw(canvas)
+    return bitmap
 }
 
 @Composable
