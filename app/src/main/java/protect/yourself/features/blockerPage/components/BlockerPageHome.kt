@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1072,18 +1073,57 @@ private fun SwitchRow(item: SettingPageItemModel, onToggle: (SettingPageItemMode
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(
+            containerColor = if (item.isDisabled)
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            else
+                MaterialTheme.colorScheme.surface
+        )
     ) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(item.title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                Text(
+                    item.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (item.isDisabled)
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    else
+                        MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold
+                )
                 if (!item.info.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(item.info, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        item.info,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                // Show dependency message if disabled
+                if (item.isDisabled && !item.dependencyMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            item.dependencyMessage,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.size(16.dp))
-            Switch(checked = item.switchValue, onCheckedChange = { onToggle(item) })
+            Switch(
+                checked = item.switchValue,
+                onCheckedChange = { onToggle(item) },
+                enabled = !item.isDisabled
+            )
         }
     }
 }
@@ -1093,20 +1133,65 @@ private fun ActionRow(item: SettingPageItemModel, onClick: (SettingPageItemModel
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        onClick = { onClick(item) }
+        colors = CardDefaults.cardColors(
+            containerColor = if (item.isDisabled)
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            else
+                MaterialTheme.colorScheme.surface
+        ),
+        onClick = { if (!item.isDisabled) onClick(item) }
     ) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(item.title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                Text(
+                    item.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (item.isDisabled)
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    else
+                        MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold
+                )
                 if (!item.info.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(item.info, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        item.info,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                // Show dependency message if disabled
+                if (item.isDisabled && !item.dependencyMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            item.dependencyMessage,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                        )
+                    }
                 }
             }
             Spacer(modifier = Modifier.size(16.dp))
-            TextButton(onClick = { onClick(item) }) {
-                Text(item.actionLabel ?: "", color = BrandOrange, fontWeight = FontWeight.SemiBold)
+            TextButton(
+                onClick = { if (!item.isDisabled) onClick(item) },
+                enabled = !item.isDisabled
+            ) {
+                Text(
+                    item.actionLabel ?: "",
+                    color = if (item.isDisabled)
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    else
+                        BrandOrange,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }

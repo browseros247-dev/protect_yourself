@@ -69,17 +69,33 @@ class ScheduleEngine private constructor(private val context: Context) {
 
             val active = ScheduleEvaluator.evaluate(rules, appsByRule)
 
-            Timber.i("ScheduleEngine: ${active.internetBlockedPackages.size} internet-blocked, " +
+            Timber.i("ScheduleEngine: ${rules.size} enabled rules → " +
+                "${active.internetBlockedPackages.size} internet-blocked, " +
                 "${active.launchBlockedPackages.size} launch-blocked apps")
 
             // Update Accessibility cache (launch blocking)
+            // AUDIT FIX: if the Accessibility Service is not running (instance == null),
+            // the update is silently dropped. Log this so the user can see WHY
+            // launch blocking isn't working. The ScheduleCheckWorker will retry
+            // every 15 min — once the user enables Accessibility, the next
+            // worker run will pick up the cached set.
             if (active.launchBlockedPackages != lastLaunchBlockedSet) {
                 lastLaunchBlockedSet = active.launchBlockedPackages
-                MyAccessibilityService.instance?.updateScheduledBlockApps(active.launchBlockedPackages)
-                Timber.i("ScheduleEngine: updated Accessibility cache (${active.launchBlockedPackages.size} apps)")
+                val serviceInstance = MyAccessibilityService.instance
+                if (serviceInstance != null) {
+                    serviceInstance.updateScheduledBlockApps(active.launchBlockedPackages)
+                    Timber.i("ScheduleEngine: updated Accessibility cache (${active.launchBlockedPackages.size} apps)")
+                } else {
+                    Timber.w("ScheduleEngine: MyAccessibilityService.instance is NULL — " +
+                        "launch blocking will NOT work until the user enables the Accessibility Service. " +
+                        "${active.launchBlockedPackages.size} apps should be launch-blocked. " +
+                        "The set is cached and will be applied when the service starts.")
+                }
             }
 
             // Update VPN (internet blocking)
+            // AUDIT FIX: same pattern — if VPN permission is not granted,
+            // setScheduledBlockApps will log + show a notification.
             if (active.internetBlockedPackages != lastInternetBlockedSet) {
                 lastInternetBlockedSet = active.internetBlockedPackages
                 if (active.internetBlockedPackages.isNotEmpty()) {

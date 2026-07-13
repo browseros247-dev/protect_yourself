@@ -27,6 +27,7 @@ object NotificationHelper {
     const val NOTIF_ID_DAILY_REPORT = 2001
     const val NOTIF_ID_ACCESSIBILITY_ALERT = 2002
     const val NOTIF_ID_OVERLAY_PERMISSION = 2003
+    const val NOTIF_ID_VPN_PERMISSION_REQUIRED = 2004
 
     private const val OVERLAY_PREFS = "overlay_permission_prefs"
     private const val KEY_LAST_OVERLAY_NOTIF_MS = "last_overlay_notif_ms"
@@ -108,6 +109,43 @@ object NotificationHelper {
 
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.notify(NOTIF_ID_DAILY_REPORT, notification)
+    }
+
+    /**
+     * AUDIT FIX: Show a notification prompting the user to grant VPN permission.
+     *
+     * Called by MyVpnService.setScheduledBlockApps() when a scheduled internet
+     * block rule is active but VPN permission hasn't been granted. The user
+     * must open the app and enable VPN manually — we cannot launch the VPN
+     * permission dialog from a background context.
+     */
+    fun showVpnPermissionRequiredNotification(context: Context) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pending = PendingIntent.getActivity(
+            context, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ACCESSIBILITY_ALERT)
+            .setSmallIcon(R.drawable.ic_info)
+            .setContentTitle("Scheduled app restriction needs VPN permission")
+            .setContentText("Tap to open the app and enable VPN to block internet for scheduled apps.")
+            .setStyle(NotificationCompat.BigTextStyle()
+                .bigText(
+                    "A scheduled app restriction is active, but the app needs VPN permission " +
+                    "to block internet access for the selected apps. Tap to open the app and " +
+                    "enable VPN in the Blocker settings."
+                ))
+            .setContentIntent(pending)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
+            .build()
+
+        val nm = context.getSystemService(NotificationManager::class.java)
+        nm.notify(NOTIF_ID_VPN_PERMISSION_REQUIRED, notification)
     }
 
     /**

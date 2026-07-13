@@ -615,11 +615,35 @@ class MyVpnService : VpnService() {
          * Phase 3 implementation: if the VPN is not currently running but
          * scheduled internet blocking is needed, start it. If the VPN is
          * running, restart it to switch modes.
+         *
+         * AUDIT FIX: Check VpnService.prepare() before starting. If the user
+         * hasn't granted VPN permission, we CANNOT start the VPN from a
+         * background context (AlarmManager/WorkManager). In that case, log
+         * a warning + show a notification prompting the user to open the app
+         * and grant permission. The schedule will retry on the next
+         * ScheduleCheckWorker cycle (15 min).
          */
         fun setScheduledBlockApps(context: Context, apps: Set<String>) {
             scheduledBlockApps = apps
             Timber.i("MyVpnService: scheduledBlockApps updated (${apps.size} apps)")
             if (apps.isNotEmpty()) {
+                // AUDIT FIX: Check VPN permission before starting.
+                // VpnService.prepare() returns null if permission is already granted,
+                // or a non-null Intent that must be launched from an Activity.
+                // We cannot launch an Activity from a background service, so if
+                // permission is not granted, we log + notify the user.
+                if (android.net.VpnService.prepare(context) != null) {
+                    Timber.w("MyVpnService: VPN permission not granted — cannot start per-app-block mode from background. " +
+                        "User must open the app and enable VPN manually.")
+                    // Show a notification prompting the user to grant VPN permission
+                    try {
+                        protect.yourself.commons.utils.notificationUtils.NotificationHelper
+                            .showVpnPermissionRequiredNotification(context)
+                    } catch (t: Throwable) {
+                        Timber.w(t, "Failed to show VPN permission notification")
+                    }
+                    return
+                }
                 // Need VPN in per-app-block mode. Start or restart.
                 if (!isRunning()) {
                     Timber.i("MyVpnService: VPN not running — starting in per-app-block mode")

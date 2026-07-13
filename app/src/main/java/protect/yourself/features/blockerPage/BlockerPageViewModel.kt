@@ -146,6 +146,9 @@ class BlockerPageViewModel(
                 result
             }
 
+            // Apply dependency rules: disable settings whose prerequisite is off.
+            val itemsWithDependencies = applyDependencyRules(itemsWithValues)
+
             // AL-02 fix: hide Touch ID and Disable Forgot Password cards when
             // App Lock is NOT set up. These cards are meaningless without an
             // app lock — the user can't enable Touch ID or disable forgot
@@ -157,13 +160,13 @@ class BlockerPageViewModel(
             // NopoX 1.0.53 behavior: these toggles only appear after the user
             // sets up an app lock. We replicate this by filtering them out
             // when SET_APP_LOCK_SWITCH is false.
-            val appLockEnabled = itemsWithValues
+            val appLockEnabled = itemsWithDependencies
                 .firstOrNull { it.identifier == SettingPageItemIdentifiers.SET_APP_LOCK }
                 ?.switchValue ?: false
             val filteredItems = if (appLockEnabled) {
-                itemsWithValues
+                itemsWithDependencies
             } else {
-                itemsWithValues.filterNot { item ->
+                itemsWithDependencies.filterNot { item ->
                     item.identifier == SettingPageItemIdentifiers.TOUCH_ID ||
                         item.identifier == SettingPageItemIdentifiers.DISABLE_FORGOT_PASSWORD
                 }
@@ -171,6 +174,144 @@ class BlockerPageViewModel(
 
             _state.update { it.copy(settingItems = filteredItems, isLoading = false) }
             Timber.i("BlockerPage loaded ${filteredItems.size} setting items (appLock=$appLockEnabled)")
+        }
+    }
+
+    /**
+     * Apply dependency rules: mark settings as [isDisabled] with a clear
+     * [dependencyMessage] when their prerequisite setting is not enabled.
+     *
+     * This ensures a smooth UX — the user sees WHY a setting can't be toggled
+     * and which prerequisite must be enabled first, rather than the switch
+     * silently refusing to flip.
+     *
+     * ## Current dependency rules
+     *
+     * | Dependent setting              | Prerequisite          | Message |
+     * |-------------------------------|-----------------------|---------|
+     * | SAFE_SEARCH                   | VPN (DNS blocking)    | "Enable VPN (DNS blocking) first to use SafeSearch enforcement." |
+     * | VPN_MANAGE                    | VPN (DNS blocking)    | "Enable VPN first to choose a filtering mode." |
+     * | WHITELIST_VPN_APPS            | VPN (DNS blocking)    | "Enable VPN first to manage VPN whitelist apps." |
+     * | VPN_NOTIFICATION_MESSAGE      | VPN (DNS blocking)    | "Enable VPN first to customize the notification message." |
+     * | VPN_NOTIFICATION_HIDE         | VPN (DNS blocking)    | "Enable VPN first to hide notification content." |
+     * | BLOCK_UNSUPPORTED_BROWSERS    | PORN_BLOCKER          | "Enable Porn blocker first to block unsupported browsers." |
+     * | WHITELIST_UNSUPPORTED_BROWSER | BLOCK_UNSUPPORTED_BROWSERS | "Enable 'Block unsupported browsers' first to manage its whitelist." |
+     * | BLOCK_IN_APP_BROWSERS         | PORN_BLOCKER          | "Enable Porn blocker first to block in-app browsers." |
+     * | BLOCK_NEW_INSTALL_APPS        | PORN_BLOCKER          | "Enable Porn blocker first to auto-block new installs." |
+     * | BLOCK_SETTING_PAGE_BY_TITLE   | PORN_BLOCKER          | "Enable Porn blocker first to block settings by title." |
+     * | BLOCK_WHITELIST_DETECTED_APP  | PORN_BLOCKER          | "Enable Porn blocker first to manage blocklist detected apps." |
+     * | BLOCKLIST_APPS                | PORN_BLOCKER          | "Enable Porn blocker first to manage the blocklist." |
+     * | UNIFIED_BLOCKING_MANAGEMENT   | PORN_BLOCKER          | "Enable Porn blocker first to manage blocking lists." |
+     * | TIME_DELAY_CUSTOM_DURATION    | TIME_DELAY            | "Enable Time Delay first to set a custom duration." |
+     * | BLOCK_PHONE_REBOOT            | PREVENT_UNINSTALL     | "Enable Prevent uninstall first to block phone reboot." |
+     */
+    private suspend fun applyDependencyRules(items: List<SettingPageItemModel>): List<SettingPageItemModel> {
+        // Read prerequisite switch states once
+        val vpnOn = switchValues.isVpnSwitchOn()
+        val pornBlockerOn = switchValues.isPornBlockerSwitchOn()
+        val blockUnsupportedBrowsersOn = switchValues.isBlockUnsupportedBrowsersSwitchOn()
+        val timeDelayOn = switchValues.isTimeDelayDurationSet()
+        val preventUninstallOn = switchValues.isPreventUninstallSwitchOn()
+
+        return items.map { item ->
+            when (item.identifier) {
+                // SafeSearch depends on VPN (DNS-level enforcement needs VPN)
+                SettingPageItemIdentifiers.SAFE_SEARCH -> {
+                    if (!vpnOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable VPN (DNS blocking) first to use SafeSearch enforcement."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                // VPN sub-settings depend on VPN being enabled
+                SettingPageItemIdentifiers.VPN_MANAGE -> {
+                    if (!vpnOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable VPN first to choose a filtering mode."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                SettingPageItemIdentifiers.WHITELIST_VPN_APPS -> {
+                    if (!vpnOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable VPN first to manage VPN whitelist apps."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                SettingPageItemIdentifiers.VPN_NOTIFICATION_MESSAGE -> {
+                    if (!vpnOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable VPN first to customize the notification message."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                SettingPageItemIdentifiers.VPN_NOTIFICATION_HIDE -> {
+                    if (!vpnOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable VPN first to hide notification content."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                // Content-blocking sub-features depend on Porn Blocker
+                SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS -> {
+                    if (!pornBlockerOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable Porn blocker first to block unsupported browsers."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER -> {
+                    if (!blockUnsupportedBrowsersOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable 'Block unsupported browsers' first to manage its whitelist."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                SettingPageItemIdentifiers.BLOCK_IN_APP_BROWSERS -> {
+                    if (!pornBlockerOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable Porn blocker first to block in-app browsers."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                SettingPageItemIdentifiers.BLOCK_NEW_INSTALL_APPS -> {
+                    if (!pornBlockerOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable Porn blocker first to auto-block new installs."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE -> {
+                    if (!pornBlockerOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable Porn blocker first to block settings by title."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP -> {
+                    if (!pornBlockerOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable Porn blocker first to manage blocklist detected apps."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                SettingPageItemIdentifiers.BLOCKLIST_APPS -> {
+                    if (!pornBlockerOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable Porn blocker first to manage the blocklist."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                SettingPageItemIdentifiers.UNIFIED_BLOCKING_MANAGEMENT -> {
+                    if (!pornBlockerOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable Porn blocker first to manage blocking lists."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                // Time Delay custom duration depends on Time Delay being enabled
+                SettingPageItemIdentifiers.TIME_DELAY_CUSTOM_DURATION -> {
+                    if (!timeDelayOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable Time Delay first to set a custom duration."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                // Block phone reboot depends on Prevent Uninstall (both are anti-circumvention)
+                SettingPageItemIdentifiers.BLOCK_PHONE_REBOOT -> {
+                    if (!preventUninstallOn) item.copy(
+                        isDisabled = true,
+                        dependencyMessage = "Enable Prevent uninstall first to block phone reboot."
+                    ) else item.copy(isDisabled = false, dependencyMessage = null)
+                }
+                else -> item
+            }
         }
     }
 

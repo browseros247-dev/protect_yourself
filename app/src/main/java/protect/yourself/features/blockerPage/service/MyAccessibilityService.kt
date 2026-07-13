@@ -187,6 +187,20 @@ class MyAccessibilityService : AccessibilityService() {
             ?.logBreadcrumb("AccessibilityService", "onServiceConnected")
         configureService()
         refreshBlockingConfig()
+        // AUDIT FIX: when the Accessibility Service starts (e.g. after the user
+        // enables it in system settings, or after a reboot), ask the ScheduleEngine
+        // to re-evaluate + push the cached scheduled-block set to this service
+        // instance. Without this, scheduled launch blocking doesn't work until
+        // the next ScheduleCheckWorker run (up to 15 min later).
+        serviceScope.launch {
+            try {
+                protect.yourself.domain.schedule.ScheduleEngine
+                    .getInstance(this@MyAccessibilityService).reevaluateAndApply()
+                Timber.i("AUDIT FIX: ScheduleEngine.reevaluateAndApply triggered from onServiceConnected")
+            } catch (t: Throwable) {
+                Timber.w(t, "AUDIT FIX: ScheduleEngine.reevaluateAndApply failed in onServiceConnected")
+            }
+        }
         // LC-01 fix (v1.0.56): launch selfHealSafe on selfHealScope (NOT
         // serviceScope) so it survives any subsequent onDestroy cancellation.
         // selfHealSafe performs blocking IPC calls to Settings.Secure and
