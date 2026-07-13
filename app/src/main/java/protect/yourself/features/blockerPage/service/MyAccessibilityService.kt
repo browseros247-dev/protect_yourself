@@ -70,6 +70,8 @@ class MyAccessibilityService : AccessibilityService() {
     @Volatile private var cachedBlockKeywords: List<String> = emptyList()
     @Volatile private var cachedWhitelistKeywords: List<String> = emptyList()
     @Volatile private var cachedBlockApps: Set<String> = emptySet()
+    // Phase 2 stub: scheduled launch-blocked apps (Phase 4 implements the check)
+    @Volatile private var cachedScheduledBlockApps: Set<String> = emptySet()
     @Volatile private var cachedStopMeWhitelist: Set<String> = emptySet()
     @Volatile private var cachedNewInstallBlockApps: Set<String> = emptySet()
     @Volatile private var cachedInAppBrowserBlockApps: Set<String> = emptySet()
@@ -2143,6 +2145,18 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     // ===== Config refresh =====
+
+    /**
+     * Phase 2 stub: Update the set of scheduled launch-blocked apps.
+     * Called by ScheduleEngine when a scheduled launch-block rule starts/ends.
+     *
+     * Phase 4 will add the actual check in handleWindowStateChange() that
+     * uses this set to block the app.
+     */
+    fun updateScheduledBlockApps(apps: Set<String>) {
+        cachedScheduledBlockApps = apps
+        Timber.i("Scheduled block apps updated: ${apps.size} apps")
+    }
 
     /**
      * Refresh cached blocking config from DB.

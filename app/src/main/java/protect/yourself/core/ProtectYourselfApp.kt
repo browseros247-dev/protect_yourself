@@ -132,6 +132,8 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
         safeInit("WorkManager") {
             protect.yourself.commons.utils.workManager.WorkerUtils.getInstance()
                 .initAppDataCheckWorker(this)
+            // Phase 2: Schedule restrictions check worker (15-min periodic safety net)
+            protect.yourself.commons.utils.workManager.ScheduleCheckWorker.enqueue(this)
         }
 
         // 9. Create notification channels

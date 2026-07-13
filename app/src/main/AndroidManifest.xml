@@ -305,6 +305,15 @@
 
         <!-- Streak widget removed in v1.0.62 (Streak feature replaced by Scheduled App Restrictions) -->
 
+        <!-- Schedule alarm receiver (for scheduled app restriction boundaries) -->
+        <receiver
+            android:name="protect.yourself.domain.schedule.ScheduleAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="protect_yourself.action.SCHEDULE_BOUNDARY" />
+            </intent-filter>
+        </receiver>
+
         <!-- Stop Me alarm receiver (for session start/end) -->
         <receiver
             android:name="protect.yourself.commons.utils.broadcastReceivers.StopMeAlarmReceiver"

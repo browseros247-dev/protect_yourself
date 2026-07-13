@@ -569,6 +569,48 @@ class MyVpnService : VpnService() {
         var observableVpnState: VpnState = VpnState.IDLE
             private set
 
+        // ===== Scheduled App Restrictions (Phase 2 stubs — Phase 3 implements) =====
+
+        /**
+         * Apps that should have their internet blocked via VPN per-app-block mode.
+         * When non-empty, the VPN switches from DNS-filter mode to per-app-block
+         * mode (addAllowedApplication for these apps only — their traffic is
+         * black-holed, all other apps use normal internet).
+         *
+         * Set by ScheduleEngine when a scheduled internet-block rule becomes active.
+         */
+        @Volatile
+        var scheduledBlockApps: Set<String> = emptySet()
+            private set
+
+        /**
+         * Called by ScheduleEngine when scheduled internet-block apps change.
+         * Stores the set and restarts the VPN to apply the new mode.
+         *
+         * Phase 3 will implement the actual dual-mode Builder logic.
+         */
+        fun setScheduledBlockApps(context: Context, apps: Set<String>) {
+            scheduledBlockApps = apps
+            Timber.i("MyVpnService: scheduledBlockApps updated (${apps.size} apps) — restarting VPN")
+            // Phase 3 will implement dual-mode Builder logic here.
+            // For now, just log — the restart will use the existing DNS-filter mode.
+            if (apps.isNotEmpty()) {
+                restart(context)
+            }
+        }
+
+        /**
+         * Called by ScheduleEngine when all scheduled internet-block rules end.
+         * Clears the set and restarts the VPN in normal DNS-filter mode.
+         */
+        fun clearScheduledBlockApps(context: Context) {
+            if (scheduledBlockApps.isNotEmpty()) {
+                scheduledBlockApps = emptySet()
+                Timber.i("MyVpnService: scheduledBlockApps cleared — restarting VPN in DNS-filter mode")
+                restart(context)
+            }
+        }
+
         fun start(context: Context) {
             val intent = Intent(context, MyVpnService::class.java).apply {
                 action = ACTION_START

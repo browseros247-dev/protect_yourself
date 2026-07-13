@@ -73,6 +73,15 @@ class AppSystemActionReceiverAllTime : BroadcastReceiver() {
                             Timber.w(t, "Failed to check VPN state after boot")
                         }
 
+                        // Phase 2: Re-arm scheduled app restrictions after boot
+                        try {
+                            protect.yourself.domain.schedule.ScheduleEngine
+                                .getInstance(context).onBootCompleted()
+                            Timber.i("Schedule engine re-armed after boot")
+                        } catch (t: Throwable) {
+                            Timber.w(t, "Failed to re-arm schedule engine after boot")
+                        }
+
                         // Show notification that protection is active
                         try {
                             protect.yourself.commons.utils.notificationUtils.NotificationHelper
