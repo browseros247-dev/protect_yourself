@@ -271,25 +271,32 @@ class MyVpnService : VpnService() {
                     .getSelectedByIdentifier(SelectedAppListIdentifier.VPN_WHITELIST_APPS.value)
                     .map { it.packageName }
 
+                // Phase 3: Determine VPN mode based on scheduled block apps.
+                // - DNS_FILTER mode (default): all apps routed through VPN for
+                //   DNS filtering, except whitelisted apps. Uses addDisallowedApplication.
+                // - PER_APP_BLOCK mode (when scheduledBlockApps is non-empty):
+                //   ONLY scheduled apps are routed through VPN (their traffic is
+                //   black-holed). All other apps bypass VPN → normal internet.
+                //   Uses addAllowedApplication. DNS filtering is paused for
+                //   non-scheduled apps while this mode is active.
+                val scheduledApps = scheduledBlockApps
+                val isPerAppBlockMode = scheduledApps.isNotEmpty()
+                if (isPerAppBlockMode) {
+                    Timber.i("VPN starting in PER_APP_BLOCK mode for ${scheduledApps.size} scheduled apps")
+                } else {
+                    Timber.i("VPN starting in DNS_FILTER mode (normal)")
+                }
+
                 // 4. Build VPN interface — NopoX-style: addDnsServer + allowBypass,
                 //    NO addRoute, NO manual DNS forwarding loop.
                 //
-                // Android's VPN framework handles DNS routing automatically:
-                // when apps make DNS queries, the system resolver sends them to
-                // the DNS servers configured via addDnsServer(). The DNS servers
-                // (Cloudflare Family / AdGuard Family) do the actual content
-                // filtering. No manual packet forwarding needed.
-                //
-                // This is the same approach NopoX v1.0.53 uses (decompiled):
-                //   builder.addDnsServer(dns1)
-                //   builder.addDnsServer(dns2)
-                //   builder.allowBypass()
-                //   builder.establish()
-                // No addRoute, no FileInputStream, no DatagramSocket, no protect().
+                // In PER_APP_BLOCK mode, addDnsServer is still called (required
+                // by the VpnService.Builder API), but it only affects the apps
+                // routed through the VPN (the scheduled apps whose traffic is
+                // black-holed anyway).
                 val builder = Builder()
                     .setSession(getString(R.string.app_name))
                     .addAddress(InetAddress.getByName(VPN_ADDRESS), VPN_PREFIX_LENGTH)
-                    // NopoX adds multiple private addresses — we match its pattern.
                     .addAddress(InetAddress.getByName("10.0.2.16"), VPN_PREFIX_LENGTH)
                     .addAddress(InetAddress.getByName("10.0.2.17"), VPN_PREFIX_LENGTH)
                     .addAddress(InetAddress.getByName("10.0.2.18"), VPN_PREFIX_LENGTH)
@@ -298,21 +305,39 @@ class MyVpnService : VpnService() {
                     .setMtu(VPN_MTU)
                     .allowBypass()
 
-                // 5. Apply per-app routing: whitelisted apps bypass VPN
-                for (pkg in whitelistPackages) {
-                    try {
-                        builder.addDisallowedApplication(pkg)
-                        Timber.v("App bypasses VPN: $pkg")
-                    } catch (t: Throwable) {
-                        Timber.w(t, "Failed to disallow app from VPN: $pkg")
+                if (isPerAppBlockMode) {
+                    // Phase 3: PER_APP_BLOCK mode — route ONLY scheduled apps
+                    // through the VPN tunnel. Their traffic enters the TUN but
+                    // is never forwarded (black hole) → no internet.
+                    // All other apps bypass the VPN → normal internet.
+                    for (pkg in scheduledApps) {
+                        try {
+                            builder.addAllowedApplication(pkg)
+                            Timber.v("App routed through VPN (blocked): $pkg")
+                        } catch (t: Throwable) {
+                            Timber.w(t, "Failed to add allowed app to VPN: $pkg")
+                        }
                     }
-                }
-
-                // 6. Always allow our own app to bypass VPN (so we can communicate)
-                try {
-                    builder.addDisallowedApplication(packageName)
-                } catch (t: Throwable) {
-                    Timber.w(t, "Failed to allow self from VPN")
+                    // In per-app-block mode, our own app is NOT in the allowed
+                    // list, so it bypasses the VPN automatically. No need for
+                    // addDisallowedApplication(packageName).
+                } else {
+                    // DNS_FILTER mode — existing behavior.
+                    // Apply per-app routing: whitelisted apps bypass VPN
+                    for (pkg in whitelistPackages) {
+                        try {
+                            builder.addDisallowedApplication(pkg)
+                            Timber.v("App bypasses VPN: $pkg")
+                        } catch (t: Throwable) {
+                            Timber.w(t, "Failed to disallow app from VPN: $pkg")
+                        }
+                    }
+                    // Always allow our own app to bypass VPN (so we can communicate)
+                    try {
+                        builder.addDisallowedApplication(packageName)
+                    } catch (t: Throwable) {
+                        Timber.w(t, "Failed to allow self from VPN")
+                    }
                 }
 
                 // 7. Set configure intent — opens MainActivity when user taps
@@ -336,7 +361,18 @@ class MyVpnService : VpnService() {
                     Timber.e("Failed to establish VPN interface — user may have revoked permission")
                     isStarting.set(false)
                     setVpnState(VpnState.FAILED)
-                    switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
+                    // AUDIT FIX: Only clear VPN_SWITCH if the VPN was started by
+                    // the user (not by scheduled blocking). If scheduledBlockApps
+                    // is non-empty, the VPN was started for per-app-block mode —
+                    // clearing VPN_SWITCH would incorrectly disable the user's
+                    // DNS filtering preference. The scheduled block will retry
+                    // on the next ScheduleCheckWorker cycle.
+                    if (scheduledBlockApps.isEmpty()) {
+                        switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
+                    } else {
+                        Timber.w("VPN establish failed in per-app-block mode — NOT clearing VPN_SWITCH " +
+                            "(scheduled block will retry). scheduledBlockApps=${scheduledBlockApps.size}")
+                    }
                     stopSelf()
                     return@launch
                 }
@@ -568,6 +604,103 @@ class MyVpnService : VpnService() {
         @Volatile
         var observableVpnState: VpnState = VpnState.IDLE
             private set
+
+        // ===== Scheduled App Restrictions (Phase 2 stubs — Phase 3 implements) =====
+
+        /**
+         * Apps that should have their internet blocked via VPN per-app-block mode.
+         * When non-empty, the VPN switches from DNS-filter mode to per-app-block
+         * mode (addAllowedApplication for these apps only — their traffic is
+         * black-holed, all other apps use normal internet).
+         *
+         * Set by ScheduleEngine when a scheduled internet-block rule becomes active.
+         */
+        @Volatile
+        var scheduledBlockApps: Set<String> = emptySet()
+            private set
+
+        /**
+         * Called by ScheduleEngine when scheduled internet-block apps change.
+         * Stores the set and restarts the VPN to apply the new per-app-block mode.
+         *
+         * Phase 3 implementation: if the VPN is not currently running but
+         * scheduled internet blocking is needed, start it. If the VPN is
+         * running, restart it to switch modes.
+         *
+         * AUDIT FIX: Check VpnService.prepare() before starting. If the user
+         * hasn't granted VPN permission, we CANNOT start the VPN from a
+         * background context (AlarmManager/WorkManager). In that case, log
+         * a warning + show a notification prompting the user to open the app
+         * and grant permission. The schedule will retry on the next
+         * ScheduleCheckWorker cycle (15 min).
+         */
+        fun setScheduledBlockApps(context: Context, apps: Set<String>) {
+            scheduledBlockApps = apps
+            Timber.i("MyVpnService: scheduledBlockApps updated (${apps.size} apps)")
+            if (apps.isNotEmpty()) {
+                // AUDIT FIX: Check VPN permission before starting.
+                // VpnService.prepare() returns null if permission is already granted,
+                // or a non-null Intent that must be launched from an Activity.
+                // We cannot launch an Activity from a background service, so if
+                // permission is not granted, we log + notify the user.
+                if (android.net.VpnService.prepare(context) != null) {
+                    Timber.w("MyVpnService: VPN permission not granted — cannot start per-app-block mode from background. " +
+                        "User must open the app and enable VPN manually.")
+                    // Show a notification prompting the user to grant VPN permission
+                    try {
+                        protect.yourself.commons.utils.notificationUtils.NotificationHelper
+                            .showVpnPermissionRequiredNotification(context)
+                    } catch (t: Throwable) {
+                        Timber.w(t, "Failed to show VPN permission notification")
+                    }
+                    return
+                }
+                // Need VPN in per-app-block mode. Start or restart.
+                if (!isRunning()) {
+                    Timber.i("MyVpnService: VPN not running — starting in per-app-block mode")
+                    start(context)
+                } else {
+                    Timber.i("MyVpnService: VPN running — restarting to switch to per-app-block mode")
+                    restart(context)
+                }
+            }
+        }
+
+        /**
+         * Called by ScheduleEngine when all scheduled internet-block rules end.
+         * Clears the set and restarts the VPN in normal DNS-filter mode.
+         *
+         * AUDIT FIX: Only restart if the VPN was actually in per-app-block mode
+         * (scheduledBlockApps was non-empty). Also check if the user's VPN_SWITCH
+         * is on — if it is, restart in DNS-filter mode. If not, stop the VPN
+         * entirely (it was only running for scheduled blocking).
+         */
+        fun clearScheduledBlockApps(context: Context) {
+            val wasPerAppBlockMode = scheduledBlockApps.isNotEmpty()
+            scheduledBlockApps = emptySet()
+            if (wasPerAppBlockMode) {
+                // The VPN was running in per-app-block mode. Check if the user
+                // also wants DNS filtering (VPN_SWITCH=true). If so, restart
+                // in DNS-filter mode. If not, stop the VPN.
+                kotlinx.coroutines.runBlocking {
+                    try {
+                        val db = AppDatabase.getInstance(context)
+                        val switchValues = SwitchStatusValues(db.switchStatusDao())
+                        val vpnSwitchOn = switchValues.isVpnSwitchOn()
+                        if (vpnSwitchOn) {
+                            Timber.i("MyVpnService: scheduledBlockApps cleared — restarting VPN in DNS-filter mode (VPN_SWITCH is ON)")
+                            restart(context)
+                        } else {
+                            Timber.i("MyVpnService: scheduledBlockApps cleared — stopping VPN (VPN_SWITCH is OFF)")
+                            stop(context)
+                        }
+                    } catch (t: Throwable) {
+                        Timber.w(t, "MyVpnService: failed to check VPN_SWITCH in clearScheduledBlockApps — defaulting to restart")
+                        restart(context)
+                    }
+                }
+            }
+        }
 
         fun start(context: Context) {
             val intent = Intent(context, MyVpnService::class.java).apply {

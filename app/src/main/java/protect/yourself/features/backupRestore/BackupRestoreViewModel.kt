@@ -53,7 +53,6 @@ class BackupRestoreViewModel(
                     pendingRequestCount = db.pendingRequestDao().getAll().size,
                     stopMeDurationCount = db.stopMeDurationDao().getAll().size,
                     stopMeSessionCountCount = db.stopMeSessionCountDao().getAll().size,
-                    streakDatesCount = db.streakDatesDao().getAll().size,
                     vpnCustomDnsCount = db.vpnCustomDnsDao().getAll().size,
                     totalRows = 0  // not shown in UI; calculated if needed
                 )

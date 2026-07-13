@@ -13,12 +13,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -59,7 +60,6 @@ import protect.yourself.features.blockerPage.components.BlockerPageHome
 // About tab removed — About info is in Profile page
 import protect.yourself.features.mainActivityPage.repository.MainPageScreen
 import protect.yourself.features.profilePage.components.ProfilePage
-import protect.yourself.features.streakPage.components.StreakPage
 import protect.yourself.theme.AppTheme
 import protect.yourself.theme.BrandOrange
 import timber.log.Timber
@@ -289,7 +289,7 @@ private fun OnboardingPage(onAccept: (openAccessibilitySettings: Boolean) -> Uni
                 Text("• Block adult content via keyword matching (1,189+ keywords)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                 Text("• VPN DNS filtering (Cloudflare Family, OpenDNS, etc.)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                 Text("• Stop Me focus mode with widgets", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-                Text("• Streak tracking with achievements", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                Text("• Scheduled app restrictions (internet + launch blocking)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                 Text("• App lock (PIN/Password/Pattern + Biometric)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                 Text("• Anti-uninstall protection", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
             }
@@ -396,7 +396,12 @@ private fun MainScreen(
 ) {
     var selectedTab by remember { mutableStateOf(MainPageScreen.Home) }
 
-    // Consume a deep-link tab request (e.g. from StreakWidget) by switching
+    // Phase 5: Schedule editor sub-page state.
+    // null = show schedule list; "new" = create new; any other string = edit that key.
+    var scheduleEditKey by remember { mutableStateOf<String?>(null) }
+    var showScheduleEditor by remember { mutableStateOf(false) }
+
+    // Consume a deep-link tab request (e.g. from widget) by switching
     // to the requested tab once, then clearing the request.
     LaunchedEffect(requestedTab) {
         if (requestedTab != null) {
@@ -405,8 +410,20 @@ private fun MainScreen(
         }
     }
 
+    // Back handler for schedule editor
+    androidx.activity.compose.BackHandler(
+        enabled = selectedTab == MainPageScreen.Schedule && showScheduleEditor
+    ) {
+        showScheduleEditor = false
+    }
+
     Scaffold(
-        bottomBar = { AppBottomBar(selectedTab) { selectedTab = it } }
+        bottomBar = {
+            // Hide bottom bar when schedule editor is open
+            if (!(selectedTab == MainPageScreen.Schedule && showScheduleEditor)) {
+                AppBottomBar(selectedTab) { selectedTab = it }
+            }
+        }
     ) { padding ->
         Box(
             modifier = Modifier
@@ -415,7 +432,28 @@ private fun MainScreen(
         ) {
             when (selectedTab) {
                 MainPageScreen.Home -> BlockerPageHome()
-                MainPageScreen.Streak -> StreakPage()
+                MainPageScreen.Schedule -> {
+                    if (showScheduleEditor) {
+                        protect.yourself.features.schedulePage.components.ScheduleEditorPage(
+                            editKey = scheduleEditKey,
+                            onBack = {
+                                showScheduleEditor = false
+                                scheduleEditKey = null
+                            }
+                        )
+                    } else {
+                        protect.yourself.features.schedulePage.components.SchedulePage(
+                            onCreateSchedule = {
+                                scheduleEditKey = null
+                                showScheduleEditor = true
+                            },
+                            onEditSchedule = { key ->
+                                scheduleEditKey = key
+                                showScheduleEditor = true
+                            }
+                        )
+                    }
+                }
                 MainPageScreen.Profile -> ProfilePage()
             }
         }
@@ -446,6 +484,6 @@ private fun AppBottomBar(
 
 private fun MainPageScreen.vectorIcon(): ImageVector = when (this) {
     MainPageScreen.Home -> Icons.Filled.Shield
-    MainPageScreen.Streak -> Icons.Filled.LocalFireDepartment
+    MainPageScreen.Schedule -> Icons.Filled.Schedule
     MainPageScreen.Profile -> Icons.Filled.Person
 }

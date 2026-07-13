@@ -70,6 +70,8 @@ class MyAccessibilityService : AccessibilityService() {
     @Volatile private var cachedBlockKeywords: List<String> = emptyList()
     @Volatile private var cachedWhitelistKeywords: List<String> = emptyList()
     @Volatile private var cachedBlockApps: Set<String> = emptySet()
+    // Phase 2 stub: scheduled launch-blocked apps (Phase 4 implements the check)
+    @Volatile private var cachedScheduledBlockApps: Set<String> = emptySet()
     @Volatile private var cachedStopMeWhitelist: Set<String> = emptySet()
     @Volatile private var cachedNewInstallBlockApps: Set<String> = emptySet()
     @Volatile private var cachedInAppBrowserBlockApps: Set<String> = emptySet()
@@ -185,6 +187,20 @@ class MyAccessibilityService : AccessibilityService() {
             ?.logBreadcrumb("AccessibilityService", "onServiceConnected")
         configureService()
         refreshBlockingConfig()
+        // AUDIT FIX: when the Accessibility Service starts (e.g. after the user
+        // enables it in system settings, or after a reboot), ask the ScheduleEngine
+        // to re-evaluate + push the cached scheduled-block set to this service
+        // instance. Without this, scheduled launch blocking doesn't work until
+        // the next ScheduleCheckWorker run (up to 15 min later).
+        serviceScope.launch {
+            try {
+                protect.yourself.domain.schedule.ScheduleEngine
+                    .getInstance(this@MyAccessibilityService).reevaluateAndApply()
+                Timber.i("AUDIT FIX: ScheduleEngine.reevaluateAndApply triggered from onServiceConnected")
+            } catch (t: Throwable) {
+                Timber.w(t, "AUDIT FIX: ScheduleEngine.reevaluateAndApply failed in onServiceConnected")
+            }
+        }
         // LC-01 fix (v1.0.56): launch selfHealSafe on selfHealScope (NOT
         // serviceScope) so it survives any subsequent onDestroy cancellation.
         // selfHealSafe performs blocking IPC calls to Settings.Secure and
@@ -565,6 +581,16 @@ class MyAccessibilityService : AccessibilityService() {
         // regardless of whether URL keyword matching is enabled.
         if (cachedBlockApps.contains(packageName)) {
             launchBlockActivity(packageName, "block_page_default_block_apps_message")
+            return
+        }
+
+        // Phase 4: Scheduled launch blocking.
+        // If this app is in the scheduled block set (managed by ScheduleEngine),
+        // block it immediately. This mirrors the cachedBlockApps pattern but
+        // is driven by the Scheduler Engine rather than the static blocklist.
+        if (cachedScheduledBlockApps.contains(packageName)) {
+            Timber.i("Scheduled block: blocking app $packageName (scheduled launch restriction active)")
+            launchBlockActivity(packageName, "block_page_default_scheduled_app_message")
             return
         }
 
@@ -2143,6 +2169,18 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     // ===== Config refresh =====
+
+    /**
+     * Phase 2 stub: Update the set of scheduled launch-blocked apps.
+     * Called by ScheduleEngine when a scheduled launch-block rule starts/ends.
+     *
+     * Phase 4 will add the actual check in handleWindowStateChange() that
+     * uses this set to block the app.
+     */
+    fun updateScheduledBlockApps(apps: Set<String>) {
+        cachedScheduledBlockApps = apps
+        Timber.i("Scheduled block apps updated: ${apps.size} apps")
+    }
 
     /**
      * Refresh cached blocking config from DB.
