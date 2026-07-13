@@ -631,8 +631,6 @@ class BackupManager(private val context: Context) {
             }
         }
 
-            }
-        }
 
         // vpn_custom_dns — PK: key (String, required)
         // IMPORTANT: displayName is nullable in the entity but the DB column is
