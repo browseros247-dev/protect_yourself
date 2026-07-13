@@ -17,6 +17,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import protect.yourself.R
 import protect.yourself.core.appCoroutineScope
+import protect.yourself.core.ScheduleEngine
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
 import protect.yourself.database.switchStatus.SwitchIdentifier
@@ -129,6 +130,7 @@ class MyVpnService : VpnService() {
     }
 
     enum class VpnState { IDLE, CONNECTING, CONNECTED, FAILED }
+    enum class VpnMode { DNS_FILTERING, INTERNET_BLOCKED }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Timber.i("VPN service start command: action=${intent?.action}")
@@ -216,6 +218,14 @@ class MyVpnService : VpnService() {
         serviceScope.launch {
             try {
                 val db = AppDatabase.getInstance(this@MyVpnService)
+                // === Determine VPN mode from ScheduleEngine ===
+                val vpnMode = if (ScheduleEngine.isInternetBlocked()) {
+                    VpnMode.INTERNET_BLOCKED
+                } else {
+                    VpnMode.DNS_FILTERING
+                }
+                Timber.i("VpnService: mode=%s", vpnMode)
+
                 val switchValues = SwitchStatusValues(db.switchStatusDao())
 
                 // 1. Determine VPN connection type from DB
@@ -271,32 +281,29 @@ class MyVpnService : VpnService() {
                     .getSelectedByIdentifier(SelectedAppListIdentifier.VPN_WHITELIST_APPS.value)
                     .map { it.packageName }
 
-                // 4. Build VPN interface — NopoX-style: addDnsServer + allowBypass,
-                //    NO addRoute, NO manual DNS forwarding loop.
-                //
-                // Android's VPN framework handles DNS routing automatically:
-                // when apps make DNS queries, the system resolver sends them to
-                // the DNS servers configured via addDnsServer(). The DNS servers
-                // (Cloudflare Family / AdGuard Family) do the actual content
-                // filtering. No manual packet forwarding needed.
-                //
-                // This is the same approach NopoX v1.0.53 uses (decompiled):
-                //   builder.addDnsServer(dns1)
-                //   builder.addDnsServer(dns2)
-                //   builder.allowBypass()
-                //   builder.establish()
-                // No addRoute, no FileInputStream, no DatagramSocket, no protect().
-                val builder = Builder()
-                    .setSession(getString(R.string.app_name))
-                    .addAddress(InetAddress.getByName(VPN_ADDRESS), VPN_PREFIX_LENGTH)
-                    // NopoX adds multiple private addresses — we match its pattern.
-                    .addAddress(InetAddress.getByName("10.0.2.16"), VPN_PREFIX_LENGTH)
-                    .addAddress(InetAddress.getByName("10.0.2.17"), VPN_PREFIX_LENGTH)
-                    .addAddress(InetAddress.getByName("10.0.2.18"), VPN_PREFIX_LENGTH)
-                    .addDnsServer(InetAddress.getByName(firstDns))
-                    .addDnsServer(InetAddress.getByName(secondDns))
-                    .setMtu(VPN_MTU)
-                    .allowBypass()
+                // 4. Build VPN interface — dual-mode: DNS_FILTERING (NopoX-style) or
+                //    INTERNET_BLOCKED (route 0.0.0.0/0, no DNS, no bypass).
+                val builder = if (vpnMode == VpnMode.INTERNET_BLOCKED) {
+                    Builder()
+                        .setSession("Internet Blocked (Schedule)")
+                        .addAddress(InetAddress.getByName(VPN_ADDRESS), VPN_PREFIX_LENGTH)
+                        .addAddress(InetAddress.getByName("10.0.2.16"), VPN_PREFIX_LENGTH)
+                        .addAddress(InetAddress.getByName("10.0.2.17"), VPN_PREFIX_LENGTH)
+                        .addAddress(InetAddress.getByName("10.0.2.18"), VPN_PREFIX_LENGTH)
+                        .addRoute(InetAddress.getByName("0.0.0.0"), 0)
+                        .setMtu(VPN_MTU)
+                } else {
+                    Builder()
+                        .setSession(getString(R.string.app_name))
+                        .addAddress(InetAddress.getByName(VPN_ADDRESS), VPN_PREFIX_LENGTH)
+                        .addAddress(InetAddress.getByName("10.0.2.16"), VPN_PREFIX_LENGTH)
+                        .addAddress(InetAddress.getByName("10.0.2.17"), VPN_PREFIX_LENGTH)
+                        .addAddress(InetAddress.getByName("10.0.2.18"), VPN_PREFIX_LENGTH)
+                        .addDnsServer(InetAddress.getByName(firstDns))
+                        .addDnsServer(InetAddress.getByName(secondDns))
+                        .setMtu(VPN_MTU)
+                        .allowBypass()
+                }
 
                 // 5. Apply per-app routing: whitelisted apps bypass VPN
                 for (pkg in whitelistPackages) {
@@ -367,11 +374,15 @@ class MyVpnService : VpnService() {
                 // 8. Get notification message (custom or default)
                 val isHideNotification = switchValues.isVpnNotificationHideSwitchOn()
                 val customMessage = switchValues.getVpnNotificationCustomMessage()
-                val typeLabel = when (currentConnectionType) {
-                    VpnConnectionTypeIdentifiers.NORMAL -> getString(R.string.vpn_mode_balanced_label)
-                    VpnConnectionTypeIdentifiers.POWERFUL -> getString(R.string.vpn_mode_strict_label)
-                    VpnConnectionTypeIdentifiers.CUSTOM -> getString(R.string.vpn_mode_custom_label)
-                    VpnConnectionTypeIdentifiers.OFF -> ""
+                val typeLabel = if (vpnMode == VpnMode.INTERNET_BLOCKED) {
+                    "Internet Blocked (Schedule)"
+                } else {
+                    when (currentConnectionType) {
+                        VpnConnectionTypeIdentifiers.NORMAL -> getString(R.string.vpn_mode_balanced_label)
+                        VpnConnectionTypeIdentifiers.POWERFUL -> getString(R.string.vpn_mode_strict_label)
+                        VpnConnectionTypeIdentifiers.CUSTOM -> getString(R.string.vpn_mode_custom_label)
+                        VpnConnectionTypeIdentifiers.OFF -> ""
+                    }
                 }
                 val notificationText = if (!customMessage.isNullOrBlank()) {
                     "$customMessage ($typeLabel)"
