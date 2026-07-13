@@ -413,7 +413,7 @@ private fun MainScreen(
         ) {
             when (selectedTab) {
                 MainPageScreen.Home -> BlockerPageHome()
-                MainPageScreen.Schedule -> Text("Schedule")
+                MainPageScreen.Schedule -> protect.yourself.features.schedulePage.SchedulePage()
                 MainPageScreen.Profile -> ProfilePage()
             }
         }

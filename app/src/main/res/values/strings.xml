@@ -213,4 +213,31 @@
     <string name="lock_screen_locked_out">Too many failed attempts. Try again in %1$s.</string>
     <string name="lock_screen_backspace">Backspace</string>
 
+
+    <!-- Scheduled Restrictions -->
+    <string name="scheduled_restrictions">Scheduled Restrictions</string>
+    <string name="add_schedule">Add Schedule</string>
+    <string name="edit_schedule">Edit Schedule</string>
+    <string name="schedule_name">Schedule Name</string>
+    <string name="schedule_type">Type</string>
+    <string name="launch_blocking">Launch Blocking</string>
+    <string name="internet_blocking">Internet Blocking</string>
+    <string name="strict_mode">Strict Mode</string>
+    <string name="days_active">Active Days</string>
+    <string name="time_range">Time Range</string>
+    <string name="start_time">Start Time</string>
+    <string name="end_time">End Time</string>
+    <string name="blocked_apps">Blocked Apps</string>
+    <string name="add_app">Add App</string>
+    <string name="delete_schedule">Delete Schedule</string>
+    <string name="delete_schedule_confirm">Are you sure you want to delete this schedule?</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="save">Save</string>
+    <string name="no_schedules">No schedules yet. Tap + to add one.</string>
+    <string name="crosses_midnight">Crosses midnight</string>
+    <string name="all_days">All days</string>
+    <string name="internet_blocked_text">Internet Blocked (Schedule)</string>
+    <string name="app_search_hint">Search apps...</string>
+
 </resources>
