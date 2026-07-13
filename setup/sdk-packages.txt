@@ -1,0 +1,22 @@
+# Android SDK packages required by Protect-Yourself
+#
+# This file is a reference for which SDK packages the project needs.
+# The setup-env.sh script installs these automatically.
+#
+# Format: one package per line, matching sdkmanager's package specifiers.
+# Lines starting with '#' are comments.
+#
+# To install manually:
+#   sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+#
+# To list all available packages:
+#   sdkmanager --list
+
+# Android platform — matches compileSdk = 35 in app/build.gradle.kts
+platforms;android-35
+
+# Build tools — must match compileSdk major version
+build-tools;35.0.0
+
+# Platform tools — provides adb for device testing
+platform-tools

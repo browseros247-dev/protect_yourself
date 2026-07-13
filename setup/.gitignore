@@ -1,0 +1,14 @@
+# Setup directory gitignore
+#
+# The setup script downloads large binaries (JDK, SDK) — these must NEVER
+# be committed. This gitignore ensures that even if someone runs the script
+# from inside the setup/ directory, the downloads are excluded.
+
+# Downloaded archives
+*.tar.gz
+*.zip
+
+# Extracted JDK / SDK (if installed inside setup/)
+jdk-*/
+android-sdk/
+tools/

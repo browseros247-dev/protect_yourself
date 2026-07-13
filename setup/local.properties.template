@@ -1,0 +1,18 @@
+# Template for local.properties — copy to ../local.properties and edit
+#
+# This file is MACHINE-SPECIFIC — it points Gradle to your local Android SDK.
+# It is in .gitignore and should NOT be committed.
+#
+# The setup-env.sh script creates this file automatically. Use this template
+# only if you're setting up manually.
+#
+# Usage:
+#   cp setup/local.properties.template local.properties
+#   # Edit local.properties to point to your SDK location
+#   nano local.properties
+
+# Path to your Android SDK installation.
+# On Linux: typically /home/<user>/Android/Sdk or /opt/android-sdk
+# On macOS: typically /Users/<user>/Library/Android/sdk
+# On Windows: typically C:\Users\<user>\AppData\Local\Android\Sdk
+sdk.dir=/home/z/my-project/android-sdk
