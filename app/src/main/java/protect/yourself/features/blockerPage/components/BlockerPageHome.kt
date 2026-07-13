@@ -1071,7 +1071,9 @@ private fun AccessibilityWarningCard(context: android.content.Context) {
 @Composable
 private fun SwitchRow(item: SettingPageItemModel, onToggle: (SettingPageItemModel) -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle(item) },  // AUDIT FIX: whole card is clickable — shows toast when disabled
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (item.isDisabled)

@@ -294,6 +294,13 @@ class MyVpnService : VpnService() {
                 // by the VpnService.Builder API), but it only affects the apps
                 // routed through the VPN (the scheduled apps whose traffic is
                 // black-holed anyway).
+                //
+                // CRITICAL FIX: allowBypass() is NOT called in per-app-block mode.
+                // allowBypass() lets apps explicitly request to bypass the VPN
+                // via Network.setProcessDefaultNetwork(). In per-app-block mode,
+                // we WANT to block the targeted apps — allowing bypass would
+                // let them circumvent the block. In DNS-filter mode, allowBypass
+                // is safe because all traffic is supposed to go through the VPN.
                 val builder = Builder()
                     .setSession(getString(R.string.app_name))
                     .addAddress(InetAddress.getByName(VPN_ADDRESS), VPN_PREFIX_LENGTH)
@@ -303,7 +310,16 @@ class MyVpnService : VpnService() {
                     .addDnsServer(InetAddress.getByName(firstDns))
                     .addDnsServer(InetAddress.getByName(secondDns))
                     .setMtu(VPN_MTU)
-                    .allowBypass()
+
+                if (isPerAppBlockMode) {
+                    // CRITICAL FIX: do NOT call allowBypass() in per-app-block mode.
+                    // Only call it in DNS-filter mode (below).
+                    if (protect.yourself.BuildConfig.DEBUG) {
+                        Timber.w("DEBUG: PER_APP_BLOCK mode — NOT calling allowBypass() — ${scheduledApps.size} apps will be blocked: $scheduledApps")
+                    }
+                } else {
+                    builder.allowBypass()
+                }
 
                 if (isPerAppBlockMode) {
                     // Phase 3: PER_APP_BLOCK mode — route ONLY scheduled apps
@@ -356,9 +372,15 @@ class MyVpnService : VpnService() {
                 }
 
                 // 8. Establish the VPN interface
+                if (protect.yourself.BuildConfig.DEBUG) {
+                    Timber.w("DEBUG startVpn: calling builder.establish() — mode=${if (isPerAppBlockMode) "PER_APP_BLOCK" else "DNS_FILTER"}")
+                }
                 vpnInterface = builder.establish()
                 if (vpnInterface == null) {
                     Timber.e("Failed to establish VPN interface — user may have revoked permission")
+                    if (protect.yourself.BuildConfig.DEBUG) {
+                        Timber.w("DEBUG startVpn: establish() returned NULL — VPN permission may be revoked")
+                    }
                     isStarting.set(false)
                     setVpnState(VpnState.FAILED)
                     // AUDIT FIX: Only clear VPN_SWITCH if the VPN was started by
@@ -399,6 +421,13 @@ class MyVpnService : VpnService() {
                 isRunning = true
                 isStarting.set(false)
                 setVpnState(VpnState.CONNECTED)
+
+                if (protect.yourself.BuildConfig.DEBUG) {
+                    Timber.w("DEBUG startVpn: VPN ESTABLISHED SUCCESSFULLY — mode=${if (isPerAppBlockMode) "PER_APP_BLOCK" else "DNS_FILTER"}, scheduledApps=${scheduledApps.size}")
+                    if (isPerAppBlockMode) {
+                        Timber.w("DEBUG startVpn: blocked apps = $scheduledApps")
+                    }
+                }
 
                 // 8. Get notification message (custom or default)
                 val isHideNotification = switchValues.isVpnNotificationHideSwitchOn()
@@ -637,16 +666,19 @@ class MyVpnService : VpnService() {
         fun setScheduledBlockApps(context: Context, apps: Set<String>) {
             scheduledBlockApps = apps
             Timber.i("MyVpnService: scheduledBlockApps updated (${apps.size} apps)")
+            if (protect.yourself.BuildConfig.DEBUG) {
+                Timber.w("DEBUG setScheduledBlockApps: apps=$apps")
+                Timber.w("DEBUG setScheduledBlockApps: isRunning=${isRunning()}, instance=${instance != null}")
+            }
             if (apps.isNotEmpty()) {
                 // AUDIT FIX: Check VPN permission before starting.
-                // VpnService.prepare() returns null if permission is already granted,
-                // or a non-null Intent that must be launched from an Activity.
-                // We cannot launch an Activity from a background service, so if
-                // permission is not granted, we log + notify the user.
-                if (android.net.VpnService.prepare(context) != null) {
+                val prepareResult = android.net.VpnService.prepare(context)
+                if (protect.yourself.BuildConfig.DEBUG) {
+                    Timber.w("DEBUG setScheduledBlockApps: VpnService.prepare() = ${if (prepareResult != null) "NON_NULL(permission needed)" else "NULL(permission granted)"}")
+                }
+                if (prepareResult != null) {
                     Timber.w("MyVpnService: VPN permission not granted — cannot start per-app-block mode from background. " +
                         "User must open the app and enable VPN manually.")
-                    // Show a notification prompting the user to grant VPN permission
                     try {
                         protect.yourself.commons.utils.notificationUtils.NotificationHelper
                             .showVpnPermissionRequiredNotification(context)
@@ -658,9 +690,15 @@ class MyVpnService : VpnService() {
                 // Need VPN in per-app-block mode. Start or restart.
                 if (!isRunning()) {
                     Timber.i("MyVpnService: VPN not running — starting in per-app-block mode")
+                    if (protect.yourself.BuildConfig.DEBUG) {
+                        Timber.w("DEBUG setScheduledBlockApps: calling start(context) — VPN will start in PER_APP_BLOCK mode")
+                    }
                     start(context)
                 } else {
                     Timber.i("MyVpnService: VPN running — restarting to switch to per-app-block mode")
+                    if (protect.yourself.BuildConfig.DEBUG) {
+                        Timber.w("DEBUG setScheduledBlockApps: calling restart(context) — VPN will switch to PER_APP_BLOCK mode")
+                    }
                     restart(context)
                 }
             }

@@ -67,11 +67,26 @@ class ScheduleEngine private constructor(private val context: Context) {
                     .getPackagesForRule(rule.key)
             }
 
+            if (protect.yourself.BuildConfig.DEBUG) {
+                Timber.w("DEBUG ScheduleEngine: ${rules.size} enabled rules")
+                for (rule in rules) {
+                    val apps = appsByRule[rule.key] ?: emptyList()
+                    Timber.w("DEBUG ScheduleEngine: rule '${rule.name}' type=${rule.type} start=${rule.startTimeMinutes} end=${rule.endTimeMinutes} days=${rule.daysOfWeek} apps=$apps")
+                }
+            }
+
             val active = ScheduleEvaluator.evaluate(rules, appsByRule)
 
             Timber.i("ScheduleEngine: ${rules.size} enabled rules → " +
                 "${active.internetBlockedPackages.size} internet-blocked, " +
                 "${active.launchBlockedPackages.size} launch-blocked apps")
+
+            if (protect.yourself.BuildConfig.DEBUG) {
+                Timber.w("DEBUG ScheduleEngine: internetBlocked=${active.internetBlockedPackages}")
+                Timber.w("DEBUG ScheduleEngine: launchBlocked=${active.launchBlockedPackages}")
+                Timber.w("DEBUG ScheduleEngine: lastInternetBlocked=$lastInternetBlockedSet")
+                Timber.w("DEBUG ScheduleEngine: lastLaunchBlocked=$lastLaunchBlockedSet")
+            }
 
             // Update Accessibility cache (launch blocking)
             // AUDIT FIX: if the Accessibility Service is not running (instance == null),

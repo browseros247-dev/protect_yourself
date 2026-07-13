@@ -213,8 +213,12 @@ class BlockerPageViewModel(
         val timeDelayOn = switchValues.isTimeDelayDurationSet()
         val preventUninstallOn = switchValues.isPreventUninstallSwitchOn()
 
+        if (protect.yourself.BuildConfig.DEBUG) {
+            Timber.w("DEBUG applyDependencyRules: vpnOn=$vpnOn, pornBlockerOn=$pornBlockerOn, blockUnsupportedBrowsersOn=$blockUnsupportedBrowsersOn, timeDelayOn=$timeDelayOn, preventUninstallOn=$preventUninstallOn")
+        }
+
         return items.map { item ->
-            when (item.identifier) {
+            val result = when (item.identifier) {
                 // SafeSearch depends on VPN (DNS-level enforcement needs VPN)
                 SettingPageItemIdentifiers.SAFE_SEARCH -> {
                     if (!vpnOn) item.copy(
@@ -312,6 +316,10 @@ class BlockerPageViewModel(
                 }
                 else -> item
             }
+            if (protect.yourself.BuildConfig.DEBUG && result.isDisabled) {
+                Timber.w("DEBUG applyDependencyRules: DISABLED '${result.title}' — ${result.dependencyMessage}")
+            }
+            result
         }
     }
 
@@ -393,6 +401,18 @@ class BlockerPageViewModel(
     }
 
     fun toggleSwitch(item: SettingPageItemModel) {
+        // AUDIT FIX: if the item is disabled (prerequisite not met), show a toast
+        // explaining what must be enabled first. Do NOT toggle the switch.
+        if (item.isDisabled) {
+            safeLaunch {
+                val msg = item.dependencyMessage ?: "This setting requires a prerequisite to be enabled first."
+                _navigation.emit(BlockerPageNavigation.ShowToast(msg))
+                if (protect.yourself.BuildConfig.DEBUG) {
+                    Timber.w("DEBUG toggleSwitch: rejected toggle on disabled item '${item.title}' — $msg")
+                }
+            }
+            return
+        }
         val switchKey = item.switchKey ?: return
         val newValue = !item.switchValue
 
@@ -1082,6 +1102,17 @@ class BlockerPageViewModel(
     }
 
     fun onActionClick(item: SettingPageItemModel) {
+        // AUDIT FIX: if the item is disabled (prerequisite not met), show a toast
+        if (item.isDisabled) {
+            safeLaunch {
+                val msg = item.dependencyMessage ?: "This setting requires a prerequisite to be enabled first."
+                _navigation.emit(BlockerPageNavigation.ShowToast(msg))
+                if (protect.yourself.BuildConfig.DEBUG) {
+                    Timber.w("DEBUG onActionClick: rejected action on disabled item '${item.title}' — $msg")
+                }
+            }
+            return
+        }
         Timber.d("Action clicked: ${item.identifier}")
         safeLaunch {
             val nav = when (item.identifier) {
