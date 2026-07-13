@@ -18,6 +18,7 @@ import protect.yourself.database.switchStatus.SwitchStatusValues
 import protect.yourself.features.blockerPage.utils.BlockerPageUtils
 import timber.log.Timber
 import java.util.Locale
+import protect.yourself.core.ScheduleEngine
 
 /**
  * MyAccessibilityService — core blocking service.
@@ -74,6 +75,7 @@ class MyAccessibilityService : AccessibilityService() {
     @Volatile private var cachedNewInstallBlockApps: Set<String> = emptySet()
     @Volatile private var cachedInAppBrowserBlockApps: Set<String> = emptySet()
     @Volatile private var cachedUnsupportedBrowserWhitelist: Set<String> = emptySet()
+    @Volatile private var cachedScheduledBlockApps: Set<String> = emptySet()
     // SET-01 fix: user-selected apps for "Block Settings Page by Title".
     // The settings-by-title check now ONLY fires for packages in this set
     // (or known settings packages). Previously it ran on ALL apps, which
@@ -563,6 +565,14 @@ class MyAccessibilityService : AccessibilityService() {
         // work independently of the Porn Blocker switch — the user explicitly
         // added these apps to the blocklist, so they should be blocked
         // regardless of whether URL keyword matching is enabled.
+        // Block apps via scheduled restrictions (read from ScheduleEngine).
+        // PRO-FIX-01: these restrictions are enforced by the Scheduler engine and applied
+        // alongside the user's manual blocklist. The check is placed before the manual
+        // blocklist so scheduled blocks take priority.
+        if (cachedScheduledBlockApps.contains(packageName)) {
+            launchBlockActivity(packageName, "block_page_default_block_apps_message")
+            return
+        }
         if (cachedBlockApps.contains(packageName)) {
             launchBlockActivity(packageName, "block_page_default_block_apps_message")
             return
@@ -2407,6 +2417,8 @@ class MyAccessibilityService : AccessibilityService() {
             cachedBlockApps = db.selectedAppsListDao()
                 .getSelectedByIdentifier(SelectedAppListIdentifier.BLOCK_APPS.value)
                 .map { it.packageName }.toSet()
+            // Scheduled app restrictions — read from ScheduleEngine (lived from DB)
+            cachedScheduledBlockApps = ScheduleEngine.getBlockedPackages()
             cachedStopMeWhitelist = db.selectedAppsListDao()
                 .getSelectedByIdentifier(SelectedAppListIdentifier.WHITELIST_STOP_ME_APPS.value)
                 .map { it.packageName }.toSet()
