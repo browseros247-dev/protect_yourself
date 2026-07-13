@@ -10,6 +10,10 @@ import protect.yourself.database.blockScreensCount.BlockScreenCountDao
 import protect.yourself.database.blockScreensCount.BlockScreenCountItemModel
 import protect.yourself.database.pendingRequests.PendingRequestDao
 import protect.yourself.database.pendingRequests.PendingRequestItemModel
+import protect.yourself.database.scheduledRestrictions.ScheduledRestrictionAppDao
+import protect.yourself.database.scheduledRestrictions.ScheduledRestrictionAppItemModel
+import protect.yourself.database.scheduledRestrictions.ScheduledRestrictionDao
+import protect.yourself.database.scheduledRestrictions.ScheduledRestrictionItemModel
 import protect.yourself.database.selectedApps.SelectedAppItemModel
 import protect.yourself.database.selectedApps.SelectedAppListAppsDao
 import protect.yourself.database.selectedKeywords.SelectedKeywordDao
@@ -41,6 +45,8 @@ import timber.log.Timber
     entities = [
         BlockScreenCountItemModel::class,
         PendingRequestItemModel::class,
+        ScheduledRestrictionItemModel::class,
+        ScheduledRestrictionAppItemModel::class,
         SelectedAppItemModel::class,
         SelectedKeywordItemModel::class,
         StopMeDurationItemModel::class,
@@ -55,6 +61,8 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun blockScreenCountDao(): BlockScreenCountDao
     abstract fun pendingRequestDao(): PendingRequestDao
+    abstract fun scheduledRestrictionDao(): ScheduledRestrictionDao
+    abstract fun scheduledRestrictionAppDao(): ScheduledRestrictionAppDao
     abstract fun selectedAppsListDao(): SelectedAppListAppsDao
     abstract fun selectedKeywordDao(): SelectedKeywordDao
     abstract fun stopMeDurationDao(): StopMeDurationDao
