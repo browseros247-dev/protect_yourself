@@ -16,6 +16,8 @@ import protect.yourself.BuildConfig
 import protect.yourself.database.blockScreensCount.BlockScreenCountItemModel
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.pendingRequests.PendingRequestItemModel
+import protect.yourself.database.scheduledRestrictions.ScheduledRestrictionAppItemModel
+import protect.yourself.database.scheduledRestrictions.ScheduledRestrictionItemModel
 import protect.yourself.database.selectedApps.SelectedAppItemModel
 import protect.yourself.database.selectedKeywords.SelectedKeywordItemModel
 import protect.yourself.database.stopMeDuration.StopMeDurationItemModel
@@ -300,7 +302,9 @@ class BackupManager(private val context: Context) {
             pendingRequests = db.pendingRequestDao().getAll(),
             stopMeDuration = db.stopMeDurationDao().getAll(),
             stopMeSessionCount = db.stopMeSessionCountDao().getAll(),
-            vpnCustomDns = db.vpnCustomDnsDao().getAll()
+            vpnCustomDns = db.vpnCustomDnsDao().getAll(),
+            scheduledRestrictions = db.scheduledRestrictionDao().getAll(),
+            scheduledRestrictionApps = db.scheduledRestrictionAppDao().getAll()
         )
     }
 
@@ -339,7 +343,9 @@ class BackupManager(private val context: Context) {
                 pendingRequests = data.pendingRequests,
                 stopMeDuration = data.stopMeDuration,
                 stopMeSessionCount = data.stopMeSessionCount,
-                vpnCustomDns = data.vpnCustomDns
+                vpnCustomDns = data.vpnCustomDns,
+                scheduledRestrictions = data.scheduledRestrictions,
+                scheduledRestrictionApps = data.scheduledRestrictionApps
             ),
             stats = stats
         )
@@ -492,6 +498,11 @@ class BackupManager(private val context: Context) {
             db.vpnCustomDnsDao().deleteAll()
         } else {
             Timber.i("BUG-03: backup does not contain vpn_custom_dns — preserving existing presets")
+        }
+        // Phase 6: conditionally delete scheduled restriction tables
+        if (!tables.scheduledRestrictions.isNullOrEmpty()) {
+            db.scheduledRestrictionAppDao().deleteAll()
+            db.scheduledRestrictionDao().deleteAll()
         }
 
         // Restore each table — use upsertAll for bulk insert (Room compiles to single INSERT)
@@ -703,9 +714,34 @@ class BackupManager(private val context: Context) {
             }
         }
 
+        // Phase 6: Restore scheduled restriction tables
+        var scheduledRestrictionsCount = 0
+        var scheduledRestrictionAppsCount = 0
+        tables.scheduledRestrictions?.let { list ->
+            if (list.isNotEmpty()) {
+                val sanitized = list.mapNotNull { item ->
+                    if (item.key.isBlank()) return@mapNotNull null
+                    item
+                }
+                if (sanitized.isNotEmpty()) {
+                    db.scheduledRestrictionDao().upsertAll(sanitized)
+                    scheduledRestrictionsCount = sanitized.size
+                }
+            }
+        }
+        tables.scheduledRestrictionApps?.let { list ->
+            if (list.isNotEmpty()) {
+                val sanitized = list.filter { it.restrictionKey.isNotBlank() && it.packageName.isNotBlank() }
+                if (sanitized.isNotEmpty()) {
+                    db.scheduledRestrictionAppDao().upsertAll(sanitized)
+                    scheduledRestrictionAppsCount = sanitized.size
+                }
+            }
+        }
+
         val total = switchCount + keywordCount + appCount + blockScreenCount +
             pendingRequestCount + stopMeDurationCount + stopMeSessionCount +
-            vpnCustomDnsCount
+            vpnCustomDnsCount + scheduledRestrictionsCount + scheduledRestrictionAppsCount
 
         return RestoredCounts(
             switchCount = switchCount,
@@ -716,6 +752,8 @@ class BackupManager(private val context: Context) {
             stopMeDurationCount = stopMeDurationCount,
             stopMeSessionCount = stopMeSessionCount,
             vpnCustomDnsCount = vpnCustomDnsCount,
+            scheduledRestrictionsCount = scheduledRestrictionsCount,
+            scheduledRestrictionAppsCount = scheduledRestrictionAppsCount,
             totalRows = total
         )
     }
@@ -775,7 +813,9 @@ data class BackupTables(
     val pendingRequests: List<PendingRequestItemModel>? = null,
     val stopMeDuration: List<StopMeDurationItemModel>? = null,
     val stopMeSessionCount: List<StopMeSessionCountItemModel>? = null,
-    val vpnCustomDns: List<VpnCustomDnsItemModel>? = null
+    val vpnCustomDns: List<VpnCustomDnsItemModel>? = null,
+    val scheduledRestrictions: List<ScheduledRestrictionItemModel>? = null,
+    val scheduledRestrictionApps: List<ScheduledRestrictionAppItemModel>? = null
 )
 
 /**
@@ -789,7 +829,9 @@ private data class BackupTablesContainer(
     val pendingRequests: List<PendingRequestItemModel>,
     val stopMeDuration: List<StopMeDurationItemModel>,
     val stopMeSessionCount: List<StopMeSessionCountItemModel>,
-    val vpnCustomDns: List<VpnCustomDnsItemModel>
+    val vpnCustomDns: List<VpnCustomDnsItemModel>,
+    val scheduledRestrictions: List<ScheduledRestrictionItemModel>,
+    val scheduledRestrictionApps: List<ScheduledRestrictionAppItemModel>
 )
 
 /**
@@ -816,6 +858,8 @@ private data class RestoredCounts(
     val stopMeDurationCount: Int,
     val stopMeSessionCount: Int,
     val vpnCustomDnsCount: Int,
+    val scheduledRestrictionsCount: Int = 0,
+    val scheduledRestrictionAppsCount: Int = 0,
     val totalRows: Int
 )
 
