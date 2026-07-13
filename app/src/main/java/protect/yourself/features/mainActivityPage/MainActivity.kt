@@ -396,7 +396,12 @@ private fun MainScreen(
 ) {
     var selectedTab by remember { mutableStateOf(MainPageScreen.Home) }
 
-    // Consume a deep-link tab request (e.g. from StreakWidget) by switching
+    // Phase 5: Schedule editor sub-page state.
+    // null = show schedule list; "new" = create new; any other string = edit that key.
+    var scheduleEditKey by remember { mutableStateOf<String?>(null) }
+    var showScheduleEditor by remember { mutableStateOf(false) }
+
+    // Consume a deep-link tab request (e.g. from widget) by switching
     // to the requested tab once, then clearing the request.
     LaunchedEffect(requestedTab) {
         if (requestedTab != null) {
@@ -405,8 +410,20 @@ private fun MainScreen(
         }
     }
 
+    // Back handler for schedule editor
+    androidx.activity.compose.BackHandler(
+        enabled = selectedTab == MainPageScreen.Schedule && showScheduleEditor
+    ) {
+        showScheduleEditor = false
+    }
+
     Scaffold(
-        bottomBar = { AppBottomBar(selectedTab) { selectedTab = it } }
+        bottomBar = {
+            // Hide bottom bar when schedule editor is open
+            if (!(selectedTab == MainPageScreen.Schedule && showScheduleEditor)) {
+                AppBottomBar(selectedTab) { selectedTab = it }
+            }
+        }
     ) { padding ->
         Box(
             modifier = Modifier
@@ -415,7 +432,28 @@ private fun MainScreen(
         ) {
             when (selectedTab) {
                 MainPageScreen.Home -> BlockerPageHome()
-                MainPageScreen.Schedule -> SchedulePlaceholderPage()
+                MainPageScreen.Schedule -> {
+                    if (showScheduleEditor) {
+                        protect.yourself.features.schedulePage.components.ScheduleEditorPage(
+                            editKey = scheduleEditKey,
+                            onBack = {
+                                showScheduleEditor = false
+                                scheduleEditKey = null
+                            }
+                        )
+                    } else {
+                        protect.yourself.features.schedulePage.components.SchedulePage(
+                            onCreateSchedule = {
+                                scheduleEditKey = null
+                                showScheduleEditor = true
+                            },
+                            onEditSchedule = { key ->
+                                scheduleEditKey = key
+                                showScheduleEditor = true
+                            }
+                        )
+                    }
+                }
                 MainPageScreen.Profile -> ProfilePage()
             }
         }
@@ -448,41 +486,4 @@ private fun MainPageScreen.vectorIcon(): ImageVector = when (this) {
     MainPageScreen.Home -> Icons.Filled.Shield
     MainPageScreen.Schedule -> Icons.Filled.Schedule
     MainPageScreen.Profile -> Icons.Filled.Person
-}
-
-/**
- * Placeholder for the Schedule tab — will be replaced by the full
- * SchedulePage UI in Phase 5 of the Scheduled App Restrictions plan.
- * This exists so the tab is visible and tappable during Phases 1-4.
- */
-@Composable
-private fun SchedulePlaceholderPage() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Filled.Schedule,
-            contentDescription = null,
-            tint = BrandOrange,
-            modifier = Modifier.size(64.dp)
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "Scheduled App Restrictions",
-            style = MaterialTheme.typography.headlineSmall,
-            color = BrandOrange,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Coming soon — this feature is being implemented.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
 }
