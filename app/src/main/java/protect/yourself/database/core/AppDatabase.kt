@@ -22,6 +22,10 @@ import protect.yourself.database.switchStatus.SwitchStatusDao
 import protect.yourself.database.switchStatus.SwitchStatusItemModel
 import protect.yourself.database.vpnCustomDns.VpnCustomDnsDao
 import protect.yourself.database.vpnCustomDns.VpnCustomDnsItemModel
+import protect.yourself.database.scheduledRestrictions.ScheduledRestrictionAppDao
+import protect.yourself.database.scheduledRestrictions.ScheduledRestrictionAppItemModel
+import protect.yourself.database.scheduledRestrictions.ScheduledRestrictionDao
+import protect.yourself.database.scheduledRestrictions.ScheduledRestrictionItemModel
 import timber.log.Timber
 
 /**
@@ -46,7 +50,9 @@ import timber.log.Timber
         StopMeDurationItemModel::class,
         StopMeSessionCountItemModel::class,
         SwitchStatusItemModel::class,
-        VpnCustomDnsItemModel::class
+        VpnCustomDnsItemModel::class,
+        ScheduledRestrictionItemModel::class,
+        ScheduledRestrictionAppItemModel::class
     ],
     version = 11,
     exportSchema = true
@@ -61,6 +67,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun stopMeSessionCountDao(): StopMeSessionCountDao
     abstract fun switchStatusDao(): SwitchStatusDao
     abstract fun vpnCustomDnsDao(): VpnCustomDnsDao
+    abstract fun scheduledRestrictionDao(): ScheduledRestrictionDao
+    abstract fun scheduledRestrictionAppDao(): ScheduledRestrictionAppDao
 
     companion object {
         @Volatile
@@ -104,6 +112,31 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("DROP TABLE IF EXISTS streak_dates_table")
+                database.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `scheduled_restrictions` (
+                        `restrictionKey` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `startTimeMinutes` INTEGER NOT NULL,
+                        `endTimeMinutes` INTEGER NOT NULL,
+                        `daysOfWeek` TEXT NOT NULL,
+                        `isEnabled` INTEGER NOT NULL DEFAULT 1,
+                        `isStrictMode` INTEGER NOT NULL DEFAULT 0,
+                        `focusProfile` TEXT,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`restrictionKey`)
+                    )"""
+                )
+                database.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `scheduled_restriction_apps` (
+                        `restrictionKey` TEXT NOT NULL,
+                        `packageName` TEXT NOT NULL,
+                        `appName` TEXT NOT NULL,
+                        PRIMARY KEY(`restrictionKey`, `packageName`),
+                        FOREIGN KEY(`restrictionKey`) REFERENCES `scheduled_restrictions`(`restrictionKey`) ON DELETE CASCADE
+                    )"""
+                )
             }
         }
 
