@@ -76,6 +76,19 @@ fun SchedulePage(
         viewModel.loadSchedules()
     }
 
+    // FIX: Reload schedules + VPN status when the page resumes (e.g. after user
+    // returns from VPN settings where they may have enabled/disabled VPN).
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.loadSchedules()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // Collect navigation events (VPN warnings, errors) → show toasts
     LaunchedEffect(Unit) {
         viewModel.navigation.collect { nav ->
