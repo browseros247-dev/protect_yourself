@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -166,9 +167,19 @@ fun VpnManagementPage(
         // === Back button + title ===
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onBack) {
-                    Text("← Back", color = BrandOrange)
+                androidx.compose.material3.IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = BrandOrange
+                    )
                 }
+                Text(
+                    text = stringResource(R.string.vpn_page_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = BrandOrange,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
         item {

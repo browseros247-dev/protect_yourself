@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
@@ -689,19 +690,20 @@ private fun CategoryDetailPage(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onBack) {
-                    Text("← Back", color = BrandOrange)
+                androidx.compose.material3.IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = BrandOrange
+                    )
                 }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = BrandOrange,
+                    fontWeight = FontWeight.Bold
+                )
             }
-        }
-        item {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = BrandOrange,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
         }
         items(items) { item ->
             // Dedicated cards for the Block Screen Motivation Image and
@@ -1511,7 +1513,13 @@ private fun BlockScreenMessageRow(
 @Composable
 private fun SimpleSubPage(title: String, onBack: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) {
-        TextButton(onClick = onBack) { Text("← Back", color = BrandOrange) }
+        androidx.compose.material3.IconButton(onClick = onBack) {
+            Icon(
+                imageVector = Icons.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = BrandOrange
+            )
+        }
         Spacer(modifier = Modifier.height(16.dp))
         Text(title, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(16.dp))
