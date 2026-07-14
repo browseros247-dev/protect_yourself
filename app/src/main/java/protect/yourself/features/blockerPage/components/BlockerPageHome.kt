@@ -744,7 +744,6 @@ private fun CategoryDetailPage(
                 }
             }
         }
-        item { Spacer(modifier = Modifier.height(80.dp)) }
     }
 }
 
