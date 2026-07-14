@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -64,11 +66,31 @@ fun SchedulePage(
         )
     )
     val state by viewModel.state.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     // Reload schedules every time the page is opened (updates "Active now" status)
     LaunchedEffect(Unit) {
         viewModel.loadSchedules()
     }
+
+    // Collect navigation events (VPN warnings, errors) → show toasts
+    LaunchedEffect(Unit) {
+        viewModel.navigation.collect { nav ->
+            when (nav) {
+                is protect.yourself.features.schedulePage.ScheduleNavigation.VpnRequired -> {
+                    android.widget.Toast.makeText(context, nav.message, android.widget.Toast.LENGTH_LONG).show()
+                }
+                is protect.yourself.features.schedulePage.ScheduleNavigation.Error -> {
+                    android.widget.Toast.makeText(context, nav.message, android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    // Check if any schedules need VPN (internet or both type) but VPN is off
+    val hasInternetSchedulesWithoutVpn = state.schedules.any {
+        (it.rule.type == "internet" || it.rule.type == "both") && it.rule.isEnabled
+    } && !state.isVpnEnabled
 
     Scaffold(
         floatingActionButton = {
@@ -94,21 +116,65 @@ fun SchedulePage(
                 ) {
                     CircularProgressIndicator(color = BrandOrange)
                 }
-            } else if (state.schedules.isEmpty()) {
-                ScheduleEmptyState()
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(state.schedules, key = { it.rule.key }) { item ->
-                        ScheduleCard(
-                            item = item,
-                            onToggle = { viewModel.toggleSchedule(item.rule.key, it) },
-                            onDelete = { viewModel.deleteSchedule(item.rule.key) },
-                            onClick = { onEditSchedule(item.rule.key) }
-                        )
+                    // VPN dependency warning banner
+                    if (hasInternetSchedulesWithoutVpn) {
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Warning,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "VPN is not enabled",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Some schedules block internet, but VPN is off. " +
+                                                "Enable VPN in Home → Advanced Features → VPN " +
+                                                "for internet blocking to work.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Empty state
+                    if (state.schedules.isEmpty()) {
+                        item { ScheduleEmptyState() }
+                    } else {
+                        items(state.schedules, key = { it.rule.key }) { item ->
+                            ScheduleCard(
+                                item = item,
+                                onToggle = { viewModel.toggleSchedule(item.rule.key, it) },
+                                onDelete = { viewModel.deleteSchedule(item.rule.key) },
+                                onClick = { onEditSchedule(item.rule.key) }
+                            )
+                        }
                     }
                     item { Spacer(modifier = Modifier.height(80.dp)) }
                 }

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -99,6 +100,26 @@ fun ScheduleEditorPage(
     var endMinutes by remember { mutableIntStateOf(1020) }   // 5:00 PM default
     val selectedDays = remember { mutableStateListOf<Int>().apply { addAll(listOf(1, 2, 3, 4, 5)) } } // Mon-Fri default
     val selectedApps = remember { mutableStateListOf<Pair<String, String>>() } // (packageName, appName)
+    var isVpnEnabled by remember { mutableStateOf(false) }
+
+    // Load VPN status (for dependency warning)
+    LaunchedEffect(Unit) {
+        isVpnEnabled = viewModel.isVpnEnabled()
+    }
+
+    // Collect navigation events (VPN warnings) → show toasts while editor is open
+    LaunchedEffect(Unit) {
+        viewModel.navigation.collect { nav ->
+            when (nav) {
+                is protect.yourself.features.schedulePage.ScheduleNavigation.VpnRequired -> {
+                    android.widget.Toast.makeText(context, nav.message, android.widget.Toast.LENGTH_LONG).show()
+                }
+                is protect.yourself.features.schedulePage.ScheduleNavigation.Error -> {
+                    android.widget.Toast.makeText(context, nav.message, android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     var showStartTimePicker by remember { mutableStateOf(false) }
     var showEndTimePicker by remember { mutableStateOf(false) }
@@ -194,6 +215,48 @@ fun ScheduleEditorPage(
                                 ScheduleTypeIdentifiers.LAUNCH -> "Launch"
                                 ScheduleTypeIdentifiers.BOTH -> "Both"
                             }, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+
+            // VPN dependency warning — shown when "internet" or "both" is selected and VPN is off
+            item {
+                val needsVpn = type == ScheduleTypeIdentifiers.INTERNET || type == ScheduleTypeIdentifiers.BOTH
+                if (needsVpn && !isVpnEnabled) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.size(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "VPN is not enabled",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Internet blocking requires VPN. " +
+                                        "Enable VPN in Home → Advanced Features → VPN " +
+                                        "for this schedule to work.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
                         }
                     }
                 }
