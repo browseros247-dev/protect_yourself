@@ -187,35 +187,38 @@ class BlockerPageViewModel(
      *
      * ## Current dependency rules
      *
-     * | Dependent setting              | Prerequisite          | Message |
-     * |-------------------------------|-----------------------|---------|
-     * | SAFE_SEARCH                   | VPN (DNS blocking)    | "Enable VPN (DNS blocking) first to use SafeSearch enforcement." |
-     * | VPN_MANAGE                    | VPN (DNS blocking)    | "Enable VPN first to choose a filtering mode." |
-     * | WHITELIST_VPN_APPS            | VPN (DNS blocking)    | "Enable VPN first to manage VPN whitelist apps." |
-     * | VPN_NOTIFICATION_MESSAGE      | VPN (DNS blocking)    | "Enable VPN first to customize the notification message." |
-     * | VPN_NOTIFICATION_HIDE         | VPN (DNS blocking)    | "Enable VPN first to hide notification content." |
-     * | BLOCK_UNSUPPORTED_BROWSERS    | PORN_BLOCKER          | "Enable Porn blocker first to block unsupported browsers." |
-     * | WHITELIST_UNSUPPORTED_BROWSER | BLOCK_UNSUPPORTED_BROWSERS | "Enable 'Block unsupported browsers' first to manage its whitelist." |
-     * | BLOCK_IN_APP_BROWSERS         | PORN_BLOCKER          | "Enable Porn blocker first to block in-app browsers." |
-     * | BLOCK_NEW_INSTALL_APPS        | PORN_BLOCKER          | "Enable Porn blocker first to auto-block new installs." |
-     * | BLOCK_SETTING_PAGE_BY_TITLE   | PORN_BLOCKER          | "Enable Porn blocker first to block settings by title." |
-     * | BLOCK_WHITELIST_DETECTED_APP  | PORN_BLOCKER          | "Enable Porn blocker first to manage blocklist detected apps." |
-     * | BLOCKLIST_APPS                | PORN_BLOCKER          | "Enable Porn blocker first to manage the blocklist." |
-     * | UNIFIED_BLOCKING_MANAGEMENT   | PORN_BLOCKER          | "Enable Porn blocker first to manage blocking lists." |
-     * | TIME_DELAY_CUSTOM_DURATION    | TIME_DELAY            | "Enable Time Delay first to set a custom duration." |
-     * | BLOCK_PHONE_REBOOT            | PREVENT_UNINSTALL     | "Enable Prevent uninstall first to block phone reboot." |
+     * | Dependent setting              | Prerequisite              | Message |
+     * |-------------------------------|---------------------------|---------|
+     * | SAFE_SEARCH                   | VPN (DNS blocking)        | "Enable VPN (DNS blocking) first to use SafeSearch enforcement." |
+     * | VPN_MANAGE                    | VPN (DNS blocking)        | "Enable VPN first to choose a filtering mode." |
+     * | WHITELIST_VPN_APPS            | VPN (DNS blocking)        | "Enable VPN first to manage VPN whitelist apps." |
+     * | VPN_NOTIFICATION_MESSAGE      | VPN (DNS blocking)        | "Enable VPN first to customize the notification message." |
+     * | VPN_NOTIFICATION_HIDE         | VPN (DNS blocking)        | "Enable VPN first to hide notification content." |
+     * | BLOCK_UNSUPPORTED_BROWSERS    | Accessibility Service     | "Enable Accessibility Service first to block unsupported browsers." |
+     * | WHITELIST_UNSUPPORTED_BROWSER | BLOCK_UNSUPPORTED_BROWSERS| "Enable 'Block unsupported browsers' first to manage its whitelist." |
+     * | BLOCK_IN_APP_BROWSERS         | Accessibility Service     | "Enable Accessibility Service first to block in-app browsers." |
+     * | BLOCK_NEW_INSTALL_APPS        | Accessibility Service     | "Enable Accessibility Service first to auto-block new installs." |
+     * | BLOCK_SETTING_PAGE_BY_TITLE   | Accessibility Service     | "Enable Accessibility Service first to block settings by title." |
+     * | BLOCK_WHITELIST_DETECTED_APP  | Accessibility Service     | "Enable Accessibility Service first to manage blocklist detected apps." |
+     * | BLOCKLIST_APPS                | Accessibility Service     | "Enable Accessibility Service first to manage the blocklist." |
+     * | UNIFIED_BLOCKING_MANAGEMENT   | Accessibility Service     | "Enable Accessibility Service first to manage blocking lists." |
+     * | TIME_DELAY_CUSTOM_DURATION    | TIME_DELAY                | "Enable Time Delay first to set a custom duration." |
+     * | BLOCK_PHONE_REBOOT            | PREVENT_UNINSTALL         | "Enable Prevent uninstall first to block phone reboot." |
      */
     private suspend fun applyDependencyRules(items: List<SettingPageItemModel>): List<SettingPageItemModel> {
         // Read prerequisite switch states once
         val vpnOn = switchValues.isVpnSwitchOn()
-        val pornBlockerOn = switchValues.isPornBlockerSwitchOn()
+        val accessibilityOn = protect.yourself.features.blockerPage.service.MyAccessibilityService
+            .isEnabled(getApplication())
         val blockUnsupportedBrowsersOn = switchValues.isBlockUnsupportedBrowsersSwitchOn()
         val timeDelayOn = switchValues.isTimeDelayDurationSet()
         val preventUninstallOn = switchValues.isPreventUninstallSwitchOn()
 
         if (protect.yourself.BuildConfig.DEBUG) {
-            Timber.w("DEBUG applyDependencyRules: vpnOn=$vpnOn, pornBlockerOn=$pornBlockerOn, blockUnsupportedBrowsersOn=$blockUnsupportedBrowsersOn, timeDelayOn=$timeDelayOn, preventUninstallOn=$preventUninstallOn")
+            Timber.w("DEBUG applyDependencyRules: vpnOn=$vpnOn, accessibilityOn=$accessibilityOn, blockUnsupportedBrowsersOn=$blockUnsupportedBrowsersOn, timeDelayOn=$timeDelayOn, preventUninstallOn=$preventUninstallOn")
         }
+
+        val accessibilityMessage = "Enable Accessibility Service first (Settings → Accessibility → Protect Yourself → ON)."
 
         return items.map { item ->
             val result = when (item.identifier) {
@@ -251,11 +254,11 @@ class BlockerPageViewModel(
                         dependencyMessage = "Enable VPN first to hide notification content."
                     ) else item.copy(isDisabled = false, dependencyMessage = null)
                 }
-                // Content-blocking sub-features depend on Porn Blocker
+                // Content-blocking sub-features depend on Accessibility Service (not Porn Blocker)
                 SettingPageItemIdentifiers.BLOCK_UNSUPPORTED_BROWSERS -> {
-                    if (!pornBlockerOn) item.copy(
+                    if (!accessibilityOn) item.copy(
                         isDisabled = true,
-                        dependencyMessage = "Enable Porn blocker first to block unsupported browsers."
+                        dependencyMessage = accessibilityMessage
                     ) else item.copy(isDisabled = false, dependencyMessage = null)
                 }
                 SettingPageItemIdentifiers.WHITELIST_UNSUPPORTED_BROWSER -> {
@@ -265,39 +268,39 @@ class BlockerPageViewModel(
                     ) else item.copy(isDisabled = false, dependencyMessage = null)
                 }
                 SettingPageItemIdentifiers.BLOCK_IN_APP_BROWSERS -> {
-                    if (!pornBlockerOn) item.copy(
+                    if (!accessibilityOn) item.copy(
                         isDisabled = true,
-                        dependencyMessage = "Enable Porn blocker first to block in-app browsers."
+                        dependencyMessage = accessibilityMessage
                     ) else item.copy(isDisabled = false, dependencyMessage = null)
                 }
                 SettingPageItemIdentifiers.BLOCK_NEW_INSTALL_APPS -> {
-                    if (!pornBlockerOn) item.copy(
+                    if (!accessibilityOn) item.copy(
                         isDisabled = true,
-                        dependencyMessage = "Enable Porn blocker first to auto-block new installs."
+                        dependencyMessage = accessibilityMessage
                     ) else item.copy(isDisabled = false, dependencyMessage = null)
                 }
                 SettingPageItemIdentifiers.BLOCK_SETTING_PAGE_BY_TITLE -> {
-                    if (!pornBlockerOn) item.copy(
+                    if (!accessibilityOn) item.copy(
                         isDisabled = true,
-                        dependencyMessage = "Enable Porn blocker first to block settings by title."
+                        dependencyMessage = accessibilityMessage
                     ) else item.copy(isDisabled = false, dependencyMessage = null)
                 }
                 SettingPageItemIdentifiers.BLOCK_WHITELIST_DETECTED_APP -> {
-                    if (!pornBlockerOn) item.copy(
+                    if (!accessibilityOn) item.copy(
                         isDisabled = true,
-                        dependencyMessage = "Enable Porn blocker first to manage blocklist detected apps."
+                        dependencyMessage = accessibilityMessage
                     ) else item.copy(isDisabled = false, dependencyMessage = null)
                 }
                 SettingPageItemIdentifiers.BLOCKLIST_APPS -> {
-                    if (!pornBlockerOn) item.copy(
+                    if (!accessibilityOn) item.copy(
                         isDisabled = true,
-                        dependencyMessage = "Enable Porn blocker first to manage the blocklist."
+                        dependencyMessage = accessibilityMessage
                     ) else item.copy(isDisabled = false, dependencyMessage = null)
                 }
                 SettingPageItemIdentifiers.UNIFIED_BLOCKING_MANAGEMENT -> {
-                    if (!pornBlockerOn) item.copy(
+                    if (!accessibilityOn) item.copy(
                         isDisabled = true,
-                        dependencyMessage = "Enable Porn blocker first to manage blocking lists."
+                        dependencyMessage = accessibilityMessage
                     ) else item.copy(isDisabled = false, dependencyMessage = null)
                 }
                 // Time Delay custom duration depends on Time Delay being enabled
