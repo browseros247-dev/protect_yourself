@@ -266,10 +266,9 @@ class MyVpnService : VpnService() {
                     return@launch
                 }
 
-                // 3. Get VPN whitelist apps (apps that bypass VPN)
-                val whitelistPackages = db.selectedAppsListDao()
-                    .getSelectedByIdentifier(SelectedAppListIdentifier.VPN_WHITELIST_APPS.value)
-                    .map { it.packageName }
+                // 3. Determine VPN mode (L3 FIX: whitelistPackages read moved
+                //    into DNS-filter branch below to avoid unnecessary DB read
+                //    in per-app-block mode where it's not used)
 
                 // Phase 3: Determine VPN mode based on scheduled block apps.
                 // - DNS_FILTER mode (default): all apps routed through VPN for
@@ -371,6 +370,10 @@ class MyVpnService : VpnService() {
                     // addDisallowedApplication(packageName).
                 } else {
                     // DNS_FILTER mode — existing behavior.
+                    // L3 FIX: read whitelistPackages here (only needed in DNS-filter mode)
+                    val whitelistPackages = db.selectedAppsListDao()
+                        .getSelectedByIdentifier(SelectedAppListIdentifier.VPN_WHITELIST_APPS.value)
+                        .map { it.packageName }
                     // Apply per-app routing: whitelisted apps bypass VPN
                     for (pkg in whitelistPackages) {
                         try {
@@ -637,6 +640,18 @@ class MyVpnService : VpnService() {
         } catch (t: Throwable) {
             Timber.e(t, "Failed to sync VPN_SWITCH=false on revoke — DB may be out of sync")
         }
+
+        // M3 FIX: Clear scheduledBlockApps so ScheduleEngine detects the change
+        // on its next reevaluateAndApply() call. Without this, the engine's
+        // lastInternetBlockedSet stays stale and it doesn't call
+        // clearScheduledBlockApps(), leaving the VPN in an inconsistent state.
+        scheduledBlockApps = emptySet()
+        try {
+            protect.yourself.domain.schedule.ScheduleEngine.getInstance(this).resetCachedState()
+        } catch (t: Throwable) {
+            Timber.w(t, "M3: failed to reset ScheduleEngine cached state")
+        }
+        Timber.i("M3: scheduledBlockApps cleared + ScheduleEngine state reset in onRevoke()")
 
         stopSelf()
         Timber.w("VPN revoked by system")

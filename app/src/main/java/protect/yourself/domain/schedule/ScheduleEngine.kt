@@ -154,4 +154,18 @@ class ScheduleEngine private constructor(private val context: Context) {
      * Get the current set of launch-blocked packages (for Accessibility service to query).
      */
     fun getActiveLaunchBlockedApps(): Set<String> = lastLaunchBlockedSet
+
+    /**
+     * M3 FIX: Reset the cached blocked sets so the next reevaluateAndApply()
+     * detects the change and calls setScheduledBlockApps/clearScheduledBlockApps.
+     *
+     * Called by MyVpnService.onRevoke() when the VPN is revoked by the system.
+     * Without this, the engine sees lastInternetBlockedSet == current set and
+     * skips the VPN update, leaving the VPN in an inconsistent state.
+     */
+    fun resetCachedState() {
+        lastInternetBlockedSet = emptySet()
+        lastLaunchBlockedSet = emptySet()
+        Timber.i("ScheduleEngine: cached state reset (M3 fix)")
+    }
 }

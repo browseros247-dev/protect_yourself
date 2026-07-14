@@ -1333,7 +1333,15 @@ class BlockerPageViewModel(
      */
     fun loadVpnManagementState() {
         safeLaunch {
-            val vpnOn = switchValues.isVpnSwitchOn()
+            // M1 FIX: Check both DB value AND actual service running state.
+            // If VPN_SWITCH is true but the service is not running (e.g. user
+            // revoked VPN from system settings), sync DB to false and show OFF.
+            var vpnOn = switchValues.isVpnSwitchOn()
+            if (vpnOn && !MyVpnService.isRunning()) {
+                Timber.w("loadVpnManagementState: VPN_SWITCH=true but service not running — syncing to false")
+                switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
+                vpnOn = false
+            }
             val mode = switchValues.getVpnConnectionType()
             val presets = db.vpnCustomDnsDao().getAll()
             val selectedPresetKey = db.vpnCustomDnsDao().getSelected()?.key
