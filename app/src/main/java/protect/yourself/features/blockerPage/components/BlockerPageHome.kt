@@ -27,6 +27,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
@@ -35,6 +37,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -497,6 +500,7 @@ private fun HomeWithCategories(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 16.dp, bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // Accessibility status banner
@@ -596,8 +600,6 @@ private fun HomeWithCategories(
         }
 
         // 'Reliable Accessibility' card moved to Profile tab
-
-        item { Spacer(modifier = Modifier.height(80.dp)) }
     }
 }
 
@@ -609,9 +611,7 @@ private fun CategoryCard(
     onClick: () -> Unit
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         onClick = onClick
@@ -628,7 +628,7 @@ private fun CategoryCard(
                     .background(BrandOrange.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(icon, contentDescription = null, tint = BrandOrange, modifier = Modifier.size(28.dp))
+                Icon(icon, contentDescription = title, tint = BrandOrange, modifier = Modifier.size(28.dp))
             }
             Spacer(modifier = Modifier.size(16.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -644,6 +644,13 @@ private fun CategoryCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            // Chevron arrow — visual indicator that the card is tappable
+            Icon(
+                imageVector = androidx.compose.material.icons.Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }
@@ -1015,7 +1022,6 @@ private fun AccessibilityWarningCard(context: android.content.Context) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 16.dp, bottom = 8.dp)
                 .clickable {
                     // Try direct service detail page first, fallback to general settings
                     val componentName = android.content.ComponentName(
@@ -1039,23 +1045,44 @@ private fun AccessibilityWarningCard(context: android.content.Context) {
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("⚠️ Accessibility not enabled", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text("Blocking features are disabled. Tap here to enable.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Steps: Settings → Accessibility → Protect Yourself → ON", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Medium)
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.size(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Accessibility not enabled", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
+                    Text("Blocking features are disabled. Tap here to enable.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                    Text("Settings → Accessibility → Protect Yourself → ON", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Medium)
+                }
             }
         }
     } else {
         Card(
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF1B5E20))
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer
+            )
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("✅ Accessibility enabled", style = MaterialTheme.typography.titleSmall, color = androidx.compose.ui.graphics.Color.White, fontWeight = FontWeight.Bold)
-                Text("Content blocking is active.", style = MaterialTheme.typography.bodySmall, color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.8f))
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.size(8.dp))
+                Text("Accessibility enabled — blocking is active", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer, fontWeight = FontWeight.SemiBold)
             }
         }
     }
