@@ -136,6 +136,11 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
             protect.yourself.commons.utils.workManager.ScheduleCheckWorker.enqueue(this)
         }
 
+        // 8b. Initialize theme preferences (Light/Dark/System)
+        safeInit("ThemePreferences") {
+            protect.yourself.theme.ThemePreferences.init(this)
+        }
+
         // 9. Create notification channels
         safeInit("NotificationChannels") {
             protect.yourself.commons.utils.notificationUtils.NotificationHelper

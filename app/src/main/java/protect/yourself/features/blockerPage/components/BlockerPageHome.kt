@@ -594,14 +594,7 @@ private fun HomeWithCategories(
             )
         }
 
-        item {
-            CategoryCard(
-                title = "Reliable Accessibility",
-                subtitle = "One-time ADB setup to prevent OEMs from killing the service",
-                icon = Icons.Filled.Security,
-                onClick = { onNavigate(SubPage.ReliableAccessibility) }
-            )
-        }
+        // 'Reliable Accessibility' card moved to Profile tab
 
         item { Spacer(modifier = Modifier.height(80.dp)) }
     }

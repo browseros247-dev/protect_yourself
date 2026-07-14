@@ -5,6 +5,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -76,17 +78,23 @@ private val LightColorScheme = lightColorScheme(
 )
 
 /**
- * Protect Yourself Material 3 theme — DayNight (follows system).
+ * Protect Yourself Material 3 theme — supports Light/Dark/System preference.
  *
- * Per user choice: theme follows system dark/light setting.
- * Dark theme is primary (matches original); light theme is new for rebuild.
+ * The theme mode is stored in SharedPreferences via [ThemePreferences] and
+ * can be changed at runtime from the Profile tab. Changes take effect
+ * immediately across the entire app.
  */
 @Composable
 fun AppTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val themeMode by ThemePreferences.themeMode.collectAsState()
+    val isDark = when (themeMode) {
+        ThemePreferences.MODE_LIGHT -> false
+        ThemePreferences.MODE_DARK -> true
+        else -> isSystemInDarkTheme() // System Default
+    }
+    val colorScheme = if (isDark) DarkColorScheme else LightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,
