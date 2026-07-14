@@ -89,6 +89,21 @@ fun BlockerPageHome() {
     )
     val state by viewModel.state.collectAsState()
 
+    // FIX: Reload settings when the Home tab resumes (e.g. after user returns
+    // from system settings where they may have revoked the VPN/DNS). Without
+    // this, the VPN switch shows stale ON state even though the system VPN
+    // was disabled, and dependency rules are not re-evaluated.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.loadSettingItems()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     var currentPage: SubPage? by remember { mutableStateOf(null) }
     var editDialog: EditDialogData? by remember { mutableStateOf(null) }
     var numberDialog: NumberDialogData? by remember { mutableStateOf(null) }

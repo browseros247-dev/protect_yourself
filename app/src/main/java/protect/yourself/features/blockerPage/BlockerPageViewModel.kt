@@ -386,7 +386,20 @@ class BlockerPageViewModel(
         SwitchIdentifier.BLOCK_PHONE_REBOOT_SWITCH -> switchValues.isBlockPhoneRebootSwitchOn()
         SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH -> switchValues.isBlockUnsupportedBrowsersSwitchOn()
         SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH -> switchValues.isBlockPackageIntentSwitchOn()
-        SwitchIdentifier.VPN_SWITCH -> switchValues.isVpnSwitchOn()
+        SwitchIdentifier.VPN_SWITCH -> {
+            // FIX: Check both the DB value AND the actual service state.
+            // If VPN_SWITCH is true but the service is not running (e.g. user
+            // revoked VPN permission from system settings), show the switch as OFF.
+            val dbValue = switchValues.isVpnSwitchOn()
+            if (dbValue && !protect.yourself.features.blockerPage.service.MyVpnService.isRunning()) {
+                // Service is not running but DB says ON — sync the DB to false
+                Timber.w("VPN_SWITCH=true but service not running — syncing DB to false")
+                switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
+                false
+            } else {
+                dbValue
+            }
+        }
         SwitchIdentifier.VPN_NOTIFICATION_HIDE_SWITCH -> switchValues.isVpnNotificationHideSwitchOn()
         SwitchIdentifier.BLOCK_NEW_INSTALL_APPS_SWITCH -> switchValues.isBlockNewInstallAppsSwitchOn()
         SwitchIdentifier.BLOCK_IN_APP_BROWSERS_SWITCH -> switchValues.isBlockInAppBrowsersSwitchOn()

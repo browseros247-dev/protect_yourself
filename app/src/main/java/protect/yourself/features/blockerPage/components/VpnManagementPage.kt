@@ -115,6 +115,20 @@ fun VpnManagementPage(
     // Load the VPN management state when the page opens.
     LaunchedEffect(Unit) { viewModel.loadVpnManagementState() }
 
+    // FIX: Reload VPN state when the page resumes (e.g. after user returns
+    // from system settings where they may have revoked the VPN). Without this,
+    // the toggle shows stale ON state even though the system VPN was disabled.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.loadVpnManagementState()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // BUG-05 fix: collect ONLY the VpnCustomDnsPresetAdded event here to
     // dismiss the Add Custom DNS dialog after the DB write succeeds. The
     // parent (BlockerPageHome) does NOT handle this event, so there is no

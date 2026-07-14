@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -114,38 +115,59 @@ private fun ProtectedAppsScreen(onBack: () -> Unit) {
                 .padding(padding)
                 .fillMaxSize()
         ) {
-            // Header
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                )
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("How this works", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Text(
-                        text = "Toggle ON any app whose accessibility service Protect Yourself " +
-                            "should keep enabled. If Android removes a protected service " +
-                            "(e.g. OEM battery optimisation), the app will re-add it " +
-                            "automatically — but only if WRITE_SECURE_SETTINGS is granted.",
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp
-                    )
-                    Spacer(Modifier.size(6.dp))
-                    Text(
-                        text = "Our own accessibility service is always protected.",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-
-            // List
             LazyColumn(modifier = Modifier.fillMaxSize()) {
+                // "How this works" info card — scrolls with content + dismissible
+                item {
+                    var showInfo by remember { mutableStateOf(true) }
+                    if (showInfo) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("How this works", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    IconButton(
+                                        onClick = { showInfo = false },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Close,
+                                            contentDescription = "Dismiss",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "Toggle ON any app whose accessibility service Protect Yourself " +
+                                        "should keep enabled. If Android removes a protected service " +
+                                        "(e.g. OEM battery optimisation), the app will re-add it " +
+                                        "automatically — but only if WRITE_SECURE_SETTINGS is granted.",
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
+                                )
+                                Spacer(Modifier.size(6.dp))
+                                Text(
+                                    text = "Our own accessibility service is always protected.",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+
                 items(entries, key = { it.flatComponent }) { entry ->
                     ServiceRow(entry = entry)
                 }
