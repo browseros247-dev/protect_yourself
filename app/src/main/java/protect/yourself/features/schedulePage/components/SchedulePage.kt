@@ -21,10 +21,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +56,7 @@ import java.util.Calendar
  * Shows a list of scheduled app restriction rules with their status,
  * a FAB to add new rules, and tap-to-edit / toggle / delete actions.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SchedulePage(
     onCreateSchedule: () -> Unit,
@@ -93,6 +96,25 @@ fun SchedulePage(
     } && !state.isVpnEnabled
 
     Scaffold(
+        topBar = {
+            androidx.compose.material3.TopAppBar(
+                title = { Text("Schedule", fontWeight = FontWeight.Bold, color = BrandOrange) },
+                actions = {
+                    // Settings button — opens Protected Accessibility Services page
+                    androidx.compose.material3.IconButton(onClick = {
+                        val intent = android.content.Intent(context,
+                            protect.yourself.features.protectedApps.ProtectedAppsActivity::class.java)
+                        intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                        context.startActivity(intent)
+                    }) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Filled.Settings,
+                            contentDescription = "Protected Accessibility Services"
+                        )
+                    }
+                }
+            )
+        },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onCreateSchedule,
