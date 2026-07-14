@@ -463,6 +463,10 @@ class BlockerPageViewModel(
                             }
                         )
                     }
+                    // ROOT CAUSE FIX: reload setting items so dependency rules
+                    // are re-evaluated. VPN-dependent settings should now be
+                    // disabled (greyed out) with a dependency message.
+                    loadSettingItems()
                     return@safeLaunch
                 }
             }
@@ -804,6 +808,11 @@ class BlockerPageViewModel(
             // VPN management page flips to ON immediately. Without this,
             // the toggle stays OFF until the user leaves and re-enters the page.
             loadVpnManagementState()
+            // ROOT CAUSE FIX: reload setting items so dependency rules are
+            // re-evaluated. Without this, VPN-dependent settings (SafeSearch,
+            // VPN mode, VPN whitelist, etc.) remain in their stale disabled
+            // state even after VPN is enabled.
+            loadSettingItems()
             _navigation.emit(BlockerPageNavigation.ShowToast("VPN enabled"))
         }
     }

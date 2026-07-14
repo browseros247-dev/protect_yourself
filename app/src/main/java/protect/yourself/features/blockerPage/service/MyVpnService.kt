@@ -317,6 +317,38 @@ class MyVpnService : VpnService() {
                     if (protect.yourself.BuildConfig.DEBUG) {
                         Timber.w("DEBUG: PER_APP_BLOCK mode — NOT calling allowBypass() — ${scheduledApps.size} apps will be blocked: $scheduledApps")
                     }
+                    // ROOT CAUSE FIX: addRoute() is REQUIRED in per-app-block mode.
+                    // Without addRoute(), the VPN TUN interface has no routes —
+                    // traffic from targeted apps doesn't actually enter the TUN,
+                    // so they keep their normal internet (block doesn't work).
+                    //
+                    // addAllowedApplication(pkg) only controls WHICH apps are
+                    // routed through the VPN. addRoute("0.0.0.0", 0) tells the
+                    // system to route ALL IPv4 traffic through the TUN. Combined
+                    // with addAllowedApplication, ONLY the targeted apps' traffic
+                    // enters the TUN (other apps bypass VPN entirely).
+                    //
+                    // Since we don't have a packet forwarding loop, the traffic
+                    // that enters the TUN is never forwarded → black-holed →
+                    // the targeted apps get no internet. This is the same pattern
+                    // used by NetGuard, Shelter, and other per-app firewalls.
+                    try {
+                        builder.addRoute(InetAddress.getByName("0.0.0.0"), 0)
+                        if (protect.yourself.BuildConfig.DEBUG) {
+                            Timber.w("DEBUG: PER_APP_BLOCK mode — added route 0.0.0.0/0 (black-hole for targeted apps)")
+                        }
+                    } catch (t: Throwable) {
+                        Timber.e(t, "Failed to add IPv4 route for per-app-block mode")
+                    }
+                    // Also add IPv6 route for completeness
+                    try {
+                        builder.addRoute(InetAddress.getByName("::"), 0)
+                        if (protect.yourself.BuildConfig.DEBUG) {
+                            Timber.w("DEBUG: PER_APP_BLOCK mode — added route ::/0 (IPv6 black-hole)")
+                        }
+                    } catch (t: Throwable) {
+                        Timber.w(t, "Failed to add IPv6 route for per-app-block mode (non-critical)")
+                    }
                 } else {
                     builder.allowBypass()
                 }
