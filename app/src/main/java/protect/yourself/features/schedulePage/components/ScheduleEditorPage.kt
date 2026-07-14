@@ -334,7 +334,9 @@ fun ScheduleEditorPage(
 
             // Save button
             item {
-                val isValid = name.isNotBlank() && selectedDays.isNotEmpty() && selectedApps.isNotEmpty()
+                // M2 FIX: also validate start != end (0-minute window is never active)
+                val isValid = name.isNotBlank() && selectedDays.isNotEmpty() &&
+                    selectedApps.isNotEmpty() && startMinutes != endMinutes
                 Button(
                     onClick = {
                         val daysBitmask = selectedDays.fold(0) { acc, i -> acc or (1 shl i) }
@@ -376,6 +378,8 @@ fun ScheduleEditorPage(
                     if (name.isBlank()) missingItems.add("name")
                     if (selectedDays.isEmpty()) missingItems.add("at least one day")
                     if (selectedApps.isEmpty()) missingItems.add("at least one app")
+                    // C1 FIX: show warning when start == end
+                    if (startMinutes == endMinutes) missingItems.add("start and end times must differ")
                     Text(
                         text = "Required: ${missingItems.joinToString(", ")}",
                         style = MaterialTheme.typography.bodySmall,
