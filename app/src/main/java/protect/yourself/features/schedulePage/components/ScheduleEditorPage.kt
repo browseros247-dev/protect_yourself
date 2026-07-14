@@ -369,6 +369,19 @@ fun ScheduleEditorPage(
                 ) {
                     Text("Save Schedule", fontWeight = FontWeight.Bold)
                 }
+                // Validation feedback — show what's missing
+                if (!isValid) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val missingItems = mutableListOf<String>()
+                    if (name.isBlank()) missingItems.add("name")
+                    if (selectedDays.isEmpty()) missingItems.add("at least one day")
+                    if (selectedApps.isEmpty()) missingItems.add("at least one app")
+                    Text(
+                        text = "Required: ${missingItems.joinToString(", ")}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                    )
+                }
                 Spacer(modifier = Modifier.height(80.dp))
             }
         }

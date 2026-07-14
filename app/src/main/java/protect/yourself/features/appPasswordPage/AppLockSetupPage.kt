@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -289,8 +290,12 @@ fun AppLockSetupPage(onBack: () -> Unit) {
     ) {
         // Header
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) {
-                Text("← Back", color = BrandOrange, fontSize = 16.sp)
+            androidx.compose.material3.IconButton(onClick = onBack) {
+                androidx.compose.material3.Icon(
+                    imageVector = Icons.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = BrandOrange
+                )
             }
         }
 
