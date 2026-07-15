@@ -29,7 +29,7 @@ import timber.log.Timber
 import java.net.InetAddress
 
 /**
- * MyVpnService — DNS-filtering VPN service (NopoX-style).
+ * MyVpnService — DNS-filtering VPN service (reference-style).
  *
  * ROOT CAUSE OF "VPN connected but no filtering":
  * The previous implementation tried to be smarter than Android by routing DNS
@@ -49,9 +49,9 @@ import java.net.InetAddress
  *    to rewrite source/dest IPs for each hijacked query — more complexity,
  *    more failure modes.
  *
- * THE FIX (NopoX approach — proven, simple, reliable):
+ * THE FIX (the reference approach — proven, simple, reliable):
  *
- * NopoX's decompiled `MyVpnService` (v1.0.53) is only 139 lines. It does NOT
+ * The reference's decompiled `MyVpnService` (v1.0.53) is only 139 lines. It does NOT
  * call `addRoute` at all. It does NOT have a DNS forwarding loop. It simply:
  *   1. Calls `addDnsServer(dns1)` + `addDnsServer(dns2)` — tells Android to
  *      use the family-safe DNS servers for the VPN interface.
@@ -68,7 +68,7 @@ import java.net.InetAddress
  * needed.
  *
  * This is the Android-recommended DNS-filtering VPN pattern. It's what
- * NopoX, Blokada, and DNS66 (in "system VPN" mode) all use.
+ * the reference, Blokada, and DNS66 (in "system VPN" mode) all use.
  *
  * Connection modes (UI labels live in strings.xml + BlockerPageViewModel):
  *  - NORMAL    → "Balanced"  : Cloudflare Family (1.1.1.3 / 1.0.0.3)
@@ -286,7 +286,7 @@ class MyVpnService : VpnService() {
                     Timber.i("VPN starting in DNS_FILTER mode (normal)")
                 }
 
-                // 4. Build VPN interface — NopoX-style: addDnsServer + allowBypass,
+                // 4. Build VPN interface — reference-style: addDnsServer + allowBypass,
                 //    NO addRoute, NO manual DNS forwarding loop.
                 //
                 // In PER_APP_BLOCK mode, addDnsServer is still called (required
@@ -392,7 +392,7 @@ class MyVpnService : VpnService() {
                 }
 
                 // 7. Set configure intent — opens MainActivity when user taps
-                //    the VPN gear icon in system VPN settings. NopoX does this too.
+                //    the VPN gear icon in system VPN settings. The reference does this too.
                 try {
                     val configIntent = Intent(this@MyVpnService, MainActivity::class.java).apply {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -483,7 +483,7 @@ class MyVpnService : VpnService() {
                 val notification = buildNotification(notificationText, isHideNotification)
                 startForegroundCompat(notification)
 
-                Timber.i("VPN started: type=$currentConnectionType DNS=$firstDns,$secondDns (NopoX-style DNS filtering)")
+                Timber.i("VPN started: type=$currentConnectionType DNS=$firstDns,$secondDns (reference-style DNS filtering)")
             } catch (t: Throwable) {
                 Timber.e(t, "Failed to start VPN")
                 isStarting.set(false)
@@ -664,7 +664,7 @@ class MyVpnService : VpnService() {
         const val NOTIFICATION_ID = 1001
         const val NOTIFICATION_CHANNEL_ID = "vpn_service_channel"
 
-        // VPN tunnel config — NopoX-style: only addDnsServer + allowBypass.
+        // VPN tunnel config — reference-style: only addDnsServer + allowBypass.
         // No addRoute, no DNS forwarding loop.
         private const val VPN_ADDRESS = "10.0.2.15"
         private const val VPN_PREFIX_LENGTH = 24
@@ -796,7 +796,7 @@ class MyVpnService : VpnService() {
             // Without this, startService() throws IllegalStateException on
             // Android 8+ when the app is in the background (e.g. when called
             // from VpnRestartWorker after a reboot), which means the VPN
-            // silently fails to auto-restart after boot. NopoX 1.0.53 does
+            // silently fails to auto-restart after boot. The reference does
             // this correctly via VpnServiceUtils.vpnServiceAction().
             startForegroundServiceCompat(context, intent)
         }

@@ -5,11 +5,11 @@
 The `onDestroy` & `selfHealSafe` problem was a **critical race condition** in
 the accessibility service lifecycle that caused self-heal to **silently fail**
 during service teardown. The fix introduces a dedicated `selfHealScope` that
-survives `onDestroy`, and aligns the lifecycle with the NopoX 1.0.53 reference
+survives `onDestroy`, and aligns the lifecycle with the reference
 implementation (which does NOT call `selfHealSafe` in `onDestroy` at all).
 
-All 3 identified bugs have been fixed, tested, and verified against the NopoX
-1.0.53 reference APK. The release APK v1.0.56 builds successfully and all unit
+All 3 identified bugs have been fixed, tested, and verified against the
+reference APK. The release APK v1.0.56 builds successfully and all unit
 tests pass.
 
 ---
@@ -48,14 +48,14 @@ service stayed disabled until the next app open or boot. Users on aggressive
 OEMs (Xiaomi, Huawei, vivo, OPPO) reported the service "randomly turning off"
 — this was the root cause.
 
-### NopoX Divergence (LC-02, CRITICAL)
+### Reference Divergence (LC-02, CRITICAL)
 
 **File**: `MyAccessibilityService.kt` → `onDestroy()`
 
 **The bug**: The rebuild called `selfHealSafe` in `onDestroy` at all.
-NopoX 1.0.53 (the mandatory reference) does NOT:
+The reference (mandatory) does NOT:
 
-**NopoX 1.0.53 decompiled** (`MyAccessibilityService.java` lines 1515-1529):
+**Reference decompiled** (`MyAccessibilityService.java` lines 1515-1529):
 ```java
 @Override
 public void onDestroy() {
@@ -68,11 +68,11 @@ public void onDestroy() {
 }
 ```
 
-NopoX relies on `onUnbind` (which fires BEFORE `onDestroy`) for the final
+Reference relies on `onUnbind` (which fires BEFORE `onDestroy`) for the final
 self-heal attempt. By the time `onDestroy` fires, the service is already being
 torn down — re-arming is pointless because the service instance is gone.
 
-**NopoX 1.0.53 `onUnbind`** (lines 144-147):
+**Reference `onUnbind`** (lines 144-147):
 ```java
 @Override
 public boolean onUnbind(Intent intent) {
@@ -81,7 +81,7 @@ public boolean onUnbind(Intent intent) {
 }
 ```
 
-**NopoX 1.0.53 `onServiceConnected`** (lines 1507-1512):
+**Reference `onServiceConnected`** (lines 1507-1512):
 ```java
 @Override
 protected void onServiceConnected() {
@@ -115,7 +115,7 @@ the service), the `onUnbind` coroutine was cancelled by `onDestroy`'s
    `onServiceConnected` and `onUnbind`. This ensures the self-heal coroutine
    survives `serviceScope.cancel()` in `onDestroy`.
 
-3. **Remove `selfHealSafe` from `onDestroy`** — matching NopoX 1.0.53 exactly.
+3. **Remove `selfHealSafe` from `onDestroy`** — matching the reference exactly.
    `onDestroy` only hides the block overlay and cancels `serviceScope`.
 
 ### Implementation
@@ -160,7 +160,7 @@ override fun onDestroy() {
     super.onDestroy()
     Timber.w("Accessibility service destroyed")
     instance = null
-    // LC-01/LC-02 fix: selfHealSafe removed — NopoX 1.0.53 does NOT call it
+    // LC-01/LC-02 fix: selfHealSafe removed — reference does NOT call it
     // here. The selfHealScope coroutines from onServiceConnected/onUnbind
     // continue running after this returns — they are NOT cancelled.
     try { blockOverlayManager?.hideBlockOverlay() } catch (_: Throwable) {}
@@ -193,12 +193,12 @@ override fun onDestroy() {
 - All `selfHealSafe` calls run on `Dispatchers.IO` (background thread), not
   the main thread. The v1.0.49 ANR fix is preserved.
 
-### NopoX parity
-- `onServiceConnected`: calls `selfHealSafe` ✓ (NopoX does this synchronously,
+### Reference parity
+- `onServiceConnected`: calls `selfHealSafe` ✓ (reference does this synchronously,
   we do it async — functionally equivalent)
-- `onUnbind`: calls `selfHealSafe` ✓ (NopoX does this synchronously, we do it
+- `onUnbind`: calls `selfHealSafe` ✓ (reference does this synchronously, we do it
   async — functionally equivalent)
-- `onDestroy`: does NOT call `selfHealSafe` ✓ (matches NopoX exactly)
+- `onDestroy`: does NOT call `selfHealSafe` ✓ (matches the reference exactly)
 
 ---
 
@@ -237,7 +237,7 @@ override fun onDestroy() {
 
 - [x] `onServiceConnected` calls `selfHealSafe` on `selfHealScope` (survives onDestroy)
 - [x] `onUnbind` calls `selfHealSafe` on `selfHealScope` (survives onDestroy)
-- [x] `onDestroy` does NOT call `selfHealSafe` (matches NopoX 1.0.53)
+- [x] `onDestroy` does NOT call `selfHealSafe` (matches the reference)
 - [x] `onDestroy` cancels `serviceScope` (stops config refresh coroutines)
 - [x] `onDestroy` does NOT cancel `selfHealScope` (pending self-heal coroutines complete)
 - [x] `onDestroy` hides block overlay (prevents lockout)

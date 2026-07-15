@@ -2,8 +2,8 @@
 
 > **Branch**: `app-blocking-fixes` (off `main` at commit `ce7def1`, which includes the Future-Brand merge)
 > **Analysis date**: 2026-07-11
-> **Scope**: Every app-blocking setting, evaluated individually against the decompiled NopoX v1.0.53 reference, with focus on (a) blocking correctness, (b) performance, (c) UI/UX, (d) bugs / inconsistencies / improvement opportunities.
-> **Methodology**: Static source review of all app-blocking code + JADX decompilation of `NopoX_1.0.53.apk` (21,067 Java files decompiled) + line-by-line comparison of `MyAccessibilityService`, `StopMeManager`, `BlockerPageUtils`, and the Device Admin integration.
+> **Scope**: Every app-blocking setting, evaluated individually against the decompiled reference v1.0.53, with focus on (a) blocking correctness, (b) performance, (c) UI/UX, (d) bugs / inconsistencies / improvement opportunities.
+> **Methodology**: Static source review of all app-blocking code + JADX decompilation of the reference APK (21,067 Java files decompiled) + line-by-line comparison of `MyAccessibilityService`, `StopMeManager`, `BlockerPageUtils`, and the Device Admin integration.
 
 ---
 
@@ -11,13 +11,13 @@
 
 The app-blocking subsystem is the most complex part of Protect-Yourself — it manages 11 distinct blocking features (blocklist apps, unsupported browsers, in-app browsers, new install apps, package+intent names, prevent uninstall, block reboot, Stop Me, + 2 removed features that leave residual code). All blocking flows through a single `handleWindowStateChange` dispatch in `MyAccessibilityService`, which checks each condition in sequence and launches `PornBlockActivity` when a match is found.
 
-A deep review against the decompiled NopoX reference reveals **20 issues** of varying severity. The most important are:
+A deep review against the decompiled reference reveals **20 issues** of varying severity. The most important are:
 
-- **AB-01 (Critical)** — Stop Me state is in-memory only (`isStopMeRunning: Boolean`). After process death (reboot, force-stop, OEM killing the service), an active Stop Me session silently stops blocking. **NopoX uses `stopMeEndTime` (a persisted long timestamp)** which survives process death — the service checks `System.currentTimeMillis() < stopMeEndTime` on every event.
+- **AB-01 (Critical)** — Stop Me state is in-memory only (`isStopMeRunning: Boolean`). After process death (reboot, force-stop, OEM killing the service), an active Stop Me session silently stops blocking. **The reference uses `stopMeEndTime` (a persisted long timestamp)** which survives process death — the service checks `System.currentTimeMillis() < stopMeEndTime` on every event.
 - **AB-02 (Critical)** — Blocklist apps are gated by `isPornBlockerOn && cachedBlockApps.contains(packageName)`. If the user turns off the Porn Blocker switch, blocklist apps stop being blocked even though the user explicitly added them. This is confusing and inconsistent with the UI label ("Apps that get blocked on launch").
 - **AB-03 (High)** — `isAppInfoPage` matches against `DEVICE_ADMIN_TEXTS_TO_MATCH` which includes generic strings like "admin" and "deactivate". Any settings page mentioning "admin" (e.g. "Administrator settings") triggers the prevent-uninstall block, locking the user out of unrelated settings pages.
 - **AB-04 (High)** — `isPowerMenu` checks `lowerPkg.contains("shutdown")` — matches `com.example.shutdown.helper` (not a power menu) as a false positive.
-- **AB-05 (High)** — Block screen uses `FLAG_ACTIVITY_CLEAR_TOP` but NOT `FLAG_ACTIVITY_CLEAR_TASK` or `GLOBAL_ACTION_HOME`. The offending app stays in the back stack. When the user taps Close, they may return to the offending app instead of the home screen. NopoX presses HOME before showing the block screen.
+- **AB-05 (High)** — Block screen uses `FLAG_ACTIVITY_CLEAR_TOP` but NOT `FLAG_ACTIVITY_CLEAR_TASK` or `GLOBAL_ACTION_HOME`. The offending app stays in the back stack. When the user taps Close, they may return to the offending app instead of the home screen. The reference presses HOME before showing the block screen.
 - **AB-06 (Medium)** — `isBrowserPackageDetected` calls `PackageManager.queryIntentActivities()` on every accessibility event for an uncached package. This is a slow IPC call that can cause event processing back up under rapid app switching.
 - **AB-07 through AB-12** — Dead code: `IN_APP_BROWSER_CLASS_NAMES`, `autoStartXiaomiTextToMatch()`, `isNotificationDrawer()`, `isRecentApps()`, `ProtectedAppsActivity` stub, `NotificationActionService` stub, empty Device Admin policies, unused Device Admin intent-filter actions.
 
@@ -61,7 +61,7 @@ All 11 settings flow through a single `handleWindowStateChange` method that chec
 10. Block in-app browsers (`cachedInAppBrowserBlockApps.contains` + URL extraction)
 11. Stop Me (`isStopMeRunning && !cachedStopMeWhitelist.contains`)
 
-### 2.2 NopoX order (from decompiled `onAccessibilityEvent`)
+### 2.2 Reference order (from decompiled `onAccessibilityEvent`)
 
 1. `checkBlockBrowsers` (combined browser detection + URL keyword matching)
 2. `checkPhoneRebootOption`
@@ -77,10 +77,10 @@ All 11 settings flow through a single `handleWindowStateChange` method that chec
 
 ### 2.3 Key differences
 
-- **NopoX checks browser blocking FIRST** — before prevent-uninstall and power menu. This makes sense because browser blocking is the most common case and should be fast.
-- **NopoX has `checkPreventUninstallPromotion`** — a separate method that detects when the user is on the app info page but hasn't enabled prevent-uninstall yet, and promotes the feature. The rebuild doesn't have this.
-- **NopoX combines browser detection + URL keyword matching into one method** (`checkBlockBrowsers`). The rebuild splits them into `isBrowserPackageDetected` + `handleContentChange` → `handleUrlDetected`.
-- **NopoX checks Stop Me LAST** (not visible in the smali excerpt but confirmed by the field `stopMeEndTime` being checked inside `checkBlockBrowsers`). The rebuild checks Stop Me last too, which is correct.
+- **Reference checks browser blocking FIRST** — before prevent-uninstall and power menu. This makes sense because browser blocking is the most common case and should be fast.
+- **Reference has `checkPreventUninstallPromotion`** — a separate method that detects when the user is on the app info page but hasn't enabled prevent-uninstall yet, and promotes the feature. The rebuild doesn't have this.
+- **Reference combines browser detection + URL keyword matching into one method** (`checkBlockBrowsers`). The rebuild splits them into `isBrowserPackageDetected` + `handleContentChange` → `handleUrlDetected`.
+- **Reference checks Stop Me LAST** (not visible in the smali excerpt but confirmed by the field `stopMeEndTime` being checked inside `checkBlockBrowsers`). The rebuild checks Stop Me last too, which is correct.
 
 ---
 
@@ -104,7 +104,7 @@ if (isPornBlockerOn && cachedBlockApps.contains(packageName)) {
 
 The condition requires `isPornBlockerOn` to be true. If the user turns off the Porn Blocker switch (e.g. to stop URL keyword matching but keep app blocking), blocklist apps stop being blocked. This is confusing — the UI says "Apps that get blocked on launch" with no mention of the Porn Blocker dependency.
 
-**NopoX comparison**: NopoX has `pornBlock` as a separate boolean, and `blockApps` is checked independently. The rebuild's coupling is a regression.
+**Reference comparison**: The reference has `pornBlock` as a separate boolean, and `blockApps` is checked independently. The rebuild's coupling is a regression.
 
 **Fix**: Remove the `isPornBlockerOn` gate. Blocklist apps should work independently.
 
@@ -136,7 +136,7 @@ val DEVICE_ADMIN_TEXTS_TO_MATCH: List<String> = listOf(
 
 The strings "device admin" and "deactivate" are too generic. Any settings page that mentions "admin" (e.g. "Administrator settings", "User administration") or "deactivate" (e.g. "Deactivate account" in a social app) will trigger the prevent-uninstall block, locking the user out of unrelated pages.
 
-**NopoX comparison**: NopoX has `deviceAdminTextList` but the decompiled code shows it's used only when the package is `com.android.settings` AND the class name contains `appinfo`/`installedappdetails`. The rebuild's `isAppInfoPage` does check the package name, but the device-admin text matching is done without the class-name guard — it matches ANY text on ANY settings page.
+**Reference comparison**: The reference has `deviceAdminTextList` but the decompiled code shows it's used only when the package is `com.android.settings` AND the class name contains `appinfo`/`installedappdetails`. The rebuild's `isAppInfoPage` does check the package name, but the device-admin text matching is done without the class-name guard — it matches ANY text on ANY settings page.
 
 **Fix**: Only check device-admin texts when the class name indicates an app-info page (which the code partially does, but the text matching loop runs unconditionally after the class-name checks fail). Move the device-admin text matching inside the `if (lowerClass.contains("appinfo") ...)` guard.
 
@@ -190,7 +190,7 @@ fun setStopMeRunning(running: Boolean) {
 
 `isStopMeRunning` is a plain `Boolean` on the accessibility service. If the service is killed (reboot, force-stop, OEM battery optimization), `isStopMeRunning` resets to `false`. The session row still exists in `stop_me_duration_table` with a valid `endTime`, but the accessibility service doesn't check it.
 
-**NopoX comparison**: NopoX uses `private static long stopMeEndTime` — a persisted timestamp. On every event, NopoX checks `System.currentTimeMillis() < stopMeEndTime`. If the service is killed and reconnected, `refreshAccessibilityVariables` reloads `stopMeEndTime` from the DB, so the session resumes automatically.
+**Reference comparison**: The reference uses `private static long stopMeEndTime` — a persisted timestamp. On every event, the reference checks `System.currentTimeMillis() < stopMeEndTime`. If the service is killed and reconnected, `refreshAccessibilityVariables` reloads `stopMeEndTime` from the DB, so the session resumes automatically.
 
 **Fix**: Replace `isStopMeRunning: Boolean` with `stopMeEndTime: Long`. On `refreshBlockingConfig`, load the active session from the DB and set `stopMeEndTime`. In `handleWindowStateChange`, check `System.currentTimeMillis() < stopMeEndTime` instead of `isStopMeRunning`.
 
@@ -249,7 +249,7 @@ val httpsResolved = pm.queryIntentActivities(httpsIntent, 0)
 
 The comment explains that pressing HOME before `startActivity` caused the block screen to be dismissed. But NOT pressing HOME means the offending app stays in the back stack. When the user taps Close, they return to the offending app.
 
-**NopoX comparison**: NopoX's `showPuBlockPage` method presses `GLOBAL_ACTION_HOME` before launching the block activity. The rebuild tried this and had the dismissal problem — but the fix should be to press HOME *after* a short delay (e.g. 100ms), not to skip it entirely.
+**Reference comparison**: The reference's `showPuBlockPage` method presses `GLOBAL_ACTION_HOME` before launching the block activity. The rebuild tried this and had the dismissal problem — but the fix should be to press HOME *after* a short delay (e.g. 100ms), not to skip it entirely.
 
 **Fix**: Press HOME after launching the block screen (with a 200ms delay to let the block activity appear first):
 
@@ -283,7 +283,7 @@ serviceScope.launch {
 
 | ID | Severity | Setting | Summary |
 |----|----------|---------|---------|
-| AB-01 | Critical | AB9 (Stop Me) | Stop Me state is in-memory only — lost on process death. NopoX uses persisted `stopMeEndTime` |
+| AB-01 | Critical | AB9 (Stop Me) | Stop Me state is in-memory only — lost on process death. Reference uses persisted `stopMeEndTime` |
 | AB-02 | Critical | AB1 (Blocklist apps) | Gated by `isPornBlockerOn` — blocklist apps stop working when Porn Blocker is OFF |
 | AB-03 | High | AB7 (Prevent uninstall) | `DEVICE_ADMIN_TEXTS_TO_MATCH` too broad — "admin"/"deactivate" match unrelated pages |
 | AB-04 | High | AB8 (Block reboot) | `isPowerMenu` false positive on package name containing "shutdown" |
@@ -308,7 +308,7 @@ serviceScope.launch {
 
 ## 11. Recommended priority order for fixes
 
-1. **AB-01** (Stop Me persisted state) — biggest correctness gap vs NopoX
+1. **AB-01** (Stop Me persisted state) — biggest correctness gap vs reference
 2. **AB-02** (blocklist apps gate) — confusing UX regression
 3. **AB-03** (device admin text matching) — false-positive lockout risk
 4. **AB-05** (HOME action before block screen) — UX correctness

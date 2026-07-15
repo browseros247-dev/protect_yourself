@@ -245,7 +245,7 @@ class BlockerPageUtilsTest {
 
     // ===== getSafeSearchUrl (SS-01 fix, v1.0.54) =====
     //
-    // Tests verify the NopoX 1.0.53 reference behaviour:
+    // Tests verify the reference behaviour:
     //  - Google: append &safe=active (same host, requires /search path)
     //  - Bing: append &adlt=strict (same host, requires /search path)
     //  - Yahoo: append &vm=r (same host, requires /search path)
@@ -296,7 +296,7 @@ class BlockerPageUtilsTest {
 
     @Test
     fun `getSafeSearchUrl Google DOES NOT redirect homepage (no search path)`() {
-        // SS-01 fix: NopoX only redirects when path contains "search".
+        // SS-01 fix: the reference only redirects when path contains "search".
         // Homepage must NOT be redirected.
         assertThat(utils.getSafeSearchUrl("https://www.google.com/")).isNull()
         assertThat(utils.getSafeSearchUrl("https://www.google.com")).isNull()
@@ -386,7 +386,7 @@ class BlockerPageUtilsTest {
     @Test
     fun `getSafeSearchUrl DuckDuckGo DOES redirect homepage (no path check required)`() {
         // Unlike Google/Bing/Yahoo/Yandex, DDG uses host replacement — no
-        // /search path requirement. This matches NopoX behaviour.
+        // /search path requirement. This matches the reference behaviour.
         val safe = utils.getSafeSearchUrl("https://duckduckgo.com/")
         assertThat(safe).isNotNull()
         assertThat(safe).contains("safe.duckduckgo.com")

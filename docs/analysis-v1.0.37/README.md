@@ -1,7 +1,7 @@
-# Analysis v1.0.37 — Protect Yourself vs NopoX Reference APK
+# Analysis v1.0.37 — Protect Yourself Reference APK Comparison
 
 This directory contains the comprehensive analysis of **Protect Yourself v1.0.37**
-against the **NopoX v1.0.53** reference APK, performed on 2026-07-11.
+compared against the reference APK, performed on 2026-07-11.
 
 ## Files
 
@@ -10,8 +10,6 @@ against the **NopoX v1.0.53** reference APK, performed on 2026-07-11.
 | `COMPREHENSIVE_ANALYSIS_REPORT.md` | **Main report** — 14 sections, ~1,400 lines. Start here. |
 | `VERIFICATION_REPORT.md` | Second-pass verification of all 15 specific claims (15/15 CONFIRMED) |
 | `SOURCE_ANALYSIS_DETAILED.md` | Detailed module-by-module source code analysis (~6,500 words) |
-| `nopox_apk_summary.txt` | NopoX APK summary (permissions, components, files) |
-| `nopox_apk_info.json` | NopoX APK full structured info (machine-readable) |
 | `protect_yourself_apk_summary.txt` | Protect Yourself release APK summary |
 | `protect_yourself_apk_info.json` | Protect Yourself APK full structured info (machine-readable) |
 
@@ -26,7 +24,7 @@ against the **NopoX v1.0.53** reference APK, performed on 2026-07-11.
 
 - `androguard` 4.1.4 for APK static analysis (manifest, permissions, components, DEX enumeration, file inventory)
 - Manual source-code review of ~12,000 LOC across 80 Kotlin files
-- Cross-reference against existing `docs/NOPOX_ANALYSIS.md`, `docs/COMPARISON_REPORT.md`, `docs/VPN_DEEP_ANALYSIS.md`, `docs/KEYWORD_BLOCKING_ANALYSIS.md`
+- Cross-reference against existing `docs/COMPARISON_REPORT.md`, `docs/VPN_DEEP_ANALYSIS.md`, `docs/KEYWORD_BLOCKING_ANALYSIS.md`
 - Independent verification pass — every cited file:line was re-read by a second agent
 
 ## Verification

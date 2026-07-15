@@ -142,11 +142,11 @@ class MainActivity : FragmentActivity() {
      * So the lock screen never appeared on app return — the user could bypass
      * the lock by simply backgrounding + returning.
      *
-     * NopoX behaviour: re-locks on every ON_RESUME if a lock is configured.
+     * Reference behaviour: re-locks on every ON_RESUME if a lock is configured.
      */
     override fun onResume() {
         super.onResume()
-        // Mirror NopoX: attempt self-heal every time the app comes to the
+        // Mirror the reference: attempt self-heal every time the app comes to the
         // foreground. This is the highest-value call site — if the service
         // was killed while the app was backgrounded, this re-arms it the
         // instant the user opens the app again.

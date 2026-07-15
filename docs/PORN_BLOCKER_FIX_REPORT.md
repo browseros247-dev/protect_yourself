@@ -9,7 +9,7 @@ was ON — contradicting the user's explicit choice. Additionally, a missing ant
 caused the same URL to be re-matched and re-blocked on every accessibility event (5-10 times
 per page load), leading to repeated block overlays after dismissal.
 
-All 4 identified bugs have been fixed, tested, and verified against the NopoX 1.0.53 reference
+All 4 identified bugs have been fixed, tested, and verified against the reference
 APK. The release APK v1.0.55 builds successfully and all 109 unit tests pass.
 
 ---
@@ -39,7 +39,7 @@ if (found) { launchBlockActivity(...) }
 **Impact**: When the user turned OFF the Porn Blocker but left SafeSearch ON, porn keyword
 blocking STILL fired on browser URLs. The switch appeared to do nothing.
 
-**NopoX 1.0.53 reference** (decompiled `checkPornUrlSearch` line 1305):
+**Reference** (decompiled `checkPornUrlSearch` line 1305):
 ```java
 if (pornBlock || blockAllWebsite) {   // ← block keyword check is INSIDE this gate
     ... whitelist check ...
@@ -75,7 +75,7 @@ if (packageName != this.packageName && packageName != "com.android.systemui" && 
 **Impact**: Non-browser apps displaying pornographic text were still blocked even after the
 user turned off the Porn Blocker (if SafeSearch was on).
 
-**NopoX 1.0.53 reference** (decompiled `checkPornClickedText` line 978):
+**Reference** (decompiled `checkPornClickedText` line 978):
 ```java
 if (pornBlock) {   // ← gated by pornBlock ALONE
     ... content-text keyword check ...
@@ -97,7 +97,7 @@ SAME URL. Without dedup:
 2. After the user dismissed the block overlay, the next content-change event re-triggered
    the match and re-launched the block overlay (annoying re-block loop)
 
-**NopoX 1.0.53 reference** (decompiled `checkPornUrlSearch` lines 1291, 1315, 1343, 1354):
+**Reference** (decompiled `checkPornUrlSearch` lines 1291, 1315, 1343, 1354):
 ```java
 if (!Intrinsics.areEqual(pornPreviousUrl, lowerCase)) {   // line 1291 — skip if same URL
     ...
@@ -110,7 +110,7 @@ pornPreviousUrl = lowerCase;       // line 1354 — track at end
 ```
 
 **Fix**: Added `@Volatile private var pornPreviousUrl: String = ""` + dedup logic matching
-NopoX's pattern exactly. Also added `MAX_URL_LENGTH_FOR_MATCH = 8192` guard to skip absurdly
+the reference's pattern exactly. Also added `MAX_URL_LENGTH_FOR_MATCH = 8192` guard to skip absurdly
 long data: URIs, and reset `pornPreviousUrl` on switch transitions so toggling takes effect
 immediately.
 

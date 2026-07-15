@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * high-priority notification prompting the user to re-enable manually
  * (Android 13+ blocks programmatic re-enable without the permission).
  *
- * Ported + extended from the original NopoX `AccessibilityGuard.kt`.
+ * Ported + extended from the original reference `AccessibilityGuard.kt`.
  */
 class AccessibilityGuard {
 

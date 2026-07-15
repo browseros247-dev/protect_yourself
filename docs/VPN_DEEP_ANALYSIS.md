@@ -2,9 +2,9 @@
 
 > **Branch**: `Future-Brand` (commit `1661ef6`, v1.0.34-debug)
 > **Analysis date**: 2026-07-11
-> **Scope**: Every VPN-related setting, evaluated individually against the NopoX reference implementation, with focus on (a) networking correctness, (b) performance, (c) UI/UX, (d) bugs / inconsistencies / improvement opportunities.
+> **Scope**: Every VPN-related setting, evaluated individually against the reference implementation, with focus on (a) networking correctness, (b) performance, (c) UI/UX, (d) bugs / inconsistencies / improvement opportunities.
 > **Methodology**: Static source review of the Future-Brand VPN code path + JADX decompilation of the prior `protect.yourself-v1.0.33-release.apk` (the version immediately before the Future-Brand fix) + cross-reference with `docs/COMPARISON_REPORT.md` and `docs/IMPLEMENTATION_PLAN.md`.
-> **Reference**: NopoX v1.0.53 (`com.planproductive.nopoz`). The NopoX APK was not available for direct decompilation in this session, so NopoX behaviour is inferred from (1) the prior `docs/NOPOX_ANALYSIS.md` / `docs/COMPARISON_REPORT.md` (which were written from a full JADX decompilation of `NopoX_1.0.53.apk`) and (2) the v1.0.33 Protect-Yourself APK, which is a 1:1 port of NopoX's VPN module.
+> **Reference**: v1.0.53 (`com.planproductive`). The reference APK was not available for direct decompilation in this session, so reference behaviour is inferred from (1) the prior `docs/COMPARISON_REPORT.md` (which was written from a full JADX decompilation of `reference_1.0.53.apk`) and (2) the v1.0.33 Protect-Yourself APK, which is a 1:1 port of the reference's VPN module.
 
 ---
 
@@ -15,7 +15,7 @@ The Future-Brand branch ships two big VPN changes over v1.0.33:
 1. **A critical networking fix** in `MyVpnService.kt` — the v1.0.33 service called `addRoute("0.0.0.0", 0)` (route the entire IPv4 internet into the TUN) but never forwarded those packets, so enabling the VPN instantly killed the device's internet. The Future-Brand branch replaces this with a DNS-only interception design (only DNS server IPs are routed into the TUN, and a real UDP/53 forwarding loop relays queries to the upstream family-safe DNS).
 2. **A complete UI/UX redesign** — the old "tap-to-cycle Normal/Powerful/Custom" action row (which also had a latent identifier-overload bug) is replaced by a dedicated `VpnManagementPage` with a status header, three explanatory mode cards, a custom-DNS provider picker, and an advanced-settings group.
 
-Both changes are in the right direction. However, a setting-by-setting deep review against NopoX and against DNS-filtering best practice (AdGuard / Blokada / Intra / DNS66) reveals **19 issues** of varying severity that should be addressed before the VPN subsystem is considered production-ready. The most important are:
+Both changes are in the right direction. However, a setting-by-setting deep review against the reference and against DNS-filtering best practice (AdGuard / Blokada / Intra / DNS66) reveals **19 issues** of varying severity that should be addressed before the VPN subsystem is considered production-ready. The most important are:
 
 - **VPN-01 (Critical)** — `addRoute(firstDns, 32)` + `addRoute(secondDns, 32)` will silently fail to capture DNS queries on devices where the system resolver uses the **system-configured DNS** (e.g. DHCP-assigned 8.8.8.8) rather than the VPN's `addDnsServer()`. The DNS-hijack list helps but is incomplete.
 - **VPN-02 (Critical)** — The DNS forwarder opens a **new `DatagramSocket` per query** and does not set `SO_REUSEADDR`. Under load (e.g. a page that fires 30+ DNS lookups) this burns through file descriptors and can crash the service with `EMFILE`.
@@ -24,7 +24,7 @@ Both changes are in the right direction. However, a setting-by-setting deep revi
 - **VPN-05 (High)** — The `AppSystemActionReceiverAllTime` boot-restart calls `MyVpnService.start(context)` directly, but on Android 12+ a stopped app cannot start a foreground service from the background. The VPN will not actually start after reboot on Android 12+.
 - **VPN-06 (Medium)** — `setVpnMode()` always emits `RestartVpn` even when the VPN is OFF. Harmless today, but it spams the log and can confuse a future reader.
 - **VPN-07 (Medium)** — `selectCustomDnsPreset()` shows a toast "Custom DNS provider updated. Restarting VPN…" even when the VPN is OFF or not in CUSTOM mode. Misleading.
-- **VPN-08 (Medium)** — The `VpnManagementPage` "Hide notification content" toggle does not restart the VPN, so the change does not take effect until the next manual restart. The old v1.0.33 UI had the same bug; NopoX's notification settings also require a restart but NopoX tells the user.
+- **VPN-08 (Medium)** — The `VpnManagementPage` "Hide notification content" toggle does not restart the VPN, so the change does not take effect until the next manual restart. The old v1.0.33 UI had the same bug; the reference's notification settings also require a restart but the reference tells the user.
 - **VPN-09 (Medium)** — `isValidDNS()` only accepts IPv4, but the DNS hijack list and `addDnsServer()` would also accept IPv6. If a user enters an IPv6 DNS in a future custom-DNS editor, validation will reject it.
 - **VPN-10 (Low/Medium)** — The `CustomDnsPresetRow` parameter `isCustomModeActive` is passed but never used in the UI. Dead parameter.
 - **VPN-11 (Low)** — The `ModeSelectorCard` for the selected mode shows a hardcoded English "Active" label instead of using a string resource.
@@ -37,7 +37,7 @@ Both changes are in the right direction. However, a setting-by-setting deep revi
 - **VPN-18 (Low)** — The `MyVpnService` foreground notification `setContentTitle` always shows "Protect Yourself VPN active" even when the VPN has failed to establish (e.g. user revoked permission mid-start). The notification should reflect actual state.
 - **VPN-19 (Low)** — The `MyVpnService.isRunning()` companion function returns `instance?.isRunning ?: false`, but `instance` is set in `init {}` and cleared never. After `onDestroy()`, `instance` still points to the destroyed service, so `isRunning()` may return `true` for a dead service.
 
-The detailed analysis below walks through every VPN setting one by one, explains what it does, how it compares to NopoX, and lists the specific issues that apply to it.
+The detailed analysis below walks through every VPN setting one by one, explains what it does, how it compares to the reference, and lists the specific issues that apply to it.
 
 ---
 
@@ -90,7 +90,7 @@ Builder()
 
 After `establish()` returned, the service did **nothing** with `vpnInterface.fileDescriptor` — no `FileInputStream`/`FileOutputStream` loop, no packet forwarding, no DNS proxy. The TUN was a black hole. Every packet the OS routed into the TUN (which, because of `addRoute("0.0.0.0", 0)`, was *every* packet) sat in the TUN's receive buffer until it was full, then was dropped. The device lost all internet connectivity within ~1 second of the VPN starting.
 
-`docs/COMPARISON_REPORT.md` line 197 says: *"VPN DNS blocking | Full tunnel `addRoute("0.0.0.0", 0)` + family DNS | Same | ✅ Equivalent (post v1.0.25)"*. This is **wrong** — or, more precisely, it was an *intentional* equivalence claim that did not survive contact with reality. NopoX may have the same `addRoute` call, but NopoX presumably also has a packet forwarder (the original NopoX source was not available for this analysis, but NopoX is a shipping commercial app with working VPN — so it must forward packets somehow). The Protect-Yourself port copied the `addRoute` line without copying the forwarder. Result: black hole.
+`docs/COMPARISON_REPORT.md` line 197 says: *"VPN DNS blocking | Full tunnel `addRoute("0.0.0.0", 0)` + family DNS | Same | ✅ Equivalent (post v1.0.25)"*. This is **wrong** — or, more precisely, it was an *intentional* equivalence claim that did not survive contact with reality. The reference may have the same `addRoute` call, but it presumably also has a packet forwarder (the original reference source was not available for this analysis, but it is a shipping commercial app with working VPN — so it must forward packets somehow). The Protect-Yourself port copied the `addRoute` line without copying the forwarder. Result: black hole.
 
 `docs/IMPLEMENTATION_PLAN.md` line 588 confirms the *intended* design was DNS hijacking only: *"Loop packet routing (no actual VPN traffic — just DNS hijacking)"*. The code did the opposite.
 
@@ -131,7 +131,7 @@ private fun startDnsForwarder(upstreamPrimary, upstreamSecondary) {
 }
 ```
 
-This is the correct pattern. It matches what AdGuard, Blokada, Intra, DNS66, and (per `docs/COMPARISON_REPORT.md`) NopoX itself do.
+This is the correct pattern. It matches what AdGuard, Blokada, Intra, DNS66, and (per `docs/COMPARISON_REPORT.md`) the reference itself do.
 
 ### 2.3 Issues with the fix
 
@@ -145,7 +145,7 @@ This is the correct pattern. It matches what AdGuard, Blokada, Intra, DNS66, and
 
 **Impact**: The user enables "Strict" mode expecting AdGuard Family to filter all DNS, but in reality only DNS queries to the two configured servers (and the 8 hardcoded hijack IPs) are filtered. A determined user (or a benign app with hardcoded DoH) can bypass filtering entirely.
 
-**NopoX comparison**: NopoX uses the same `addRoute("0.0.0.0", 0)` full-tunnel design. NopoX therefore captures **all** DNS (because all traffic enters the TUN). NopoX's forwarder (which was not decompiled in this session) presumably handles the full tunnel. So NopoX is actually **stronger** than Future-Brand on this axis — but at the cost of needing a real packet forwarder (which is what caused the original Protect-Yourself bug).
+**Reference comparison**: The reference uses the same `addRoute("0.0.0.0", 0)` full-tunnel design. It therefore captures **all** DNS (because all traffic enters the TUN). The reference's forwarder (which was not decompiled in this session) presumably handles the full tunnel. So the reference is actually **stronger** than Future-Brand on this axis — but at the cost of needing a real packet forwarder (which is what caused the original Protect-Yourself bug).
 
 **Recommended fix**: Either (a) implement a proper full-tunnel forwarder (TCP + UDP + ICMP, with NAT) like AdGuard does — this is a large amount of code, or (b) keep DNS-only interception but expand the hijack list to include IPv6 DNS prefixes and the full RFC 1918 + carrier DNS ranges, or (c) the simpler middle ground: route the well-known DNS-over-HTTPS / DNS-over-TLS ports (443 to known DoH servers, 853 to known DoT servers) into the TUN as well, and drop them. This forces apps back on plaintext UDP/53 which we do intercept.
 
@@ -157,7 +157,7 @@ This is the correct pattern. It matches what AdGuard, Blokada, Intra, DNS66, and
 - The close() call returns the FD to the OS asynchronously on some kernels.
 - Under burst load, the service can hit the per-process FD limit (usually 1024) and start failing with `SocketException: EMFILE`.
 
-**NopoX comparison**: Unknown (NopoX's forwarder was not decompiled). AdGuard and Intra both maintain a **socket pool** keyed by source IP+port, reusing sockets for the duration of a query and closing them on a timer.
+**Reference comparison**: Unknown (the reference's forwarder was not decompiled). AdGuard and Intra both maintain a **socket pool** keyed by source IP+port, reusing sockets for the duration of a query and closing them on a timer.
 
 **Recommended fix**: Maintain a pool of `protect()`-ed `DatagramSocket` instances (e.g. an `ArrayDeque<DatagramSocket>`). On `forwardDnsQuery`, pop one from the pool (or create+protect a new one if empty); on return, push it back. Cap the pool at, say, 64 sockets. Use `socket.soTimeout` to time out the receive, then close the socket (do not return a timed-out socket to the pool).
 
@@ -167,7 +167,7 @@ This is the correct pattern. It matches what AdGuard, Blokada, Intra, DNS66, and
 
 **Impact**: On affected devices, every DNS response is dropped. The user sees "DNS probe finished NXDOMAIN" / "ERR_NAME_NOT_RESOLVED" in Chrome. The VPN appears to be broken.
 
-**NopoX comparison**: NopoX's forwarder was not decompiled, but the original NopoX app is widely used on Huawei / MediaTek devices without widespread DNS complaints, so NopoX presumably computes the checksum correctly.
+**Reference comparison**: The reference's forwarder was not decompiled, but the original reference app is widely used on Huawei / MediaTek devices without widespread DNS complaints, so it presumably computes the checksum correctly.
 
 **Recommended fix**: Compute the IPv4 header checksum in `buildDnsResponsePacket()`. It's a simple 16-bit one's complement sum over the header words:
 
@@ -195,7 +195,7 @@ But between step 1 and step 2's `startVpn()` call (a 2-second window), the user 
 
 But consider the reverse: user toggles OFF then ON, the new `startVpn()` establishes a TUN, then the system revokes again (because the user's "always-on VPN" setting was revoked in between). The second `onRevoke()` calls `stopVpn()` (cancelling the new TUN), then schedules another 2-second restart. Now there are **two** pending restart coroutines. They both fire, both call `startVpn()`, the first establishes a TUN, the second sees `isRunning = true` and returns. Mostly OK, but the forwarder job from the first restart is now orphaned if the second `startVpn()` had already cancelled `forwarderJob` (it didn't, because it returned early). This is messy.
 
-**NopoX comparison**: NopoX has the same self-restart pattern (per `docs/COMPARISON_REPORT.md` line 116: "VPN self-restart on revoke | ✅ | ✅ | Same"). NopoX presumably has the same race.
+**Reference comparison**: The reference has the same self-restart pattern (per `docs/COMPARISON_REPORT.md` line 116: "VPN self-restart on revoke | ✅ | ✅ | Same"). It presumably has the same race.
 
 **Recommended fix**: Use a single `Job` for the restart coroutine, and cancel any existing restart job before scheduling a new one:
 
@@ -224,7 +224,7 @@ override fun onRevoke() {
 
 `MyVpnService.onStartCommand` returns `START_STICKY` and calls `startVpn()` which (eventually, after the coroutine) calls `startForegroundCompat()`. On Android 12+, this will crash with `ForegroundServiceStartNotAllowedException` because the receiver is a background context.
 
-**NopoX comparison**: NopoX has the same boot-restart code (per `docs/NOPOX_ANALYSIS.md` line 484). NopoX presumably has the same problem on Android 12+ — or NopoX uses `WorkManager` with `setExpedited(...)` to schedule the start. The decompiled v1.0.33 Protect-Yourself does not use WorkManager for this.
+**Reference comparison**: The reference has the same boot-restart code (per the prior reference analysis line 484). It presumably has the same problem on Android 12+ — or it uses `WorkManager` with `setExpedited(...)` to schedule the start. The decompiled v1.0.33 Protect-Yourself does not use WorkManager for this.
 
 **Recommended fix**: Use a `WorkManager` `OneTimeWorkRequest` with `setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)` to start the VPN after boot. WorkManager is exempt from the background-start restriction for expedited work. Alternatively, declare the service with `android:foregroundServiceType="specialUse"` (already done) and use `ServiceCompat.startForeground(...)` with the correct service type — but the *start* still has to come from a foreground context on Android 12+.
 
@@ -269,13 +269,13 @@ When toggled OFF:
 - ViewModel persists `VPN_SWITCH=false`, emits `BlockerPageNavigation.StopVpn`.
 - UI calls `MyVpnService.stop(context)`.
 
-### 3.2 Comparison with NopoX
+### 3.2 Comparison with the reference
 
-Per `docs/COMPARISON_REPORT.md` line 116: "VPN self-restart on revoke | ✅ | ✅ | Same". NopoX has the same master-switch + prepare + start pattern. Functionally equivalent.
+Per `docs/COMPARISON_REPORT.md` line 116: "VPN self-restart on revoke | ✅ | ✅ | Same". The reference has the same master-switch + prepare + start pattern. Functionally equivalent.
 
 ### 3.3 Issues
 
-- **No issue with the switch itself.** The prepare/start flow is correct and matches NopoX.
+- **No issue with the switch itself.** The prepare/start flow is correct and matches the reference.
 - **Minor**: The "VPN enabled" toast is hardcoded English in `onVpnPermissionGranted()` (line 322: `_navigation.emit(BlockerPageNavigation.ShowToast("VPN enabled"))`). Should use a string resource. (This is a localisation issue, not a VPN-specific issue — but since `docs/COMPARISON_REPORT.md` line 154 flags "Multi-language UI | ✅ 37+ languages | ⚠️ Strings.xml is English-only" as a known gap, this is consistent with the rest of the app.)
 
 ---
@@ -292,11 +292,11 @@ UI: The `VpnManagementPage` shows three `ModeSelectorCard`s. Tapping a card call
 3. If the VPN is currently running, emits `BlockerPageNavigation.RestartVpn` — the UI calls `MyVpnService.restart(context)`.
 4. Emits a `ShowToast` with the new mode label.
 
-### 4.2 Comparison with NopoX
+### 4.2 Comparison with the reference
 
-NopoX has the same 4 modes (OFF / NORMAL / POWERFUL / CUSTOM) per `docs/COMPARISON_REPORT.md` line 115. NopoX uses the same DB key (`vpn_connection_type`) and the same enum values. The Future-Brand branch renames the user-facing labels (NORMAL→"Balanced", POWERFUL→"Strict", CUSTOM→"Custom DNS") but keeps the enum values and DB key unchanged — so the schema is backward-compatible with v1.0.33 backups.
+The reference has the same 4 modes (OFF / NORMAL / POWERFUL / CUSTOM) per `docs/COMPARISON_REPORT.md` line 115. It uses the same DB key (`vpn_connection_type`) and the same enum values. The Future-Brand branch renames the user-facing labels (NORMAL→"Balanced", POWERFUL→"Strict", CUSTOM→"Custom DNS") but keeps the enum values and DB key unchanged — so the schema is backward-compatible with v1.0.33 backups.
 
-The Future-Brand UI is a significant improvement over both NopoX and v1.0.33. NopoX (and v1.0.33) used a tap-to-cycle `ActionRow` that showed only the current mode label — users had no way to see what the other modes were without tapping. The Future-Brand UI shows all three modes simultaneously with descriptions, DNS provider chips, and recommendation tags.
+The Future-Brand UI is a significant improvement over both the reference and v1.0.33. The reference (and v1.0.33) used a tap-to-cycle `ActionRow` that showed only the current mode label — users had no way to see what the other modes were without tapping. The Future-Brand UI shows all three modes simultaneously with descriptions, DNS provider chips, and recommendation tags.
 
 ### 4.3 Issues
 
@@ -373,11 +373,11 @@ UI: The `VpnManagementPage` shows a `CustomDnsPresetRow` for each preset in the 
 3. If the VPN is ON and in CUSTOM mode, emits `RestartVpn`.
 4. Emits a `ShowToast`.
 
-### 5.2 Comparison with NopoX
+### 5.2 Comparison with the reference
 
-NopoX has the same `vpn_custom_dns` table and the same 4 default presets (Cloudflare Family, OpenDNS FamilyShield, CleanBrowsing Family, AdGuard Family). Per `docs/COMPARISON_REPORT.md` line 62: "Same shape, 4 DNS presets pre-populated".
+The reference has the same `vpn_custom_dns` table and the same 4 default presets (Cloudflare Family, OpenDNS FamilyShield, CleanBrowsing Family, AdGuard Family). Per `docs/COMPARISON_REPORT.md` line 62: "Same shape, 4 DNS presets pre-populated".
 
-The v1.0.33 Protect-Yourself had **no UI** to manage custom DNS presets — the `add_custom_dns_page_title` and `add_custom_dns_page_card_message` strings existed in `strings.xml` but no Compose file referenced them. This was a regression from NopoX (which had an `AddVpnCustomDnsPageContent`). The Future-Brand branch adds a read-only preset picker (you can select among the 4 presets) but still does **not** add the ability to add / edit / delete custom presets. So the gap with NopoX is partially closed but not fully.
+The v1.0.33 Protect-Yourself had **no UI** to manage custom DNS presets — the `add_custom_dns_page_title` and `add_custom_dns_page_card_message` strings existed in `strings.xml` but no Compose file referenced them. This was a regression from the reference (which had an `AddVpnCustomDnsPageContent`). The Future-Brand branch adds a read-only preset picker (you can select among the 4 presets) but still does **not** add the ability to add / edit / delete custom presets. So the gap with the reference is partially closed but not fully.
 
 ### 5.3 Issues
 
@@ -442,11 +442,11 @@ fun isValidDNS(dns: String): Boolean {
 
 **Recommended use**: When `isCustomModeActive` is false, show a small hint like "Switch to Custom mode to use this provider" and make the row non-clickable. This matches the principle of progressive disclosure.
 
-#### Gap with NopoX — No add/edit/delete UI for custom DNS presets
+#### Gap with reference — No add/edit/delete UI for custom DNS presets
 
-NopoX (per `docs/IMPLEMENTATION_PLAN.md` line 579) has an `AddVpnCustomDnsPageContent` for adding / editing / deleting custom DNS presets. The Future-Brand branch does not implement this. The `vpn_custom_dns` table supports it (the DAO has `upsert`, `deleteByKey`, `deleteAll`), but there is no UI.
+The reference (per `docs/IMPLEMENTATION_PLAN.md` line 579) has an `AddVpnCustomDnsPageContent` for adding / editing / deleting custom DNS presets. The Future-Brand branch does not implement this. The `vpn_custom_dns` table supports it (the DAO has `upsert`, `deleteByKey`, `deleteAll`), but there is no UI.
 
-**Recommended fix**: Add a "+ Add custom DNS" button at the bottom of the Custom DNS Provider section in `VpnManagementPage`. Tapping it opens a dialog with three fields (name, DNS 1, DNS 2) and a Save button. Save calls `db.vpnCustomDnsDao().upsert(...)`. Also add an "Edit" and "Delete" action on each non-default preset row (long-press or overflow menu). This is a moderate amount of work but closes the last NopoX parity gap on the VPN settings.
+**Recommended fix**: Add a "+ Add custom DNS" button at the bottom of the Custom DNS Provider section in `VpnManagementPage`. Tapping it opens a dialog with three fields (name, DNS 1, DNS 2) and a Save button. Save calls `db.vpnCustomDnsDao().upsert(...)`. Also add an "Edit" and "Delete" action on each non-default preset row (long-press or overflow menu). This is a moderate amount of work but closes the last reference parity gap on the VPN settings.
 
 ---
 
@@ -460,7 +460,7 @@ The app itself (`protect.yourself`) is always added to the disallowed list (line
 
 UI: `AdvancedActionRow` in `VpnManagementPage` (and also a row in the Advanced Features category) opens `SelectAppPage` with the `VPN_WHITELIST_APPS` identifier.
 
-### 6.2 Comparison with NopoX
+### 6.2 Comparison with the reference
 
 Per `docs/COMPARISON_REPORT.md` line 117: "VPN per-app routing | ✅ | ✅ | Same (`addDisallowedApplication` for whitelist)". Functionally equivalent.
 
@@ -481,9 +481,9 @@ UI: `AdvancedActionRow` in `VpnManagementPage` opens an `EditTextDialog` (via th
 
 `MyVpnService` reads the custom message in `startVpn()` and uses it in the notification text. The change takes effect on the next VPN start/restart — **not** immediately.
 
-### 7.2 Comparison with NopoX
+### 7.2 Comparison with the reference
 
-NopoX has the same `VPN_NOTIFICATION_CUSTOM_MESSAGE` and `VPN_NOTIFICATION_CUSTOM_MESSAGE_SET` keys (per `docs/COMPARISON_REPORT.md` line 62 — same DB schema). Functionally equivalent.
+The reference has the same `VPN_NOTIFICATION_CUSTOM_MESSAGE` and `VPN_NOTIFICATION_CUSTOM_MESSAGE_SET` keys (per `docs/COMPARISON_REPORT.md` line 62 — same DB schema). Functionally equivalent.
 
 ### 7.3 Issues
 
@@ -497,7 +497,7 @@ The Future-Brand branch fixes this by introducing a new `VPN_MANAGE` identifier 
 
 When the user changes the notification message (or toggles "Hide notification content"), the change is persisted to the DB but the running VPN service is not notified. The notification continues to show the old text until the VPN is restarted (either manually via the "Restart" notification action, or by toggling the VPN off and on).
 
-This is a UX inconsistency: the user expects the change to take effect immediately. NopoX has the same behaviour (per the comparison report, the VPN settings are read once at `startVpn()` time), but NopoX tells the user "Changes will take effect on next VPN restart" — the Future-Brand branch does not.
+This is a UX inconsistency: the user expects the change to take effect immediately. The reference has the same behaviour (per the comparison report, the VPN settings are read once at `startVpn()` time), but the reference tells the user "Changes will take effect on next VPN restart" — the Future-Brand branch does not.
 
 **Fix**: After saving the notification message (or toggling the hide switch), if the VPN is running, emit `RestartVpn`. This is a one-line change in `saveTextField()`:
 
@@ -537,7 +537,7 @@ fun setVpnNotificationHidden(hidden: Boolean) {
 
 UI: `AdvancedToggleRow` in `VpnManagementPage`. Toggling calls `viewModel.setVpnNotificationHidden(newValue)`.
 
-### 8.2 Comparison with NopoX
+### 8.2 Comparison with the reference
 
 Same DB key, same behaviour. Functionally equivalent.
 
@@ -550,7 +550,7 @@ Same DB key, same behaviour. Functionally equivalent.
 
 ## 9. Internal flag — `VPN_DNS_CUSTOM_LIST_SET`
 
-`SwitchIdentifier.VPN_DNS_CUSTOM_LIST_SET` (boolean). Declared in `SwitchIdentifier.kt`, seeded as `false` in `AppDatabaseCallback`, exposed via `SwitchStatusValues.isVpnDnsCustomListSet()`. **Never read by any code.** This is dead code — presumably a flag from the original NopoX that was meant to track whether the user had ever edited the custom DNS list (so the app could decide whether to re-seed defaults on upgrade). The Future-Brand branch does not use it.
+`SwitchIdentifier.VPN_DNS_CUSTOM_LIST_SET` (boolean). Declared in `SwitchIdentifier.kt`, seeded as `false` in `AppDatabaseCallback`, exposed via `SwitchStatusValues.isVpnDnsCustomListSet()`. **Never read by any code.** This is dead code — presumably a flag from the original reference that was meant to track whether the user had ever edited the custom DNS list (so the app could decide whether to re-seed defaults on upgrade). The Future-Brand branch does not use it.
 
 **Recommendation**: Either remove it (and the `isVpnDnsCustomListSet()` accessor) or use it for its intended purpose (guard against re-seeding defaults when the user has added custom presets). Since the DB schema must not change (we just bumped to v9), leave the column in place but mark the accessor as `@Suppress("unused")` or delete the accessor and leave the column.
 
@@ -700,7 +700,7 @@ This is a moderate refactor but gives a much better UX — the page updates live
 
 The forwarder uses `DatagramSocket` (plaintext UDP/53) to talk to the upstream DNS server. This means DNS queries are visible to anyone on the network path (ISP, Wi-Fi operator, carrier). The filtered DNS response is also visible.
 
-This is the same behaviour as NopoX (per the comparison report, NopoX uses the same `addDnsServer()` + forwarder pattern). It is also the behaviour of DNS66. AdGuard and Intra support DNS-over-HTTPS / DNS-over-TLS, which encrypt the queries.
+This is the same behaviour as the reference (per the comparison report, the reference uses the same `addDnsServer()` + forwarder pattern). It is also the behaviour of DNS66. AdGuard and Intra support DNS-over-HTTPS / DNS-over-TLS, which encrypt the queries.
 
 **Recommendation**: For a future enhancement, add DoH/DoT support. The forwarder would open an HTTPS connection to `https://cloudflare-dns.com/dns-query` (for Cloudflare Family) instead of a UDP socket. This is a significant feature addition, not a bug fix.
 
@@ -752,7 +752,7 @@ The forwarder accepts responses up to `MAX_PACKET_SIZE` (32 KB). DNS responses o
 | VPN-17 | Low | (service) | Removed `addSearchDomain(".")` — was dead code, no action needed |
 | VPN-18 | Low | (notification) | Notification title always says "VPN active" even if the VPN failed to establish |
 | VPN-19 | Low | (service) | `instance` singleton not cleared on `onDestroy()` |
-| (gap) | Medium | S3 (custom DNS) | No add/edit/delete UI for custom DNS presets (NopoX has `AddVpnCustomDnsPageContent`) |
+| (gap) | Medium | S3 (custom DNS) | No add/edit/delete UI for custom DNS presets (the reference has `AddVpnCustomDnsPageContent`) |
 | (gap) | High | (DB) | v8 → v9 migration uses `fallbackToDestructiveMigration()` — will wipe user data on upgrade |
 
 ---
@@ -771,7 +771,7 @@ If I were the maintainer, I would address these in the following order:
 8. **VPN-01** (DNS hijack coverage) — expand the hijack list + add IPv6 support; this is the largest networking change.
 9. **VPN-14 + VPN-11** (hardcoded strings) — localisation cleanup.
 10. **VPN-12 + VPN-13** (icon differentiation) — visual polish.
-11. **Custom DNS add/edit/delete UI** — closes the last NopoX parity gap.
+11. **Custom DNS add/edit/delete UI** — closes the last reference parity gap.
 12. **Flow-based `vpnManagementState`** — live UI updates.
 13. Everything else (VPN-09, VPN-10, VPN-15, VPN-16, VPN-17, VPN-18, VPN-19) — nice-to-have cleanups.
 
@@ -779,7 +779,7 @@ If I were the maintainer, I would address these in the following order:
 
 ## 16. Conclusion
 
-The Future-Brand branch makes two big correct moves: (1) it fixes the internet-killing `addRoute("0.0.0.0", 0)` bug by switching to DNS-only interception with a real forwarder, and (2) it replaces the confusing tap-to-cycle mode picker with a dedicated, self-explanatory VPN management page. Both are meaningful improvements over v1.0.33 and bring the app closer to NopoX's UX.
+The Future-Brand branch makes two big correct moves: (1) it fixes the internet-killing `addRoute("0.0.0.0", 0)` bug by switching to DNS-only interception with a real forwarder, and (2) it replaces the confusing tap-to-cycle mode picker with a dedicated, self-explanatory VPN management page. Both are meaningful improvements over v1.0.33 and bring the app closer to the reference's UX.
 
 However, the DNS forwarder is a minimum-viable implementation — it works for the common case but has correctness (VPN-01, VPN-03), performance (VPN-02, per-query allocation), and robustness (VPN-04, VPN-05, VPN-19) gaps that will surface on real devices. The UI is a big improvement but has several rough edges (VPN-08, VPN-10, VPN-11, VPN-12, VPN-13, VPN-14, VPN-15) that should be polished. And the v8 → v9 DB migration uses `fallbackToDestructiveMigration()`, which will wipe user data on upgrade — this must be fixed before any production release.
 

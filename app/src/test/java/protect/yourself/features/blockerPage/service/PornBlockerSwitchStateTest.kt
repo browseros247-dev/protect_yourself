@@ -66,7 +66,7 @@ class PornBlockerSwitchStateTest {
 
     @Test
     fun `porn blocker defaults to ON when no DB row exists`() = runBlocking {
-        // This matches the NopoX 1.0.53 reference behaviour: the app ships
+        // This matches the reference behaviour: the app ships
         // with the Porn Blocker enabled so the user is protected on first
         // launch without needing to find and toggle the switch.
         assertThat(values.isPornBlockerSwitchOn()).isTrue()

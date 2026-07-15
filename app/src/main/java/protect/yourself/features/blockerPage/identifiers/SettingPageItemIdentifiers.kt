@@ -83,5 +83,5 @@ enum class SettingPageItemIdentifiers {
 
     // FAQ section
     SECTION_FAQ,
-    KEEP_NOPOX_LIVE
+    KEEP_APP_LIVE
 }

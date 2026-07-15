@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
  * can browse the web (declare an intent filter for http/https) but are NOT in
  * the curated [SUPPORTED_BROWSERS] allow-list.
  *
- * Ported from NopoX 1.0.53 reference implementation:
+ * Ported from the reference implementation:
  *   - `BlockerPageUtils.getAllBrowserApps()` — queries PackageManager for
  *     everything that can handle `http://www.google.com` (catches both http
  *     and https intent filters in a single query because most browsers
@@ -97,7 +97,7 @@ object UnsupportedBrowserDetector {
      * able to browse the web (in-app browser tab) and should be present in
      * the whitelist picker so the user can choose to allow them.
      *
-     * Ported directly from NopoX 1.0.53 `SelectAppPageViewModel$getDisplayAppsList$1`.
+     * Ported directly from the reference `SelectAppPageViewModel$getDisplayAppsList$1`.
      */
     private val EXTRA_IN_APP_BROWSER_PACKAGES: Set<String> = setOf(
         "com.google.android.googlequicksearchbox"

@@ -11,7 +11,7 @@
 
 The backup/restore feature is **architecturally sound** — the Storage Access Framework (SAF) wiring, the `BackupManager` ↔ `BackupRestoreViewModel` ↔ `BackupRestorePage` MVVM split, the transactional restore with rollback, the typed `BackupResult` sealed class, and the Compose `LaunchedEffect`-based dialog state machine are all correct. The build compiles cleanly and the APK assembles without errors.
 
-However, an end-to-end review against the reference implementation (the original NopoX APK, as documented in `docs/COMPARISON_REPORT.md` §4.6 and `docs/analysis-v1.0.37/SOURCE_ANALYSIS_DETAILED.md` §3.8) surfaced **8 distinct bugs** spanning storage I/O, schema/serialisation, error classification, UX feedback, and code hygiene. The single most-likely root cause of the user-visible "backup import/export is not working" complaint is the `writeJsonToUri` retry-logic gap (CRITICAL) that silently fails on cloud storage providers (Google Drive, Dropbox, OneDrive) — providers that return `null` from `openOutputStream(uri, "wt")` instead of throwing. The other 7 bugs were either latent failure modes (HIGH-severity schema/serialisation issues that trigger on partial or old backups) or UX rough edges (LOW-severity dead code, redundant coroutines, missing cancel feedback).
+However, an end-to-end review against the reference implementation (as documented in `docs/COMPARISON_REPORT.md` §4.6 and `docs/analysis-v1.0.37/SOURCE_ANALYSIS_DETAILED.md` §3.8) surfaced **8 distinct bugs** spanning storage I/O, schema/serialisation, error classification, UX feedback, and code hygiene. The single most-likely root cause of the user-visible "backup import/export is not working" complaint is the `writeJsonToUri` retry-logic gap (CRITICAL) that silently fails on cloud storage providers (Google Drive, Dropbox, OneDrive) — providers that return `null` from `openOutputStream(uri, "wt")` instead of throwing. The other 7 bugs were either latent failure modes (HIGH-severity schema/serialisation issues that trigger on partial or old backups) or UX rough edges (LOW-severity dead code, redundant coroutines, missing cancel feedback).
 
 All 8 bugs are fixed in this branch. No DB schema migration was needed — the `vpn_custom_dns.display_name` schema mismatch was resolved by adding a null-coercion step in `restoreAllTables` rather than bumping the schema version.
 
@@ -133,7 +133,7 @@ Gson deserialises Kotlin data classes via reflection. If a class has a synthetic
 
 ### 5.3 UX issues NOT fixed in this branch (deferred)
 - **No file encryption**: backups are plain JSON containing `app_lock_stored_hash` (PBKDF2 hash — password itself safe) and `real_friend_email` (PII). This is a known security concern documented in `docs/analysis-v1.0.37/COMPREHENSIVE_ANALYSIS_REPORT.md` §7.6. Adding optional AES-256 encryption with a user-supplied passphrase is a larger feature, deferred to a future branch.
-- **No automatic backup**: user must manually trigger export. NopoX had Firebase cloud sync; this app is intentionally cloud-free. An optional scheduled-local-backup feature could be added.
+- **No automatic backup**: user must manually trigger export. The reference had Firebase cloud sync; this app is intentionally cloud-free. An optional scheduled-local-backup feature could be added.
 - **No diff/merge on import**: import is a "clean replace" (delete all → insert all). A merge mode (keep existing, add new) would be more user-friendly for partial backups but is a larger feature.
 
 ---

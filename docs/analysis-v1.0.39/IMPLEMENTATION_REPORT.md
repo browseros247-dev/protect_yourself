@@ -1,9 +1,9 @@
 # Uninstall Prevention Fix — v1.0.39
 
 **Date**: 2026-07-11
-**Branch**: `fix/uninstall-prevention-v1.0.39` (branched off `analysis-nopox-20260711`, which includes the accessibility fix)
+**Branch**: `fix/uninstall-prevention-v1.0.39` (branched off `analysis-reference-20260711`, which includes the accessibility fix)
 **APK**: `apk/protect.yourself-v1.0.39-release-uninstall-fix.apk` (16 MB)
-**Reference**: NopoX v1.0.53 (decompiled with jadx 1.5.1)
+**Reference**: v1.0.53 (decompiled with jadx 1.5.1)
 
 ## Problem
 
@@ -11,22 +11,22 @@ The user reported: "the uninstall prevention feature is still not working. Addit
 
 ## Root Cause Analysis
 
-A deep two-agent analysis (NopoX jadx decompilation + Protect Yourself source review) identified **18 bugs** (7 P0, 7 P1, 4 P2). The top 3 root causes:
+A deep two-agent analysis (reference jadx decompilation + Protect Yourself source review) identified **18 bugs** (7 P0, 7 P1, 4 P2). The top 3 root causes:
 
-1. **UP-01 — Block screen was an Activity, not a WindowManager overlay.** NopoX uses `WindowManager.addView()` with `TYPE_APPLICATION_OVERLAY` (type=2032). An Activity can be dismissed via Home/Recents/Back gestures — defeating uninstall prevention. An overlay cannot be dismissed by any gesture.
+1. **UP-01 — Block screen was an Activity, not a WindowManager overlay.** The reference uses `WindowManager.addView()` with `TYPE_APPLICATION_OVERLAY` (type=2032). An Activity can be dismissed via Home/Recents/Back gestures — defeating uninstall prevention. An overlay cannot be dismissed by any gesture.
 
-2. **UP-02 — No 500ms `GLOBAL_ACTION_HOME ×5 + GLOBAL_ACTION_BACK ×1` timer.** The overlay only covers the offending window visually. NopoX uses a `Timer` that fires every 500ms, pressing HOME 5 times then BACK once, to actually kill the offending activity underneath. Protect Yourself had ZERO `GLOBAL_ACTION_BACK` usages.
+2. **UP-02 — No 500ms `GLOBAL_ACTION_HOME ×5 + GLOBAL_ACTION_BACK ×1` timer.** The overlay only covers the offending window visually. The reference uses a `Timer` that fires every 500ms, pressing HOME 5 times then BACK once, to actually kill the offending activity underneath. Protect Yourself had ZERO `GLOBAL_ACTION_BACK` usages.
 
 3. **UP-03 — SystemUI blanket-skip disabled all anti-circumvention.** `if (packageName == "com.android.systemui") return` prevented `isPowerMenu`, `isNotificationDrawer`, and `isRecentApps` from ever firing, because the AOSP power dialog, notification panel, and recents overview all come from `com.android.systemui`.
 
 ## Fixes Implemented
 
 ### New file: `BlockOverlayManager.kt` (326 LOC)
-- `showBlockOverlay()` — uses `WindowManager.addView()` with `TYPE_APPLICATION_OVERLAY` (type=2032), flags `FLAG_NOT_FOCUSABLE | FLAG_LAYOUT_IN_SCREEN | FLAG_LAYOUT_NO_LIMITS | FLAG_SHOW_WHEN_LOCKED | FLAG_TURN_SCREEN_ON` (matching NopoX), `MATCH_PARENT` dimensions
+- `showBlockOverlay()` — uses `WindowManager.addView()` with `TYPE_APPLICATION_OVERLAY` (type=2032), flags `FLAG_NOT_FOCUSABLE | FLAG_LAYOUT_IN_SCREEN | FLAG_LAYOUT_NO_LIMITS | FLAG_SHOW_WHEN_LOCKED | FLAG_TURN_SCREEN_ON` (matching the reference), `MATCH_PARENT` dimensions
 - `KillTimer` — inner class that fires every 500ms for 3 seconds (6 iterations), pressing `GLOBAL_ACTION_HOME ×5 + GLOBAL_ACTION_BACK ×1` each iteration
 - `hideBlockOverlay()` — removes the overlay + cancels the kill timer
 - `canDrawOverlays()` — checks `SYSTEM_ALERT_WINDOW` permission
-- Single-flight guard via `AtomicBoolean` (no per-package throttle — matches NopoX)
+- Single-flight guard via `AtomicBoolean` (no per-package throttle — matches the reference)
 - Programmatically-built view with app name, block message, "Why" expandable text, Close button
 - Swallows BACK/HOME/APP_SWITCH key events
 
@@ -52,7 +52,7 @@ A deep two-agent analysis (NopoX jadx decompilation + Protect Yourself source re
 - **`NOTIFICATION_SHADE_LOCK_TEXTS_TO_MATCH`** — 7 localized strings
 
 ### Modified: `DeviceAdminUtils.kt`
-- **`onDisableRequested()` returns empty CharSequence** (UP-09 fix — NopoX pattern)
+- **`onDisableRequested()` returns empty CharSequence** (UP-09 fix — reference pattern)
 - **`onDisabled()` posts high-priority notification**
 - **`isActive()` / `requestActive()` / `removeActive()` added** with full error handling
 - **All methods wrapped in try/catch** + CrashLogger breadcrumbs

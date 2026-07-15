@@ -3,7 +3,7 @@
 > **Document version**: 1.0
 > **Date**: 2026-07-09
 > **Source APK**: `Protect Yourself_modified_signed.apk (original)` (v1.0.53, build 1053)
-> **Original package**: `com.planproductive.nopoz`
+> **Original package**: the reference app
 > **Rebuild package**: `protect.yourself`
 > **Rebuild app name**: `protect.yourself`
 
@@ -20,7 +20,7 @@ This document is the single source of truth for rebuilding the **Protect Yoursel
 | App name | Protect Yourself |
 | Category | Productivity / Digital Wellbeing / Porn & App Blocker |
 | Version | 1.0.53 (build 1053) |
-| Package | `com.planproductive.nopoz` (note: "nopoz", not "nopox") |
+| Package | reference package |
 | Min SDK | 21+ (inferred from androidx deps) |
 | Target SDK | 33 (Android 13) |
 | Compile SDK | 33 |
@@ -32,7 +32,7 @@ This document is the single source of truth for rebuilding the **Protect Yoursel
 | Analytics | Amplitude + Firebase Analytics |
 | Ads | AdMob (banner + app-open) |
 | Billing | Google Play Billing (5 SKUs) |
-| Deep links | Branch.io + custom scheme `open://nopox` |
+| Deep links | Branch.io + custom scheme `open://protectyourself` |
 | Other SDKs | Lottie, CanHub Image Cropper, Willy RatingBar, Timber, Splitties, Joda-Time |
 | Anti-tampering | `bin.mt.signature.KillerApplication` (signature killer) |
 | APK size | 23.1 MB |
@@ -100,7 +100,7 @@ All tools are persisted under `/home/z/my-project/tools/` and `/home/z/my-projec
 │   ├── smali/ ... smali7/  # disassembled DEX bytecode (7 DEX files)
 │   └── unknown/            # files Apktool couldn't classify
 ├── jadx/                   # JADX decompiled output
-│   ├── sources/com/planproductive/nopox/  # 659 app source files
+│   ├── sources/com/planproductive/  # 659 app source files
 │   └── resources/          # resource XML
 └── raw/
     └── apk_unzipped/       # raw unzip of APK (for inspection)
@@ -134,7 +134,7 @@ This is the **complete feature inventory** extracted from the APK. Each item is 
 
 | Component | Original | Rebuild |
 |---|---|---|
-| Application class | `com.planproductive.nopox.core.ProtectYourselfApp` extends `bin.mt.signature.KillerApplication` | `protect.yourself.core.ProtectYourselfApp` extends `bin.mt.signature.KillerApplication` (kept per user request) |
+| Application class | reference app's `ProtectYourselfApp` extends `bin.mt.signature.KillerApplication` | `protect.yourself.core.ProtectYourselfApp` extends `bin.mt.signature.KillerApplication` (kept per user request) |
 | Initialization order | `ProcessLifecycleOwner` observer → `initRoomDBInstance` → `initMavericksInstance` → `initFirebaseAppCheck` → `initTimberLog` → `initCrashlytics` → `initBranchSDK` → `initAmplitude` → `BlockerPageUtils.updateAccessibilityBlockingValues` → `setAppContainer` → `AccessibilityPersistUtils.selfHealSafe` → `AccessibilityGuard.startWatching` | Same order, **drop** `initBranchSDK` (replaced by App Links), `initAmplitude`, `initFirebaseAppCheck` (kept only if Firestore rules require it — keep by default) |
 | `AppContainer` | Holds `applicationScope`, `billingDataSource`, `premiumPageDataRepository` | Drop `billingDataSource` + `premiumPageDataRepository`. Keep `applicationScope`. Add `accountabilityRepository` for Real Friend feature. |
 | `onAppBackgrounded` | Calls `BlockerPageUtils.updateAccessibilityBlockingValues(GlobalScope)` | Same. |
@@ -180,7 +180,7 @@ This is the **complete feature inventory** extracted from the APK. Each item is 
 
 | Activity | Original | Rebuild package | Notes |
 |---|---|---|---|
-| `MainActivity` | launcher, singleTask, scheme `open://nopox`, App Links `nopox.app.link` | `protect.yourself.features.mainActivityPage.MainActivity` | Keep `singleTask` launch mode + `showOnLockScreen="true"`. Replace Branch domains with `protectyourself.app.link` (user must configure). |
+| `MainActivity` | launcher, singleTask, scheme `open://protectyourself`, App Links `protectyourself.app.link` | `protect.yourself.features.mainActivityPage.MainActivity` | Keep `singleTask` launch mode + `showOnLockScreen="true"`. Replace Branch domains with `protectyourself.app.link` (user must configure). |
 | `ProtectedAppsActivity` | "Protected Accessibility Apps" | `protect.yourself.features.protectedApps.ProtectedAppsActivity` | Shows list of apps protected from uninstall. |
 | `TransparentActivity` | transparent theme, excludeFromRecents | `protect.yourself.features.transparentPage.TransparentActivity` | Used for displaying transparent overlays (e.g. permission prompts from background). |
 | `PuPromotionActivity` | transparent | **REMOVED** | Was used to push PU (Prevent Uninstall) premium upsell. Not needed. |
@@ -428,7 +428,7 @@ The blocker page renders as a single scrolling column with sections (per `Settin
 | `SECTION_UNINSTALL_PROTECTION` | `PREVENT_UNINSTALL_SETTINGS`, `BLOCK_NOTIFICATION_DRAWER`, `BLOCK_PHONE_REBOOT`, `BLOCK_RECENT_APPS`, `BLOCK_SETTING_PAGE_BY_TITLE`, `BLOCK_SETTING_PAGE_BY_TITLE_APPS`, `BLOCK_PACKAGE_INTENT`, `ADD_PACKAGE_INTENT_TO_BLOCK` | `BLOCK_PACKAGE_INTENT` + `ADD_PACKAGE_INTENT_TO_BLOCK` moved from Advanced Features in v1.0.34 |
 | `SECTION_ADVANCE_FEATURE` | `VPN`, `WHITELIST_VPN_APPS`, `VPN_NOTIFICATION_MESSAGE`, `VPN_NOTIFICATION_HIDE`, `BLOCK_NEW_INSTALL_APPS`, `BLOCK_IN_APP_BROWSERS`, `BLOCKED_SCREEN_IMAGE`, `BLOCKED_SCREEN_MESSAGE`, `BLOCKED_SCREEN_COUNTDOWN`, `CUSTOM_REDIRECT_URL_APP`, `BLOCK_WHITELIST_DETECTED_APP` | `BLOCK_UNSUPPORTED_BROWSERS`, `WHITELIST_UNSUPPORTED_BROWSER`, `BLOCK_PACKAGE_INTENT`, `ADD_PACKAGE_INTENT_TO_BLOCK` moved out in v1.0.34 |
 | `SECTION_APP_LOCK` (new in v1.0.33) | `SET_APP_LOCK`, `TOUCH_ID`, `DISABLE_FORGOT_PASSWORD` | Migrated from Advanced Features for better accessibility |
-| `SECTION_FAQ` | `KEEP_NOPOX_LIVE` (battery/performance tips) | Kept |
+| `SECTION_FAQ` | `KEEP_APP_LIVE` (battery/performance tips) | Kept |
 
 #### 5.3.2 Switch Persistence
 
@@ -961,7 +961,7 @@ Estimated custom strings: ~400. All will be ported 1:1 with the only change bein
   - `annual`, `annual_plan_purchase_terms`, `monthly_plan_purchase_terms`, `lifetime_plan_purchase_terms`
   - `premium_active`, `premium_inactive`, `premium_inactive_message`, `premium_page_banner_title`, `premium_page_lifetime_access_price`
   - `premium_feature_error`, `premium_feature_blocklist_error`, `premium_feature_setting_app_error`
-  - `get_nopox_Premium`, `get_premium`, `nav_premium`, `no_ads_message`, `nopox_premium_notification_message`, `offer_card_text`
+  - `get_premium`, `nav_premium`, `no_ads_message`, `premium_notification_message`, `offer_card_text`
   - All `pu_promotion_*` strings
   - `app_lock_premium_notification_*`, `pu_premium_notification_*`, `real_friend_premium_notification_*`
 
@@ -995,7 +995,7 @@ All drawables + mipmaps from `apktool/res/drawable*/` and `apktool/res/mipmap*/`
 
 ### 6.2 DAOs (9 — one per entity)
 
-Each DAO has standard CRUD + custom queries. Port 1:1 from `apk-analysis/jadx/sources/com/planproductive/nopox/database/*/` (~120 DAO files including generated impls).
+Each DAO has standard CRUD + custom queries. Port 1:1 from the reference's `database/*/` (~120 DAO files including generated impls).
 
 ### 6.3 Migrations
 
@@ -1473,7 +1473,7 @@ All reverse-engineering artifacts are at:
 │   ├── xml/stop_me_widget_info.xml     # Stop Me widget info
 │   └── xml/streak_widget_info.xml      # Streak widget info
 ├── apktool/assets/                     # 6 Lottie JSONs
-├── jadx/sources/com/planproductive/nopox/  # 659 app source files
+├── jadx/sources/com/planproductive/  # 659 app source files
 │   ├── core/ProtectYourselfApp.java
 │   ├── database/                       # Room entities + DAOs
 │   ├── features/                       # all feature packages

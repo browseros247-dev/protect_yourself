@@ -57,7 +57,7 @@ import androidx.compose.ui.unit.sp
  *
  * Our own accessibility service is always protected (the switch is locked ON).
  *
- * Ported from NopoX `ProtectedAppsActivity` — converted from ListActivity to
+ * Ported from the reference `ProtectedAppsActivity` — converted from ListActivity to
  * Compose.
  *
  * Uses AppCompatActivity + Theme.ProtectYourself.NoActionBar for AppCompat

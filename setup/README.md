@@ -214,8 +214,8 @@ repository:
 | Gradle distribution | ~120 MB | Auto-downloaded by wrapper |
 | Gradle dependency cache | ~500 MB | Auto-populated on first build |
 
-The total repository size (excluding these) is ~25 MB (mostly the NopoX
-reference APK + Lottie assets).
+The total repository size (excluding these) is ~25 MB (mostly Lottie
+assets and bundled documentation).
 
 ## CI/CD usage
 

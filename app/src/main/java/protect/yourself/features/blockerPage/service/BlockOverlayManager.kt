@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * ## Why an overlay, not an Activity
  *
- * NopoX (the reference implementation, decompiled via jadx) uses a
+ * The reference implementation (decompiled via jadx) uses a
  * `WindowManager` overlay of type `TYPE_APPLICATION_OVERLAY` (2032) with
  * flags `FLAG_NOT_FOCUSABLE | FLAG_LAYOUT_IN_SCREEN | FLAG_LAYOUT_NO_LIMITS`
  * (296) and `MATCH_PARENT` dimensions.
@@ -57,7 +57,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * The overlay only covers the offending window visually. The window is
  * still alive underneath and will reappear when the overlay is removed.
- * NopoX solves this with a `Timer` that fires every 500ms, pressing
+ * The reference solves this with a `Timer` that fires every 500ms, pressing
  * `GLOBAL_ACTION_HOME` five times then `GLOBAL_ACTION_BACK` once. This
  * kills the offending activity (HOME returns to launcher; BACK finishes
  * the top activity if HOME didn't).
@@ -74,8 +74,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * All overlay add/remove is done on the main thread (WindowManager
  * requires it). The single-flight guard (`isOverlayShowing`) ensures only
- * one overlay is visible at a time — matching NopoX's `if (isPageShow) return`
- * pattern. Per-package throttling is intentionally NOT used (NopoX doesn't
+ * one overlay is visible at a time — matching the reference's `if (isPageShow) return`
+ * pattern. Per-package throttling is intentionally NOT used (the reference doesn't
  * either) because it creates a bypass window.
  *
  * ## User customizations (motivation image + custom message)
@@ -87,7 +87,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * custom message + motivation image so the customisations appear
  * regardless of which block path is taken.
  *
- * Ported from NopoX `PornBlockPage.java` (decompiled) + adapted to the
+ * Ported from the reference's `PornBlockPage.java` (decompiled) + adapted to the
  * Protect Yourself block screen layout.
  */
 class BlockOverlayManager(
@@ -195,11 +195,11 @@ class BlockOverlayManager(
             return false
         }
 
-        // Layout params — match NopoX exactly: type=2032, flags=296, MATCH_PARENT
-        // OV-01 fix: NopoX uses flags=0x128=296 which is exactly
+        // Layout params — match the reference exactly: type=2032, flags=296, MATCH_PARENT
+        // OV-01 fix: the reference uses flags=0x128=296 which is exactly
         //   FLAG_NOT_FOCUSABLE(8) | FLAG_LAYOUT_NO_LIMITS(32) | FLAG_LAYOUT_IN_SCREEN(256)
         // The previous rebuild also added FLAG_SHOW_WHEN_LOCKED and FLAG_TURN_SCREEN_ON
-        // which NopoX does NOT use. While those extra flags are not the root cause
+        // which the reference does NOT use. While those extra flags are not the root cause
         // of the z-order issue, removing them eliminates any divergence from the
         // reference and avoids potential side-effects on lock-screen behavior.
         val params = WindowManager.LayoutParams(
@@ -223,7 +223,7 @@ class BlockOverlayManager(
             overlayView = view
             Timber.i("BlockOverlayManager: overlay addView succeeded for pkg=%s messageKey=%s", packageName, messageResKey)
 
-            // OV-02 fix: start the kill timer immediately (like NopoX). The
+            // OV-02 fix: start the kill timer immediately (like the reference). The
             // kill timer runs on a java.util.Timer background thread, so the
             // first HOME press happens on a separate thread — this gives the
             // window manager time to process the addView on the main thread
@@ -233,7 +233,7 @@ class BlockOverlayManager(
             // workaround for the wrong root cause. The REAL issue was that
             // the old KillTimer pressed HOME 5× in a tight loop on the main
             // thread, flooding the system and racing with the window manager.
-            // Now that the KillTimer matches NopoX (one HOME per 500ms tick
+            // Now that the KillTimer matches the reference (one HOME per 500ms tick
             // on a background thread), the delay is no longer needed.
             killTimer = KillTimer(service).also { it.start() }
             Timber.d("BlockOverlayManager: kill timer started (pkg=%s)", packageName)
@@ -543,13 +543,13 @@ class BlockOverlayManager(
     }
 
     /**
-     * Kill timer — matches NopoX 1.0.53 reference exactly.
+     * Kill timer — matches the reference exactly.
      *
      * OV-02 fix: the previous implementation pressed HOME 5 times in a tight
      * loop every 500ms (`repeat(5) { ... }`), and also pressed BACK every
-     * single iteration. This is NOT what NopoX does.
+     * single iteration. This is NOT what the reference does.
      *
-     * NopoX 1.0.53 kill timer logic (decompiled
+     * The reference kill timer logic (decompiled
      * PornBlockPage$initCloseButtonBackPageAction$$inlined$fixedRateTimer$1.smali):
      *   - count increments at the START of each run (count starts at 0, first
      *     run makes it 1)
@@ -568,30 +568,30 @@ class BlockOverlayManager(
      *   3. Ran all 5 HOME presses in a single main-thread post, which
      *      blocked the main thread for longer than necessary
      *
-     * THREAD-01 fix (v1.0.58): NopoX calls `performGlobalAction` directly
+     * THREAD-01 fix (v1.0.58): The reference calls `performGlobalAction` directly
      * from the TimerTask's background thread. On Android 14 (API 34), this
      * can throw `ViewRootImpl$CalledFromWrongThreadException`. We dispatch
      * to the main thread via `Handler(Looper.getMainLooper()).post { ... }`
-     * but only ONE action per tick (not 5), matching NopoX's per-tick
+     * but only ONE action per tick (not 5), matching the reference's per-tick
      * behavior.
      */
     private class KillTimer(private val service: AccessibilityService) {
         private val mainHandler = Handler(Looper.getMainLooper())
         private var timer: java.util.Timer? = null
         private var count = 0
-        private val maxCount = 6  // NopoX: 5 HOME + 1 BACK = 6 ticks
+        private val maxCount = 6  // Reference: 5 HOME + 1 BACK = 6 ticks
 
         fun start() {
             timer = java.util.Timer("BlockOverlay-KillTimer", true)
-            // NopoX: scheduleAtFixedRate(task, 0L, 500L) — first run at T+0
+            // Reference: scheduleAtFixedRate(task, 0L, 500L) — first run at T+0
             timer?.scheduleAtFixedRate(object : java.util.TimerTask() {
                 override fun run() {
                     try {
-                        // NopoX: count++ at the START of each run
+                        // Reference: count++ at the START of each run
                         count++
 
                         if (count <= 5) {
-                            // NopoX: at count 1-5, press HOME once
+                            // Reference: at count 1-5, press HOME once
                             mainHandler.post {
                                 try {
                                     service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
@@ -601,7 +601,7 @@ class BlockOverlayManager(
                                 }
                             }
                         } else if (count == 6) {
-                            // NopoX: at count 6, press BACK once + cancel
+                            // Reference: at count 6, press BACK once + cancel
                             mainHandler.post {
                                 try {
                                     service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
@@ -616,7 +616,7 @@ class BlockOverlayManager(
                         Timber.w(t, "KillTimer: iteration failed")
                     }
                 }
-            }, 0L, 500L)  // NopoX: 0ms initial delay, 500ms interval
+            }, 0L, 500L)  // Reference: 0ms initial delay, 500ms interval
         }
 
         fun cancel() {

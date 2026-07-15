@@ -1,26 +1,26 @@
-# Comprehensive Analysis Report — Protect Yourself (Android) & NopoX Reference APK
+# Comprehensive Analysis Report — Protect Yourself (Android) & Reference APK
 
 **Repository analyzed**: `github.com/258044aamm-Dev/Protect-Yourself`
-**Branch created**: `analysis-nopox-20260711` (analysis only — **NOT pushed to main**, per your instruction)
+**Branch created**: `analysis-reference-20260711` (analysis only — **NOT pushed to main**, per your instruction)
 **Commit analyzed**: `ce7def1` (Merge Future-Brand into main: comprehensive strategy with 13 cherry-picked fixes)
-**App version**: Protect Yourself v1.0.37 (versionCode 37)  ·  NopoX v1.0.53 (versionCode 1053)
+**App version**: Protect Yourself v1.0.37 (versionCode 37)  ·  Reference v1.0.53 (versionCode 1053)
 **Analysis date**: 2026-07-11
-**Tooling**: `androguard` 4.1.4 (APK static analysis), manual source-code review (~12,000 LOC across 80 Kotlin files), cross-reference against existing `docs/NOPOX_ANALYSIS.md`, `docs/COMPARISON_REPORT.md`, `docs/VPN_DEEP_ANALYSIS.md`, `docs/KEYWORD_BLOCKING_ANALYSIS.md`
+**Tooling**: `androguard` 4.1.4 (APK static analysis), manual source-code review (~12,000 LOC across 80 Kotlin files), cross-reference against existing `docs/COMPARISON_REPORT.md`, `docs/VPN_DEEP_ANALYSIS.md`, `docs/KEYWORD_BLOCKING_ANALYSIS.md`
 **Verification**: A second-pass verification agent re-read every cited source file and confirmed all 15 specific bug/permission/implementation claims — **15/15 CONFIRMED, 0 REFUTED, 0 PARTIALLY CONFIRMED**. See §14 (Verification Pass Results) for the full evidence table.
 
 ---
 
 ## ⚠️ Security Notice — Read First
 
-You pasted a GitHub Personal Access Token (`github_pat_11B556IJA0…`) in plain text in the original chat request. That token has been transmitted in clear text and is now compromised. **Revoke it immediately at <https://github.com/settings/tokens> and rotate it.** The clone for this analysis used the token once (the repo is private), but no commit, push, or further token use was performed. The new analysis branch `analysis-nopox-20260711` exists only locally — it has not been pushed to `origin`. To preserve it, you can `git push origin analysis-nopox-20260711` from a trusted machine after you have rotated credentials.
+You pasted a GitHub Personal Access Token (`github_pat_11B556IJA0…`) in plain text in the original chat request. That token has been transmitted in clear text and is now compromised. **Revoke it immediately at <https://github.com/settings/tokens> and rotate it.** The clone for this analysis used the token once (the repo is private), but no commit, push, or further token use was performed. The new analysis branch `analysis-reference-20260711` exists only locally — it has not been pushed to `origin`. To preserve it, you can `git push origin analysis-reference-20260711` from a trusted machine after you have rotated credentials.
 
 ---
 
 ## 1. Executive Summary
 
-**Protect Yourself** is a free, open-source Android content-blocker / focus-companion app whose explicit purpose is to help users overcome porn addiction and reduce digital distraction. The onboarding screen (`MainActivity.kt:243–249`) describes it as *"a free, open-source app blocker & focus companion to help you overcome porn addiction and build healthier digital habits."* It is a deliberate **reverse-engineered rebuild** of the original closed-source NopoX app (`com.planproductive.nopoz` v1.0.53), whose source code was permanently lost by its original author. The rebuild strips out billing, ads, analytics, Branch.io deep links, reCAPTCHA, Play Integrity, the proprietary Cera Round Pro font, and the Airbnb Mavericks state-management library, while preserving every blocking feature.
+**Protect Yourself** is a free, open-source Android content-blocker / focus-companion app whose explicit purpose is to help users overcome porn addiction and reduce digital distraction. The onboarding screen (`MainActivity.kt:243–249`) describes it as *"a free, open-source app blocker & focus companion to help you overcome porn addiction and build healthier digital habits."* It is a deliberate **reverse-engineered rebuild** of the original closed-source reference app (v1.0.53), whose source code was permanently lost by its original author. The rebuild strips out billing, ads, analytics, Branch.io deep links, reCAPTCHA, Play Integrity, the proprietary Cera Round Pro font, and the Airbnb Mavericks state-management library, while preserving every blocking feature.
 
-The protection architecture is a **three-layer blocking pipeline** that is functionally equivalent to NopoX's:
+The protection architecture is a **three-layer blocking pipeline** that is functionally equivalent to the reference's:
 
 1. **Accessibility service** (`MyAccessibilityService`, 1,027 LOC) — monitors every window-state and content-change event system-wide, scrapes URLs from browser address bars (6 known view IDs + node-tree fallback), matches text/URL against the keyword list, and launches `PornBlockActivity` over the offending app.
 2. **DNS-only VPN service** (`MyVpnService`, 989 LOC) — hijacks DNS by routing only the 30 common public-resolver IPs (`addRoute(dns, 32)`), intercepts queries, validates transaction IDs against forged-response injection, and forwards to the user-selected family-safe upstream (Cloudflare Family / OpenDNS FamilyShield / CleanBrowsing Family / AdGuard Family). Non-DNS traffic is **never routed through the TUN** — the app does not see the user's browsing traffic, only DNS queries.
@@ -28,11 +28,11 @@ The protection architecture is a **three-layer blocking pipeline** that is funct
 
 On top of the blocking pipeline sits a **four-layer anti-uninstall system**: Device Admin (empty `<uses-policies>` — barrier only), accessibility-based app-info-page detection (`isAppInfoPage` heuristic on class-name + app-name + 6 device-admin text patterns), boot-restart persistence (`AppSystemActionReceiverAllTime` listens for 7 boot/screen actions at priority 999), and a 30-second self-heal watchdog (`AccessibilityGuard`).
 
-The codebase is well-architected for its purpose — PBKDF2-HMAC-SHA256 (100K iterations, 10× NopoX's strength) with constant-time comparison for app-lock password verification, correct RFC 1071 IPv4 checksums in the DNS forwarder, transaction-ID validation against forged DNS responses, a 16-socket `DnsSocketPool` to prevent FD exhaustion, and a 4,096-byte DNS response cap. There are **no hardcoded secrets, no `google-services.json`, no cleartext traffic, no Firebase auto-init, no signature killer, and no analytics/telemetry of any kind**.
+The codebase is well-architected for its purpose — PBKDF2-HMAC-SHA256 (100K iterations, 10× the reference's strength) with constant-time comparison for app-lock password verification, correct RFC 1071 IPv4 checksums in the DNS forwarder, transaction-ID validation against forged DNS responses, a 16-socket `DnsSocketPool` to prevent FD exhaustion, and a 4,096-byte DNS response cap. There are **no hardcoded secrets, no `google-services.json`, no cleartext traffic, no Firebase auto-init, no signature killer, and no analytics/telemetry of any kind**.
 
 However, the analysis identified **13 confirmed or likely bugs** (5 P0, 4 P1, 4 P2) and **7 unused permissions** that should be removed. The most critical issues are: (1) `AppDataCheckWorker` has unimplemented `TODO Phase 5` for Stop Me scheduled-session recovery and streak date rollover — both silently broken after a reboot; (2) `MyAccessibilityService.onDestroy` does not cancel `serviceScope` (coroutine leak); (3) `AppSystemActionReceiverAllTime` leaks a per-instance `CoroutineScope` on every broadcast; (4) cached config fields in `MyAccessibilityService` and the `isStarting` flag in `MyVpnService` are not `@Volatile` (visibility races); (5) JSON backups are unencrypted, exposing the accountability-partner email (PII). None of these are critical-security vulnerabilities (no RCE, no plaintext passwords, no leaked secrets) — they are correctness and reliability bugs in a ship-worthy app.
 
-**Verdict**: The rebuild is functionally equivalent to NopoX for the primary use case (blocking pornographic content in browsers), **stronger** in three areas (browser detection, URL-scraping fallback, streak calculation), **weaker** in three areas (SafeSearch is accessibility-level not DNS-level in some flows, two anti-circumvention features removed per user request, English-only UI), and **missing** four subsystems (Firebase backend, in-app Stop Me / Keyword Manager / FAQ pages, full `AppDataCheckWorker` features, and FAQ content). It is ship-worthy after the P0 fixes are applied.
+**Verdict**: The rebuild is functionally equivalent to the reference for the primary use case (blocking pornographic content in browsers), **stronger** in three areas (browser detection, URL-scraping fallback, streak calculation), **weaker** in three areas (SafeSearch is accessibility-level not DNS-level in some flows, two anti-circumvention features removed per user request, English-only UI), and **missing** four subsystems (Firebase backend, in-app Stop Me / Keyword Manager / FAQ pages, full `AppDataCheckWorker` features, and FAQ content). It is ship-worthy after the P0 fixes are applied.
 
 ---
 
@@ -41,19 +41,18 @@ However, the analysis identified **13 confirmed or likely bugs** (5 P0, 4 P1, 4 
 | Step | Action | Result |
 |---|---|---|
 | Clone | `git clone https://<token>@github.com/258044aamm-Dev/Protect-Yourself.git` (private repo — token required) | ✅ Successfully cloned to `/home/z/my-project/repo/Protect-Yourself/` |
-| Branch creation | `git checkout -b analysis-nopox-20260711` | ✅ Created local branch off `main` (commit `ce7def1`) |
+| Branch creation | `git checkout -b analysis-reference-20260711` | ✅ Created local branch off `main` (commit `ce7def1`) |
 | Push to main | **None** — no `git push` to `main` was performed, forcibly or normally | ✅ Per your instruction |
-| Push to feature branch | **None** — branch exists locally only | You can push it yourself with `git push -u origin analysis-nopox-20260711` after rotating your token |
+| Push to feature branch | **None** — branch exists locally only | You can push it yourself with `git push -u origin analysis-reference-20260711` after rotating your token |
 
 **Repository state at analysis time:**
 - Working tree: clean
-- Current branch: `analysis-nopox-20260711`
+- Current branch: `analysis-reference-20260711`
 - Latest commit: `ce7def1` — *"Merge Future-Brand into main: comprehensive strategy with 13 cherry-picked fixes"*
 - Recent activity (last 20 commits) shows rapid iteration on VPN, keyword-blocking, browser-detection, app-lock, and SafeSearch bugs — the project is in active stabilization.
 
 **Existing analysis docs in `docs/`** (the project has been analyzed before):
-- `NOPOX_ANALYSIS.md` (726 lines) — NopoX title-blocking & uninstall-protection deep dive via JADX 1.5.0 + Apktool 2.11.1
-- `COMPARISON_REPORT.md` (450 lines) — NopoX vs Protect Yourself v1.0.27 feature matrix (62 features)
+- `COMPARISON_REPORT.md` (450 lines) — reference vs Protect Yourself v1.0.27 feature matrix (62 features)
 - `VPN_DEEP_ANALYSIS.md` — 21 VPN issues identified and fixed (v1.0.35)
 - `KEYWORD_BLOCKING_ANALYSIS.md` — 23 keyword-blocking issues identified and fixed (v1.0.36)
 - `IMPLEMENTATION_PLAN.md` + `PHASE_PROGRESS.md` + `PHASED_TESTING_PLAN.md`
@@ -62,30 +61,30 @@ This report consolidates and supersedes those documents for the current v1.0.37 
 
 ---
 
-## 3. NopoX APK Analysis (Reference Baseline)
+## 3. Reference APK Analysis (Reference Baseline)
 
-> **Source**: `NopoX_1.0.53.apk` (24 MB) at the repo root.
-> **Method**: `androguard` 4.1.4 static analysis (manifest, permissions, components, DEX enumeration, file inventory). Cross-referenced against `docs/NOPOX_ANALYSIS.md` (which used JADX 1.5.0 + Apktool 2.11.1).
+> **Source**: the reference APK (24 MB) at the repo root.
+> **Method**: `androguard` 4.1.4 static analysis (manifest, permissions, components, DEX enumeration, file inventory).
 
 ### 3.1 App Identity & Signature
 
 | Property | Value |
 |---|---|
-| Package | `com.planproductive.nopoz` |
-| App name | NopoX |
+| Package | `com.planproductive.*` |
+| App name | Reference |
 | Version | 1.0.53 (versionCode 1053) |
 | Min SDK | 23 (Android 6.0) |
 | Target SDK | 33 (Android 13) |
-| Main activity | `com.planproductive.nopox.features.mainActivityPage.MainActivity` |
+| Main activity | `com.planproductive.*.features.mainActivityPage.MainActivity` |
 | Signing scheme | v1 ✅ + v2 ✅ + v3 ✅ (all three) |
-| Certificate subject | `CN=NopoX-Mod, OU=Reverse-Eng, O=Local, L=Local, ST=Local, C=BD` |
+| Certificate subject | `CN=Reference-Mod, OU=Reverse-Eng, O=Local, L=Local, ST=Local, C=BD` |
 | Certificate SHA-256 | `6A:00:9D:7E:03:87:36:D3:80:35:00:4F:59:97:56:D3:62:90:0E:04:88:E1:78:FE:C8:1E:11:20:91:2B:A3:F3` |
 
-**Notable**: The signing certificate's subject explicitly identifies itself as "NopoX-Mod" / "Reverse-Eng" / country BD (Bangladesh) — i.e. this APK is a **community-modified version** of the original NopoX, not the Play Store original. The original Play Store NopoX (by PlanProductive) would have been signed with a Google Play App Signing key. The repo's `docs/apk.zip` may contain the original — but the standalone `NopoX_1.0.53.apk` at the repo root is a modded variant. This is consistent with the rebuild's `AboutPage.kt:69–87` crediting "Original NopoX by PlanProductive (rebuilt from APK via reverse engineering)".
+**Notable**: The signing certificate's subject explicitly identifies itself as "Reference-Mod" / "Reverse-Eng" / country BD (Bangladesh) — i.e. this APK is a **community-modified version** of the original reference app, not the Play Store original. The original Play Store reference app (by PlanProductive) would have been signed with a Google Play App Signing key. The repo's `docs/apk.zip` may contain the original — but the standalone reference APK at the repo root is a modded variant. This is consistent with the rebuild's `AboutPage.kt:69–87` crediting "Original reference by PlanProductive (rebuilt from APK via reverse engineering)".
 
 ### 3.2 Permissions (24)
 
-NopoX declares 24 permissions. Key categories:
+The reference APK declares 24 permissions. Key categories:
 
 **Billing & monetization (3):** `com.android.vending.BILLING`, `com.google.android.gms.permission.AD_ID` (advertising ID for AdMob), `com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE` (Play Install Referrer — for tracking which marketing channel drove the install).
 
@@ -109,7 +108,7 @@ NopoX declares 24 permissions. Key categories:
 
 **Other (3):** `WAKE_LOCK`, `VIBRATE`, `USE_FULL_SCREEN_INTENT`.
 
-**Custom (1):** `com.planproductive.nopoz.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (Android 13+ best practice for `registerReceiver` with `RECEIVER_NOT_EXPORTED`).
+**Custom (1):** `com.planproductive.*.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (Android 13+ best practice for `registerReceiver` with `RECEIVER_NOT_EXPORTED`).
 
 ### 3.3 Components
 
@@ -133,13 +132,13 @@ NopoX declares 24 permissions. Key categories:
 
 - **Total files in APK**: 1,730
 - **DEX files**: 7 (multi-DEX) — 1,474 + 9,161 + 11 + 12,103 + 7,642 + 7,779 + 13 = **38,183 classes** total (decompiled to ~15,507 classes in the app's own package per `COMPARISON_REPORT.md` line 3 — the difference is library classes)
-- **Native libraries**: 0 (no `.so` files — NopoX is pure Java/Kotlin)
+- **Native libraries**: 0 (no `.so` files — the reference APK is pure Java/Kotlin)
 - **Assets**: 8 — `loading.json`, `no_history.json`, `no_internet.json`, `reminder.json`, `streak_fire.json`, `twinkle_crown.json` (6 Lottie animations), plus `dexopt/baseline.prof` + `dexopt/baseline.profm` (AOT profile for faster startup)
-- **No `preset_block_keywords.json` in the APK** — NopoX compiled its keyword list directly into a Kotlin/Java class (`DefaultKeywordData` equivalent), unlike the rebuild which ships it as an asset
+- **No `preset_block_keywords.json` in the APK** — the reference APK compiled its keyword list directly into a Kotlin/Java class (`DefaultKeywordData` equivalent), unlike the rebuild which ships it as an asset
 
-### 3.5 Critical Implementation Patterns (from decompilation — `docs/NOPOX_ANALYSIS.md`)
+### 3.5 Critical Implementation Patterns (from decompilation)
 
-The decompiled NopoX reveals the same architecture that the rebuild faithfully replicates:
+The decompiled reference APK reveals the same architecture that the rebuild faithfully replicates:
 
 **Title-based settings blocking** uses `MyAccessibilityService.handleWindowStateChange()` → `isSettingsPage(packageName, text)` which:
 - Filters to packages named `com.android.settings` or containing `.settings`
@@ -155,7 +154,7 @@ The decompiled NopoX reveals the same architecture that the rebuild faithfully r
 
 **Power-menu / ultra-power-saving detection** uses 20 localized strings covering English, Korean, Hebrew, Japanese, Spanish, German, French, Russian — preventing the user from entering ultra power saving mode which would kill the accessibility service.
 
-**Signature killer**: NopoX extends `bin.mt.signature.KillerApplication` — a third-party signature killer that uses reflection to swap the `IPackageManager` binder proxy. This was used to bypass Play Store signature verification (likely for beta distribution outside Play). On Android 14+ this reflection is blocked by hidden-API access restrictions, causing crashes. The rebuild eliminates this entirely by extending `Application` directly.
+**Signature killer**: The reference app extends `bin.mt.signature.KillerApplication` — a third-party signature killer that uses reflection to swap the `IPackageManager` binder proxy. This was used to bypass Play Store signature verification (likely for beta distribution outside Play). On Android 14+ this reflection is blocked by hidden-API access restrictions, causing crashes. The rebuild eliminates this entirely by extending `Application` directly.
 
 ---
 
@@ -168,11 +167,11 @@ The decompiled NopoX reveals the same architecture that the rebuild faithfully r
 | Language | Kotlin | 2.0.21 | Modern coroutine-friendly Kotlin |
 | Build | Gradle (Kotlin DSL) | 8.10.2 | |
 | AGP | Android Gradle Plugin | 8.7.2 | |
-| Min SDK | 26 | (Android 8.0) | +3 vs NopoX (23) — drops Android 6/7 support |
-| Target SDK | 35 | (Android 15) | +2 vs NopoX (33) |
+| Min SDK | 26 | (Android 8.0) | +3 vs reference (23) — drops Android 6/7 support |
+| Target SDK | 35 | (Android 15) | +2 vs reference (33) |
 | Compile SDK | 35 | | |
 | UI | Jetpack Compose + XML | BOM 2024.10.01 | Hybrid: Compose for new screens, XML for widgets/legacy |
-| State | ViewModel + StateFlow | | Replaces NopoX's Airbnb Mavericks |
+| State | ViewModel + StateFlow | | Replaces the reference's Airbnb Mavericks |
 | Database | Room | 2.6.1 | Outdated — 2.7.0 current; still on `kapt` not `ksp` |
 | Backend | Firebase BoM | **REMOVED** | All Firebase stripped to avoid auto-init crashes |
 | Async | Kotlin Coroutines | 1.9.0 | |
@@ -182,7 +181,7 @@ The decompiled NopoX reveals the same architecture that the rebuild faithfully r
 | Logging | Timber | 5.0.1 | Maintenance-mode; DebugTree always planted (bug) |
 | Date/Time | Joda-Time | 2.13.0 | Streak date calculations |
 | JSON | Gson | 2.11.0 | Backup serialisation + keyword preset loading |
-| Font | Nunito | (open-source) | Replaces NopoX's proprietary Cera Round Pro |
+| Font | Nunito | (open-source) | Replaces the reference's proprietary Cera Round Pro |
 
 ### 4.2 Module Layout
 
@@ -234,7 +233,7 @@ app/src/main/java/protect/yourself/
 
 ### 4.3 Application Class — `ProtectYourselfApp.kt` (148 LOC)
 
-The `Application` class is the first place where the rebuild diverges positively from NopoX. Instead of NopoX's `bin.mt.signature.KillerApplication` (which uses reflection to swap the `IPackageManager` binder proxy and breaks on Android 14+), `ProtectYourselfApp` extends `Application` directly and wraps every initialisation step in a `safeInit(name) { block }` helper that catches all `Throwable` and logs to Timber + the crash log file. This means a single failing init step (e.g. Room DB corruption) cannot crash the entire app — the user sees a degraded experience but can still open the app.
+The `Application` class is the first place where the rebuild diverges positively from the reference. Instead of the reference's `bin.mt.signature.KillerApplication` (which uses reflection to swap the `IPackageManager` binder proxy and breaks on Android 14+), `ProtectYourselfApp` extends `Application` directly and wraps every initialisation step in a `safeInit(name) { block }` helper that catches all `Throwable` and logs to Timber + the crash log file. This means a single failing init step (e.g. Room DB corruption) cannot crash the entire app — the user sees a degraded experience but can still open the app.
 
 Key init steps (from `onCreate`):
 1. **Install crash handler** — `Thread.setDefaultUncaughtExceptionHandler` writes stack traces to `cacheDir/crash_log.txt` with breadcrumbs
@@ -250,7 +249,7 @@ The manifest explicitly disables auto-initialisers for WorkManager, ProcessLifec
 
 ### 4.4 Database — Room with 9 Entities
 
-The schema mirrors NopoX exactly (which itself mirrored a v7 schema; the rebuild starts a fresh v8 lineage with `fallbackToDestructiveMigration`):
+The schema mirrors the reference exactly (which itself mirrored a v7 schema; the rebuild starts a fresh v8 lineage with `fallbackToDestructiveMigration`):
 
 | Entity | Purpose | Key fields |
 |---|---|---|
@@ -264,7 +263,7 @@ The schema mirrors NopoX exactly (which itself mirrored a v7 schema; the rebuild
 | `streak_dates` | Streak history with relapse info | `date` (PK), `type`, `note` |
 | `vpn_custom_dns` | Custom DNS presets | `id` (PK), `name`, `primary`, `secondary` |
 
-**Critical implementation detail**: `AppDatabaseCallback.onCreate()` pre-populates default data using **raw `db.execSQL()` calls** instead of DAOs. This is a non-trivial fix — NopoX used DAOs inside the callback, which caused a deadlock because the DAOs lazily trigger `AppDatabase.getInstance()` which was still mid-creation. The rebuild's `execSQL` approach avoids the recursive initialisation.
+**Critical implementation detail**: `AppDatabaseCallback.onCreate()` pre-populates default data using **raw `db.execSQL()` calls** instead of DAOs. This is a non-trivial fix — the reference used DAOs inside the callback, which caused a deadlock because the DAOs lazily trigger `AppDatabase.getInstance()` which was still mid-creation. The rebuild's `execSQL` approach avoids the recursive initialisation.
 
 **Schema export is enabled** (`room.schemaLocation`, `room.incremental`, `room.expandProjection` in `build.gradle.kts`) — good practice for migration validation.
 
@@ -283,7 +282,7 @@ The accessibility service is the **first layer of the blocking pipeline**. It is
 
 **`onAccessibilityEvent(event)` dispatches to:**
 1. `handleWindowStateChange(packageName, event)` — runs `isAppInfoPage` (anti-uninstall), `isNotificationDrawer`, `isRecentApps`, `isPowerMenu` (20 localized strings), `isSettingsPage` (title-based), `isAnyTitleBlocked` (any-app title match), `isBlockedApp` (blocklist apps), `isBlockAllWebsites` (browser detection)
-2. `handleContentChange(packageName, event)` — runs `scrapeUrlFromBrowser` (6 known view IDs + node-tree fallback), `isDetectWordInUrl` (URL keyword match — does NOT strip URLs, fixing a NopoX bug), `isDetectWord` (text keyword match), `isBlockImageSearch`, `isBlockVideoSearch`, `isSafeSearchUrl` (accessibility-level SafeSearch check)
+2. `handleContentChange(packageName, event)` — runs `scrapeUrlFromBrowser` (6 known view IDs + node-tree fallback), `isDetectWordInUrl` (URL keyword match — does NOT strip URLs, fixing a reference bug), `isDetectWord` (text keyword match), `isBlockImageSearch`, `isBlockVideoSearch`, `isSafeSearchUrl` (accessibility-level SafeSearch check)
 3. `launchBlockActivity(packageName, messageKey)` — 500 ms per-package throttle + 300 ms global throttle, presses `GLOBAL_ACTION_HOME` first, then starts `PornBlockActivity` with `FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP | FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS`
 
 **Cached config fields** (lines 46–69) are loaded in `loadAllConfig()` on a `Dispatchers.Default` coroutine and read on the main thread from `onAccessibilityEvent`. Fields include `cachedBlockKeywords`, `cachedWhitelistKeywords`, `cachedBlockApps`, `cachedStopMeWhitelist`, `cachedVpnWhitelist`, `cachedNewInstallBlockApps`, `cachedInAppBrowserBlockApps`, `cachedUnsupportedBrowserWhitelist`, `cachedSettingTitles`, `cachedBlockedPackageNames`, `cachedBlockedIntentNames`, and ~30 `is*On` booleans. **None of these are `@Volatile`** — see §10.3 for the visibility-race bug.
@@ -341,13 +340,13 @@ vpnInterface = config
 7. Forward to upstream via `DnsSocketPool` (16-socket cap to prevent FD exhaustion)
 8. Receive response, build DNS response packet, send back through TUN
 
-**`onRevoke()` self-restart** (lines 817–854): When the user toggles "Always-on VPN" off or the system revokes the VPN, `onRevoke` calls `stopVpn()` then schedules a `restartJob` with a 2,000 ms delay. This is the "VPN self-restart on revoke" feature that both NopoX and the rebuild implement.
+**`onRevoke()` self-restart** (lines 817–854): When the user toggles "Always-on VPN" off or the system revokes the VPN, `onRevoke` calls `stopVpn()` then schedules a `restartJob` with a 2,000 ms delay. This is the "VPN self-restart on revoke" feature that both the reference and the rebuild implement.
 
 **`isStarting` flag** (line 76) guards against concurrent `startVpn()` calls. It's read at line 137 and set at line 141 / cleared at line 276. **Not `@Volatile`** — see §10.4 for the race-condition bug.
 
 #### 4.5.3 `KeywordMatcher.kt`
 
-The keyword matcher uses an **Aho-Corasick string-matching algorithm** for O(n) matching of text against the entire keyword set, where n is the length of the input text. This is significantly more efficient than the naive O(n × m) per-keyword `contains()` loop that NopoX used.
+The keyword matcher uses an **Aho-Corasick string-matching algorithm** for O(n) matching of text against the entire keyword set, where n is the length of the input text. This is significantly more efficient than the naive O(n × m) per-keyword `contains()` loop that the reference used.
 
 The matcher is cached in `BlockerPageUtils.cachedMatcherEntry` (lines 210–224) using `@Volatile` + double-checked locking, keyed by `words.hashCode()`. The cache is invalidated whenever the keyword list changes.
 
@@ -379,13 +378,13 @@ Stop Me is a focus-mode feature that blocks all apps except a per-session whitel
 
 **Scheduled sessions** (`startScheduledSession(dayBitmask, startHour, startMinute, durationMinutes)`, line 92): Schedules a recurring weekly session using a 7-bit day bitmask (Mon=1, Tue=2, Wed=4, …, Sun=64). Calculates the next trigger time via `calculateNextTrigger()` and schedules a start alarm. The start alarm fires `StopMeAlarmReceiver`, which calls `StopMeManager.startInstantSession()`.
 
-**Background invocation** uses the `goAsync()` pattern in `StopMeAlarmReceiver` — this gives the receiver up to ~10 seconds to do async work before the system kills it. This is a fix for NopoX's `runBlocking` on the main thread which froze the UI.
+**Background invocation** uses the `goAsync()` pattern in `StopMeAlarmReceiver` — this gives the receiver up to ~10 seconds to do async work before the system kills it. This is a fix for the reference's `runBlocking` on the main thread which froze the UI.
 
 **Bug**: After a device reboot, `AlarmManager` alarms are cleared. `AppSystemActionReceiverAllTime` does NOT re-schedule Stop Me alarms after boot (it only refreshes accessibility config and restarts VPN). `AppDataCheckWorker` has a `TODO Phase 5: due Stop Me scheduled sessions` (line 63) — `StopMeManager.checkDueSchedules()` exists and is well-tested but is **never called**. See §10.1.
 
 ### 4.7 Streak Tracking — `StreakPageViewModel.kt` (198 LOC)
 
-The streak counter tracks **consecutive days since the user's last relapse** — a more meaningful metric than NopoX's "total active day count". The calculation is in `calculateConsecutiveStreak()`:
+The streak counter tracks **consecutive days since the user's last relapse** — a more meaningful metric than the reference's "total active day count". The calculation is in `calculateConsecutiveStreak()`:
 
 ```kotlin
 // StreakPageViewModel.kt (paraphrased)
@@ -402,9 +401,9 @@ Achievements are at 1d, 3d, 7d, 14d, 30d, 60d, 90d, 180d, 365d — 9 milestones 
 
 ### 4.8 Anti-Uninstall — 4-Layer System
 
-Faithfully replicates NopoX's design (see §3.5 for the NopoX version). Rebuild-specific notes:
+Faithfully replicates the reference's design (see §3.5 for the reference version). Rebuild-specific notes:
 
-**Layer 1 — Device Admin** (`DeviceAdminUtils.kt` + `res/xml/device_admin.xml`): Empty `<uses-policies>` — barrier only, no admin capabilities claimed. `MyDeviceAdminReceiver.onDisableRequested` returns a warning CharSequence but does not block deactivation. The receiver listens for `DEVICE_ADMIN_ENABLED`, `DEVICE_ADMIN_DISABLE_REQUESTED`, `DEVICE_ADMIN_DISABLED`, `USER_ADDED`, `USER_SWITCHED` — the last two are inherited from NopoX multi-user support and may be vestigial.
+**Layer 1 — Device Admin** (`DeviceAdminUtils.kt` + `res/xml/device_admin.xml`): Empty `<uses-policies>` — barrier only, no admin capabilities claimed. `MyDeviceAdminReceiver.onDisableRequested` returns a warning CharSequence but does not block deactivation. The receiver listens for `DEVICE_ADMIN_ENABLED`, `DEVICE_ADMIN_DISABLE_REQUESTED`, `DEVICE_ADMIN_DISABLED`, `USER_ADDED`, `USER_SWITCHED` — the last two are inherited from the reference's multi-user support and may be vestigial.
 
 **Layer 2 — Accessibility guard** (`MyAccessibilityService.handleWindowStateChange` → `isAppInfoPage`): The heuristic matches if (a) `packageName == "com.android.settings"` or contains `.settings`, AND (b) any of: text contains the app name (case-insensitive), OR class name contains `AppInfoDashboard`/`InstalledAppDetails`/`AppInfoActivity`, OR text contains any of 6 device-admin text patterns. On match, presses `GLOBAL_ACTION_HOME` then launches `PornBlockActivity`.
 
@@ -431,7 +430,7 @@ private fun isAppInfoPage(packageName: String, className: String, text: String):
 
 ### 4.9 App Lock — `AppLockManager.kt` (170 LOC)
 
-Supports 4 lock types: PIN (4-digit numeric), Password (alphanumeric, min 6 chars), Pattern (9-dot grid), Biometric (BiometricPrompt). All non-biometric types use **PBKDF2-HMAC-SHA256 with 100,000 iterations and a 16-byte random salt** — 10× NopoX's iteration count. The hash is stored in `switch_status` as `app_lock_stored_hash` in the format `salt:hash` (hex-encoded).
+Supports 4 lock types: PIN (4-digit numeric), Password (alphanumeric, min 6 chars), Pattern (9-dot grid), Biometric (BiometricPrompt). All non-biometric types use **PBKDF2-HMAC-SHA256 with 100,000 iterations and a 16-byte random salt** — 10× the reference's iteration count. The hash is stored in `switch_status` as `app_lock_stored_hash` in the format `salt:hash` (hex-encoded).
 
 ```kotlin
 // AppLockManager.kt (paraphrased)
@@ -478,7 +477,7 @@ The rebuild **does** implement local JSON backup/restore (the existing `COMPARIS
 
 Three workers:
 - **`AppDataCheckWorker`** (96 LOC, periodic 24h) — currently only verifies DB integrity. Has 3 `TODO` comments for missing features (see §10.1, §10.2).
-- **`DailyReportWorker`** (68 LOC, daily 9 AM) — checks due Stop Me schedules. Does NOT send a daily summary notification with block count + streak (NopoX had this — rebuild dropped it).
+- **`DailyReportWorker`** (68 LOC, daily 9 AM) — checks due Stop Me schedules. Does NOT send a daily summary notification with block count + streak (the reference had this — rebuild dropped it).
 - **`VpnRestartWorker`** — one-shot worker to restart VPN after a delay (used by `MyVpnService.onRevoke`).
 
 **`NotificationHelper`** creates 4 notification channels: `BLOCK_NOTIFICATIONS` (block screen), `STOP_ME_FOREGROUND` (Stop Me service), `ACCESSIBILITY_ALERTS` (high-priority accessibility-disabled), `DAILY_REPORT` (daily summary).
@@ -599,7 +598,7 @@ The forwarder loop:
 
 ### 5.3 How Keyword Matching Works (Aho-Corasick)
 
-The rebuild uses Aho-Corasick for O(n) matching where n = input length. NopoX used a naive O(n × m) loop where m = keyword count — for 1,189 keywords, this is ~1,189× slower per match check.
+The rebuild uses Aho-Corasick for O(n) matching where n = input length. The reference used a naive O(n × m) loop where m = keyword count — for 1,189 keywords, this is ~1,189× slower per match check.
 
 **Aho-Corasick construction** (in `KeywordMatcher.kt`):
 1. Build a trie from all keywords
@@ -659,7 +658,7 @@ Each toggle in the UI calls `BlockerPageViewModel.toggleSwitch(switchIdentifier)
 | **3. Boot persistence** | `AppSystemActionReceiverAllTime` restarts services on BOOT_COMPLETED | User boots into safe mode (disables all third-party apps) |
 | **4. Self-heal** | `AccessibilityGuard` polls every 30 s, posts notification if disabled | User ignores notification (cannot re-enable programmatically on Android 13+) |
 
-**Confirmed bypass vectors** (same in both NopoX and rebuild):
+**Confirmed bypass vectors** (same in both the reference and the rebuild):
 - **ADB**: `adb shell settings put secure enabled_accessibility_services ""` disables accessibility. Self-heal detects within 30 s but can only post a notification (Android 13+ blocks programmatic re-enable).
 - **Safe mode**: Booting into safe mode disables all third-party apps. Boot receiver handles `BOOT_COMPLETED` but not safe mode specifically.
 - **Device Admin deactivation**: User can always deactivate Device Admin from Settings → Security → Device admin apps. Layer 2 catches the navigation to that page but the user can still disable if they're persistent.
@@ -672,15 +671,15 @@ Each toggle in the UI calls `BlockerPageViewModel.toggleSwitch(switchIdentifier)
 
 ### 6.1 Identity Comparison
 
-| Property | NopoX (APK) | Protect Yourself (Source + APK) |
+| Property | Reference (APK) | Protect Yourself (Source + APK) |
 |---|---|---|
-| Package name | `com.planproductive.nopoz` | `protect.yourself` |
-| App name | NopoX | Protect Yourself |
+| Package name | `com.planproductive.*` | `protect.yourself` |
+| App name | Reference | Protect Yourself |
 | Version | 1.0.53 (code 1053) | 1.0.37 (code 37) |
 | Min SDK | 23 (Android 6.0) | 26 (Android 8.0) |
 | Target SDK | 33 (Android 13) | 35 (Android 15) |
 | Signing | v1 + v2 + v3 (all three) | v2 only (Android Debug cert) |
-| Certificate | `CN=NopoX-Mod, OU=Reverse-Eng, C=BD` | `CN=Android Debug, O=Android, C=US` |
+| Certificate | `CN=Reference-Mod, OU=Reverse-Eng, C=BD` | `CN=Android Debug, O=Android, C=US` |
 | Application class | `bin.mt.signature.KillerApplication` (signature killer) | `protect.yourself.core.ProtectYourselfApp` (extends Application) |
 | Total files in APK | 1,730 | 1,490 |
 | DEX files | 7 | 4 |
@@ -690,22 +689,22 @@ Each toggle in the UI calls `BlockerPageViewModel.toggleSwitch(switchIdentifier)
 
 ### 6.2 Permissions Delta
 
-| Permission | NopoX | Protect Yourself | Delta |
+| Permission | Reference | Protect Yourself | Delta |
 |---|---|---|---|
 | `com.android.vending.BILLING` | ✅ | ❌ | **Removed** (no IAP) |
 | `com.google.android.gms.permission.AD_ID` | ✅ | ❌ | **Removed** (no ads) |
 | `com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE` | ✅ | ❌ | **Removed** (no Play Install Referrer tracking) |
 | `FOREGROUND_SERVICE_DATA_SYNC` | ❌ | ✅ | **Added** (required for WorkManager expedited work on Android 14+) |
 | `FOREGROUND_SERVICE_SPECIAL_USE` | ❌ | ✅ | **Added** (required for VPN FGS subtype declaration) |
-| `QUERY_ALL_PACKAGES` | ❌ (NopoX used substring matching) | ✅ | **Added** (for `queryIntentActivities` browser detection — flagged by Play Store policy) |
+| `QUERY_ALL_PACKAGES` | ❌ (reference used substring matching) | ✅ | **Added** (for `queryIntentActivities` browser detection — flagged by Play Store policy) |
 | `USE_EXACT_ALARM` | ❌ | ✅ | **Added** (Android 13+ alarm permission) |
 | All other permissions | Same | Same | — |
 
-**Net**: NopoX 24 → Protect Yourself 25 (+1 net). The rebuild added 4 necessary permissions for Android 14+ compatibility and removed 3 monetization-related permissions.
+**Net**: Reference 24 → Protect Yourself 25 (+1 net). The rebuild added 4 necessary permissions for Android 14+ compatibility and removed 3 monetization-related permissions.
 
 ### 6.3 Components Delta
 
-| Component type | NopoX | Protect Yourself | Delta |
+| Component type | Reference | Protect Yourself | Delta |
 |---|---|---|---|
 | Activities | 19 (6 app + 13 library) | 5 (5 app + 0 library) | **−14** (all library activities removed: AdMob, Play Billing, Firebase Auth, Google Sign-In, Play Core, image cropper, test invoker) |
 | Services | 17 (4 app + 13 library) | 8 (4 app + 4 library) | **−9** (removed Firebase/datatransport/GMS measurement/Play Core services) |
@@ -716,7 +715,7 @@ Each toggle in the UI calls `BlockerPageViewModel.toggleSwitch(switchIdentifier)
 
 ### 6.4 Assets Delta
 
-| Asset | NopoX | Protect Yourself | Notes |
+| Asset | Reference | Protect Yourself | Notes |
 |---|---|---|---|
 | `loading.json`, `no_history.json`, `no_internet.json`, `reminder.json`, `streak_fire.json`, `twinkle_crown.json` | ✅ | ✅ | Same 6 Lottie animations |
 | `preset_block_keywords.json` | ❌ (compiled into Kotlin) | ✅ (asset) | **Rebuild ships as asset** — 1,189 keywords across 37 languages |
@@ -726,9 +725,9 @@ Each toggle in the UI calls `BlockerPageViewModel.toggleSwitch(switchIdentifier)
 
 ### 6.5 Feature Parity Matrix (62 features)
 
-| # | Feature | NopoX | Protect Yourself v1.0.37 | Verdict |
+| # | Feature | Reference | Protect Yourself v1.0.37 | Verdict |
 |---|---|---|---|---|
-| 1 | Porn blocker (URL keyword matching) | ✅ | ✅ | Rebuild fixes NopoX URL-stripping bug (`isDetectWordInUrl` doesn't strip URLs) |
+| 1 | Porn blocker (URL keyword matching) | ✅ | ✅ | Rebuild fixes reference URL-stripping bug (`isDetectWordInUrl` doesn't strip URLs) |
 | 2 | Custom keyword list management | ✅ Full page | ✅ `KeywordManagerPage` (implemented since v1.0.27 stub) | **Now equivalent** |
 | 3 | Whitelist keyword list | ✅ | ✅ | Same |
 | 4 | Blocklist apps | ✅ | ✅ | Same |
@@ -790,28 +789,28 @@ Each toggle in the UI calls `BlockerPageViewModel.toggleSwitch(switchIdentifier)
 - **Weaker** (intentional or bug): 11 features (18%)
 - **Missing**: 4 features (6%) — Firebase backend, FAQ content, accountability partner backend, full `AppDataCheckWorker` features
 
-### 6.6 Strengths of the Rebuild over NopoX
+### 6.6 Strengths of the Rebuild over the reference
 
 1. **No signature killer** — eliminates reflection-based crashes on Android 14+
 2. **No Firebase auto-init** — eliminates crashes from invalid/missing `google-services.json`
 3. **Safe init wrapper** — single failing init step doesn't crash the app
 4. **Crash log file** — `cacheDir/crash_log.txt` captures stack traces for debugging
-5. **URL keyword matching fixed** — `isDetectWordInUrl()` doesn't strip URLs (NopoX bug)
+5. **URL keyword matching fixed** — `isDetectWordInUrl()` doesn't strip URLs (reference bug)
 6. **Robust browser detection** — `queryIntentActivities` instead of substring matching
 7. **URL scraping fallback** — node-tree traversal for browsers without known view IDs
 8. **Consecutive streak** — more meaningful than total active days
 9. **App Lock race condition fixed** — `tryUnlockWithInput(input)` takes explicit input
 10. **Stop Me `goAsync()`** — replaces `runBlocking` on main thread (UI freeze fix)
 11. **Stop Me widget toggles** — correctly toggles session on/off
-12. **Package + Intent blocking** — new feature not in NopoX
+12. **Package + Intent blocking** — new feature not in the reference
 13. **Aho-Corasick keyword matching** — O(n) instead of O(n × m)
-14. **PBKDF2 100K iterations** — 10× NopoX's iteration count
+14. **PBKDF2 100K iterations** — 10× the reference's iteration count
 15. **All features free** — no premium gating, no ads, no IAP, no tracking
 16. **Open-source** — code on GitHub
 
-### 6.7 Weaknesses of the Rebuild vs NopoX
+### 6.7 Weaknesses of the Rebuild vs the reference
 
-1. **SafeSearch enforcement** — was DNS-level in NopoX, now host-map redirect (mostly equivalent after v1.0.34 fixes)
+1. **SafeSearch enforcement** — was DNS-level in the reference, now host-map redirect (mostly equivalent after v1.0.34 fixes)
 2. **Anti-circumvention** — Block Notification Drawer + Block Recent Apps removed (per user request)
 3. **Localisation** — English-only UI vs 37+ languages (keyword presets still 37 languages)
 4. **Firebase backend** — Auth, Firestore, FCM, Crashlytics all removed (per user request)
@@ -824,7 +823,7 @@ Each toggle in the UI calls `BlockerPageViewModel.toggleSwitch(switchIdentifier)
 
 ## 7. Permissions Analysis (Source-Side Manifest)
 
-The rebuild's `AndroidManifest.xml` declares 22 permissions (down from NopoX's 24 — billing, AD_ID, INSTALL_REFERRER removed). Categorised by purpose:
+The rebuild's `AndroidManifest.xml` declares 22 permissions (down from the reference's 24 — billing, AD_ID, INSTALL_REFERRER removed). Categorised by purpose:
 
 ### 7.1 Justified Permissions (15)
 
@@ -852,9 +851,9 @@ The rebuild's `AndroidManifest.xml` declares 22 permissions (down from NopoX's 2
 |---|---|---|---|
 | `WRITE_SECURE_SETTINGS` | Reads `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES` | Reads don't require this permission, only writes do. Declared `tools:ignore="ProtectedPermissions"` | **Remove** (unused) |
 | `SCHEDULE_EXACT_ALARM` + `USE_EXACT_ALARM` | Stop Me session alarms | Both declared — belt-and-suspenders | **Keep one** (USE_EXACT_ALARM is the Android 13+ preferred) |
-| `KILL_BACKGROUND_PROCESSES` | Likely leftover from NopoX intent to kill offending apps | Not used in any code — rebuild uses `PornBlockActivity` overlay instead | **Remove** |
-| `REORDER_TASKS` | Likely leftover from NopoX | Not used in any code | **Remove** |
-| `INTERACT_ACROSS_USERS_FULL` + `INTERACT_ACROSS_USERS` | Leftover from NopoX multi-user support | Both `protectionLevel="signature"` — never granted to non-platform apps | **Remove** (no effect anyway) |
+| `KILL_BACKGROUND_PROCESSES` | Likely leftover from reference intent to kill offending apps | Not used in any code — rebuild uses `PornBlockActivity` overlay instead | **Remove** |
+| `REORDER_TASKS` | Likely leftover from reference | Not used in any code | **Remove** |
+| `INTERACT_ACROSS_USERS_FULL` + `INTERACT_ACROSS_USERS` | Leftover from reference multi-user support | Both `protectionLevel="signature"` — never granted to non-platform apps | **Remove** (no effect anyway) |
 | `com.google.android.c2dm.permission.RECEIVE` | FCM push (removed) | Firebase Messaging removed from build | **Remove** |
 | `QUERY_ALL_PACKAGES` | App picker + browser detection | The `<queries>` block is comprehensive enough that this may not be needed | **Test removing** — Play Store flags this as sensitive |
 
@@ -1024,7 +1023,7 @@ The accessibility service has full read access to all window content on the devi
 
 The Device Admin receiver is registered with **empty `<uses-policies />`** (`res/xml/device_admin.xml`) — meaning the app claims no admin capabilities (no `WipeData`, no `ResetPassword`, no `DisableCamera`, etc.). The only effect of being a Device Admin is that the user must explicitly deactivate it before uninstalling the app.
 
-`MyDeviceAdminReceiver.onDisableRequested` returns a warning CharSequence but does not block deactivation. The receiver listens for `DEVICE_ADMIN_ENABLED`, `DEVICE_ADMIN_DISABLE_REQUESTED`, `DEVICE_ADMIN_DISABLED`, `USER_ADDED`, `USER_SWITCHED` — the user-added/switched handlers are inherited from the original NopoX multi-user support and may be vestigial.
+`MyDeviceAdminReceiver.onDisableRequested` returns a warning CharSequence but does not block deactivation. The receiver listens for `DEVICE_ADMIN_ENABLED`, `DEVICE_ADMIN_DISABLE_REQUESTED`, `DEVICE_ADMIN_DISABLED`, `USER_ADDED`, `USER_SWITCHED` — the user-added/switched handlers are inherited from the original reference multi-user support and may be vestigial.
 
 **No abuse risk beyond the inherent "user must deactivate before uninstall" friction.**
 
@@ -1233,7 +1232,7 @@ Many user-facing strings are hardcoded in Kotlin instead of using string resourc
 - `NotificationHelper.kt:122` — "Protect Yourself: Blocking disabled!", "Tap to re-enable accessibility service"
 - `AboutPage.kt` — entire page is hardcoded English
 
-The `lint` config disables `MissingTranslation` and `ExtraTranslation` (`build.gradle.kts:114`), so this won't fail the build, but it means the app is effectively English-only for ~50% of the UI. The original NopoX supported 15+ languages.
+The `lint` config disables `MissingTranslation` and `ExtraTranslation` (`build.gradle.kts:114`), so this won't fail the build, but it means the app is effectively English-only for ~50% of the UI. The original reference supported 15+ languages.
 
 ### 11.7 Test Coverage Gaps
 
@@ -1305,9 +1304,9 @@ The `lint` config disables `MissingTranslation` and `ExtraTranslation` (`build.g
 
 ## 13. Conclusion
 
-The "Protect Yourself" rebuild successfully replicates NopoX's core protection architecture — the three-layer blocking pipeline (Accessibility + DNS-only VPN + SafeSearch redirect) and the four-layer anti-uninstall system (Device Admin + Accessibility guard + Boot persistence + Self-heal) — while fixing several critical bugs from the original (URL keyword matching, Stop Me `runBlocking`, app lock race condition, signature killer crashes, Firebase auto-init crashes). It is **functionally equivalent** for the primary use case (blocking pornographic content in browsers) and **stronger** in three areas: browser detection (PackageManager vs substring), URL scraping fallback (node-tree search vs null return), and streak calculation (consecutive vs total).
+The "Protect Yourself" rebuild successfully replicates the reference's core protection architecture — the three-layer blocking pipeline (Accessibility + DNS-only VPN + SafeSearch redirect) and the four-layer anti-uninstall system (Device Admin + Accessibility guard + Boot persistence + Self-heal) — while fixing several critical bugs from the original (URL keyword matching, Stop Me `runBlocking`, app lock race condition, signature killer crashes, Firebase auto-init crashes). It is **functionally equivalent** for the primary use case (blocking pornographic content in browsers) and **stronger** in three areas: browser detection (PackageManager vs substring), URL scraping fallback (node-tree search vs null return), and streak calculation (consecutive vs total).
 
-It is **weaker** in three areas: SafeSearch enforcement (accessibility-level host-map redirect vs NopoX's DNS-level redirect — mostly equivalent after v1.0.34 fixes), anti-circumvention (Block Notification Drawer + Block Recent Apps removed per user request), and localisation (English-only UI vs 37+ languages). It is **missing** four significant subsystems: Firebase backend (Auth + Firestore + FCM + Crashlytics), accountability partner email backend, FAQ content, and full `AppDataCheckWorker` features (2 confirmed TODOs that break Stop Me scheduled sessions and streak rollover after reboot).
+It is **weaker** in three areas: SafeSearch enforcement (accessibility-level host-map redirect vs the reference's DNS-level redirect — mostly equivalent after v1.0.34 fixes), anti-circumvention (Block Notification Drawer + Block Recent Apps removed per user request), and localisation (English-only UI vs 37+ languages). It is **missing** four significant subsystems: Firebase backend (Auth + Firestore + FCM + Crashlytics), accountability partner email backend, FAQ content, and full `AppDataCheckWorker` features (2 confirmed TODOs that break Stop Me scheduled sessions and streak rollover after reboot).
 
 The codebase is **ship-worthy after the 7 P0 fixes** are applied (5 of which are one-line or near-one-line changes). The most critical fixes are: cancel `serviceScope` in `MyAccessibilityService.onDestroy`, mark cached fields as `@Volatile`, implement `AppDataCheckWorker` TODOs, fix `AppSystemActionReceiverAllTime` scope leak, encrypt backups, remove dead FCM manifest entry. None of the identified bugs are critical-security vulnerabilities — no RCE, no plaintext passwords, no leaked secrets, no cleartext traffic, no analytics/telemetry.
 
@@ -1407,4 +1406,4 @@ The initial comprehensive analysis report is **accurate as written**. No correct
 
 ---
 
-*End of report. Total source files analysed: 30+. Total lines of code analysed: ~12,000. Total APK components enumerated: 1,730 (NopoX) + 1,490 (Protect Yourself). Total bugs identified: 13. Total improvement recommendations: 28 (7 P0, 8 P1, 7 P2, 6 P3). Verification pass: 15/15 claims confirmed + 4 additional minor findings.*
+*End of report. Total source files analysed: 30+. Total lines of code analysed: ~12,000. Total APK components enumerated: 1,730 (reference) + 1,490 (Protect Yourself). Total bugs identified: 13. Total improvement recommendations: 28 (7 P0, 8 P1, 7 P2, 6 P3). Verification pass: 15/15 claims confirmed + 4 additional minor findings.*

@@ -38,7 +38,7 @@ import timber.log.Timber
  * every app on the device (often 100+) instead of the small subset (usually
  * 1–10) of unsupported browsers the user actually wants to whitelist.
  *
- * The fix mirrors the NopoX 1.0.53 reference implementation:
+ * The fix mirrors the reference implementation:
  *   1. When the identifier is [SelectedAppListIdentifier.WHITELIST_UNSUPPORTED_BROWSER],
  *      we ask [UnsupportedBrowserDetector] for the set of installed
  *      browser-capable packages that are NOT in the supported-browsers list.

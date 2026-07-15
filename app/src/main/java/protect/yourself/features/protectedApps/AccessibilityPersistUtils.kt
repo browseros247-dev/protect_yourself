@@ -11,8 +11,8 @@ import timber.log.Timber
 
 /**
  * AccessibilityPersistUtils — programmatic persistence of the accessibility
- * service enablement, ported from the original NopoX implementation
- * (`com.planproductive.nopox.features.blockerPage.utils.AccessibilityPersistUtils`).
+ * service enablement, ported from the original reference implementation
+ * (`AccessibilityPersistUtils`).
  *
  * ## How it works
  *
@@ -48,14 +48,14 @@ import timber.log.Timber
  * method simply returns false and the caller falls back to the notification-
  * based "please re-enable manually" flow.
  *
- * ## What's new vs NopoX
+ * ## What's new vs the reference
  *
- *   - `protect.yourself` package instead of `com.planproductive.nopox`
+ *   - `protect.yourself` package instead of the reference app's package
  *   - Kotlin idiom instead of Java-flavoured Kotlin
  *   - `guardAllProtectedServices()` enumerates *all* installed accessibility
  *     services (via `PackageManager.getInstalledPackages`) so the user can
  *     choose to protect other accessibility apps too (e.g. a password
- *     manager's autofill service) — NopoX only protected its own.
+ *     manager's autofill service) — the reference only protected its own.
  *   - Public `isGranted` property for UI binding
  *   - Public `getEnabledServicesList()` for diagnostics + UI
  */
@@ -185,7 +185,7 @@ object AccessibilityPersistUtils {
 
     /**
      * Re-arm **all** protected accessibility services (our own + any the user
-     * has chosen to protect via [ProtectedAppsRegistry]). This mirrors NopoX's
+     * has chosen to protect via [ProtectedAppsRegistry]). This mirrors the reference's
      * `AccessibilityGuard.guardAll()`.
      *
      * Only call this when [isWriteSecureSettingsGranted] is true — otherwise
@@ -323,7 +323,7 @@ data class ProtectedServiceEntry(
  * (as long as `android:allowBackup` allows — currently false, but the file
  * is preserved across app updates).
  *
- * Ported from NopoX `ProtectedAppsRegistry.kt`.
+ * Ported from the reference `ProtectedAppsRegistry.kt`.
  */
 object ProtectedAppsRegistry {
     private const val PREFS_NAME = "protect_yourself_protected_apps"

@@ -354,7 +354,7 @@ class AppLockManager(private val context: Context) {
         // NIST SP 800-132 recommends at least 600,000 iterations for
         // PBKDF2-HMAC-SHA256 as of 2023. We use 100,000 as a balance between
         // security and unlock speed on older devices (~100ms on mid-range).
-        // The original NopoX used 10,000 which is too low by modern standards.
+        // The reference used 10,000 which is too low by modern standards.
         private const val ITERATIONS = 100_000
         private const val KEY_LENGTH = 256
 

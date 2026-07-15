@@ -1,11 +1,11 @@
 # VPN Settings — Comprehensive Bug Analysis Report
 
-**Project**: Protect-Yourself (rebuild of NopoX 1.0.53)
+**Project**: Protect-Yourself
 **Branch analysed**: `main` (HEAD = `254b8ed`)
-**APK analysed**: `NopoX_1.0.53.apk` (24,265,956 bytes; package `com.planproductive.nopox`)
+**APK analysed**: `reference_1.0.53.apk` (24,265,956 bytes; package `com.planproductive`)
 **Analysis date**: 2026-07-13
 **Scope**: All VPN-related settings — service, UI, persistence, boot restart, backup/restore
-**Methodology**: Static source review of every VPN code path on `main` + JADX decompilation of `NopoX_1.0.53.apk` + cross-reference with `docs/VPN_DEEP_ANALYSIS.md` (which was written against the older `Future-Brand` branch and tracks 19 issues, most of which have since been fixed inline as `FIX 1.x`, `VPN-06/07/08/10/11/12/14/15` etc.)
+**Methodology**: Static source review of every VPN code path on `main` + JADX decompilation of `reference_1.0.53.apk` + cross-reference with `docs/VPN_DEEP_ANALYSIS.md` (which was written against the older `Future-Brand` branch and tracks 19 issues, most of which have since been fixed inline as `FIX 1.x`, `VPN-06/07/08/10/11/12/14/15` etc.)
 
 > **Important**: This report is a **plan only**. No source files have been modified. Every recommended patch below is a *suggested* fix for the maintainer to review and apply.
 
@@ -13,13 +13,13 @@
 
 ## 1. Executive Summary
 
-The VPN subsystem on `main` is a substantial improvement over the `Future-Brand` branch analysed in `docs/VPN_DEEP_ANALYSIS.md`. Of the 19 issues documented in that earlier report, **at least 14 have been fixed** (VPN-06, 07, 08, 10, 11, 12, 14, 15 and the critical FIX 1.1–1.5 service-lifecycle fixes). The NopoX-style "DNS-only" tunnel design (`addDnsServer` + `allowBypass`, no `addRoute`, no manual forwarding loop) is correctly implemented and is the same pattern NopoX 1.0.53 uses.
+The VPN subsystem on `main` is a substantial improvement over the `Future-Brand` branch analysed in `docs/VPN_DEEP_ANALYSIS.md`. Of the 19 issues documented in that earlier report, **at least 14 have been fixed** (VPN-06, 07, 08, 10, 11, 12, 14, 15 and the critical FIX 1.1–1.5 service-lifecycle fixes). The reference-style "DNS-only" tunnel design (`addDnsServer` + `allowBypass`, no `addRoute`, no manual forwarding loop) is correctly implemented and is the same pattern the reference uses.
 
-However, a fresh setting-by-setting review against the decompiled NopoX 1.0.53 APK and against Android foreground-service best practice reveals **20 new bugs** that were not on the previous tracking list — or that were introduced by the very fixes that closed the old list.
+However, a fresh setting-by-setting review against the decompiled reference APK and against Android foreground-service best practice reveals **20 new bugs** that were not on the previous tracking list — or that were introduced by the very fixes that closed the old list.
 
 The most severe are:
 
-- **VPN-BUG-01 (Critical)** — `MyVpnService.start/stop/restart` all call `context.startService()` directly instead of `ContextCompat.startForegroundService()`. NopoX 1.0.53 does this correctly. On Android 8+ (API 26+) this throws `IllegalStateException` when the app is in the background, which means **the VPN cannot be restarted after reboot on Android 8+ devices** even though `VpnRestartWorker` is expedited — the expedited exemption only applies to `startForegroundService()`, not to `startService()`.
+- **VPN-BUG-01 (Critical)** — `MyVpnService.start/stop/restart` all call `context.startService()` directly instead of `ContextCompat.startForegroundService()`. The reference does this correctly. On Android 8+ (API 26+) this throws `IllegalStateException` when the app is in the background, which means **the VPN cannot be restarted after reboot on Android 8+ devices** even though `VpnRestartWorker` is expedited — the expedited exemption only applies to `startForegroundService()`, not to `startService()`.
 
 - **VPN-BUG-02 (Critical)** — `MyVpnService.onRevoke()` calls `stopSelf()` *before* the coroutine that persists `VPN_SWITCH=false` completes, and `onDestroy()` immediately cancels `serviceScope`. Result: **`VPN_SWITCH` stays `true` in the database after the user revokes VPN permission via system settings**, so the UI continues to show "Connected" while the VPN is dead, and `VpnRestartWorker` repeatedly tries (and fails) to restart the VPN on every boot.
 
@@ -70,17 +70,17 @@ Each setting's implementation touches one or more of the following files:
 
 ---
 
-## 3. NopoX 1.0.53 vs Protect-Yourself — VPN Implementation Diff
+## 3. Reference vs Protect-Yourself — VPN Implementation Diff
 
 This section is the side-by-side comparison the user requested. It shows what changed and what diverged between the reference APK and the rebuild.
 
 ### 3.1 Service architecture
 
-| Aspect | NopoX 1.0.53 (decompiled) | Protect-Yourself (main) | Verdict |
+| Aspect | Reference (decompiled) | Protect-Yourself (main) | Verdict |
 |--------|---------------------------|-------------------------|---------|
 | Service class | `MyVpnService extends VpnService` (139 lines decompiled) | `MyVpnService : VpnService()` (518 lines) | PU is more thorough |
 | Start intent action | `"start"` / `"stop"` (string constants) | `ACTION_START` / `ACTION_STOP` / `ACTION_RESTART` (3 actions) | PU adds explicit restart |
-| Start mechanism | `ContextCompat.startForegroundService()` on API 26+, `startService()` below | `context.startService()` on all APIs | **NopoX wins** — PU is BUG-01 |
+| Start mechanism | `ContextCompat.startForegroundService()` on API 26+, `startService()` below | `context.startService()` on all APIs | **Reference wins** — PU is BUG-01 |
 | Foreground notification | Built by `NotificationDisplayUtils.vpnNotification()` (separate util) | Built inline in `buildNotification()` with state-aware title (CONNECTING / CONNECTED / FAILED) | PU is more state-aware |
 | `startForeground()` timing | Not visible in decompiled code — likely inside `onStartCommand$2` lambda | Called synchronously at top of `onStartCommand` with placeholder notification, BEFORE async `startVpn()` | PU is correct (FIX 1.4) |
 | `onRevoke()` | Not present in decompiled code | Present — calls `stopVpn()`, persists `VPN_SWITCH=false`, `stopSelf()` | PU attempts more, but has BUG-02 |
@@ -91,7 +91,7 @@ This section is the side-by-side comparison the user requested. It shows what ch
 
 ### 3.2 Tunnel configuration
 
-| Aspect | NopoX 1.0.53 | Protect-Yourself | Verdict |
+| Aspect | Reference | Protect-Yourself | Verdict |
 |--------|--------------|------------------|---------|
 | Tunnel addresses | `addAddress("10.0.2.15", 24)` × 4 (10.0.2.15–18) | Same — `addAddress("10.0.2.15", 24)` × 4 | Equivalent |
 | DNS servers | `addDnsServer(dns1)` + `addDnsServer(dns2)` where `dns1/dns2` come from the `message` field of the VPN switch row (comma-separated) | `addDnsServer(firstDns)` + `addDnsServer(secondDns)` from `vpn_custom_dns` table selected row, or from `DefaultDnsPresets` constants | PU is more structured |
@@ -104,16 +104,16 @@ This section is the side-by-side comparison the user requested. It shows what ch
 
 ### 3.3 DNS provider defaults
 
-| Mode | NopoX 1.0.53 | Protect-Yourself | Notes |
+| Mode | Reference | Protect-Yourself | Notes |
 |------|--------------|------------------|-------|
 | NORMAL (Balanced) | `185.228.168.10` / `185.228.168.11` (CleanBrowsing Family) | `1.1.1.3` / `1.0.0.3` (Cloudflare Family) | **Different provider** — PU switched from CleanBrowsing to Cloudflare. Both block adult content + malware. Not a bug, but a deliberate change. |
 | POWERFUL (Strict) | `185.228.168.168` / `185.228.168.169` (CleanBrowsing Adult filter) | `94.140.14.15` / `94.140.15.16` (AdGuard Family) | **Different provider** — PU switched from CleanBrowsing to AdGuard. AdGuard also blocks ads + trackers. |
 | CUSTOM | Read from `vpn_custom_dns` table where `isSelected=true` | Same | Equivalent |
-| Fallback when CUSTOM selected but no preset | NopoX falls back to `getNormalDnsIds()` (CleanBrowsing) | PU falls back to `DefaultDnsPresets.CLOUDFLARE_FAMILY` | PU falls back to its own NORMAL default — consistent with PU's NORMAL definition |
+| Fallback when CUSTOM selected but no preset | The reference falls back to `getNormalDnsIds()` (CleanBrowsing) | PU falls back to `DefaultDnsPresets.CLOUDFLARE_FAMILY` | PU falls back to its own NORMAL default — consistent with PU's NORMAL definition |
 
 ### 3.4 VPN whitelist app defaults — divergence
 
-**NopoX 1.0.53** (decompiled `VpnServiceUtils.vpnWhiteListApps()`):
+**Reference** (decompiled `VpnServiceUtils.vpnWhiteListApps()`):
 ```
 HashSet of:
   - user-selected VPN_WHITELIST_APPS from DB
@@ -135,11 +135,11 @@ HashSet of:
 - Gmail attachment downloads may fail.
 - System UI components that make network requests (e.g. captive portal checks) may behave unexpectedly.
 
-This is a **deliberate design choice** (the rebuild's philosophy is "block everything by default, let the user whitelist explicitly"), but it diverges from NopoX's behavior and may cause user-reported "Play Store broken" issues. Worth documenting in the report.
+This is a **deliberate design choice** (the rebuild's philosophy is "block everything by default, let the user whitelist explicitly"), but it diverges from the reference's behavior and may cause user-reported "Play Store broken" issues. Worth documenting in the report.
 
 ### 3.5 Persistence schema
 
-| Field | NopoX 1.0.53 | Protect-Yourself |
+| Field | Reference | Protect-Yourself |
 |-------|--------------|------------------|
 | Switch status row | `type` (key), `status` (long value), `message` (string, holds DNS IPs for VPN), `requestOffTime` (long) | `key`, `value` (string), `type` ("boolean"/"int"/"long"/"string") |
 | VPN switch value | `status: Long` (0 or 1) | `value: "true"` or `"false"`, `type: "boolean"` |
@@ -147,7 +147,7 @@ This is a **deliberate design choice** (the rebuild's philosophy is "block every
 | VPN DNS IPs (CUSTOM mode) | Stored as `message: "1.1.1.3,1.0.0.3"` in the VPN switch row | Stored in separate `vpn_custom_dns` table with `isSelected` flag |
 | Custom DNS presets | `vpn_custom_dns` table: `key`, `firstDns`, `secondDns`, `isSelected` (NO `displayName`) | `vpn_custom_dns` table: `key`, `displayName`, `firstDns`, `secondDns`, `isSelected` |
 
-**Backup compatibility**: NopoX backups are **NOT** restorable to Protect-Yourself because the `switch_status` schema is completely different (`type`/`status`/`message`/`requestOffTime` vs `key`/`value`/`type`). This is by design — the rebuild is a clean break. But the `vpn_custom_dns` table is closer — NopoX presets (no `displayName`) can be restored to PU because PU's `displayName` column has `NOT NULL DEFAULT ''`.
+**Backup compatibility**: Reference backups are **NOT** restorable to Protect-Yourself because the `switch_status` schema is completely different (`type`/`status`/`message`/`requestOffTime` vs `key`/`value`/`type`). This is by design — the rebuild is a clean break. But the `vpn_custom_dns` table is closer — reference presets (no `displayName`) can be restored to PU because PU's `displayName` column has `NOT NULL DEFAULT ''`.
 
 ---
 
@@ -189,7 +189,7 @@ On Android 8+, `startService()` from a background context throws `IllegalStateEx
 
 The `VpnRestartWorker` comment claims the expedited exemption allows the worker (and services it starts) to call `startForeground()` — but that exemption only applies to `startForegroundService()` calls, **not** to `startService()` calls. So even though `VpnRestartWorker` is expedited, the `MyVpnService.start(applicationContext)` call inside it throws on Android 8+ when the app is in the background.
 
-NopoX 1.0.53's `VpnServiceUtils.vpnServiceAction()` does this correctly:
+The reference's `VpnServiceUtils.vpnServiceAction()` does this correctly:
 
 ```java
 if (Build.VERSION.SDK_INT >= 26) {
@@ -1090,7 +1090,7 @@ class AppSystemActionReceiver : BroadcastReceiver() {
 
 **Root cause**: Android's `VpnService` doesn't provide a callback for tunnel death. The service has no way to detect that `vpnInterface` is dead unless it actively polls it (e.g. by reading from the TUN's FD and checking for errors).
 
-NopoX 1.0.53 has the same gap — this is not a regression. But it's a real bug for both apps.
+The reference has the same gap — this is not a regression. But it's a real bug for both apps.
 
 **Impact**:
 - Silent protection failure.
@@ -1769,7 +1769,7 @@ The table below maps the new bugs to the existing fix history (where applicable)
 
 | New Bug ID | Related existing fix | Relationship |
 |------------|---------------------|--------------|
-| VPN-BUG-01 | (none — NopoX does it correctly) | Net-new — the rebuild never had this fix |
+| VPN-BUG-01 | (none — reference does it correctly) | Net-new — the rebuild never had this fix |
 | VPN-BUG-02 | FIX 1.1 (ACTION_STOP persists VPN_SWITCH=false) | Related — FIX 1.1 added the pattern for ACTION_STOP, but the same pattern in `onRevoke()` has the race condition |
 | VPN-BUG-03 | (none) | Net-new — backup logic was not analyzed in VPN_DEEP_ANALYSIS.md |
 | VPN-BUG-04 | FIX 1.2 (assign restartJob so stopVpn can cancel it) + BUG-01 fix (AtomicBoolean isStarting) | Regression — the AtomicBoolean guard inadvertently causes the second restart to be skipped |
@@ -1781,7 +1781,7 @@ The table below maps the new bugs to the existing fix history (where applicable)
 | VPN-BUG-10 | VPN-07 fix (only show restart toast when restart will happen) | Regression — VPN-07 fix added the conditional, but the "updated" toast is still misleading |
 | VPN-BUG-11 | (none) | Net-new |
 | VPN-BUG-12 | (none) | Net-new — the stub was always there |
-| VPN-BUG-13 | (none) | Net-new — NopoX has the same gap |
+| VPN-BUG-13 | (none) | Net-new — the reference has the same gap |
 | VPN-BUG-14 | (none) | Net-new |
 | VPN-BUG-15 | (none) | Net-new |
 | VPN-BUG-16 | (none) | Net-new — dead code from the original implementation |
@@ -1826,16 +1826,16 @@ The following files were read in full during this analysis:
 - `app/src/main/java/protect/yourself/core/AppCoroutineExceptionHandler.kt` (appCoroutineScope)
 - `app/src/main/res/values/strings.xml` (VPN strings)
 
-**Decompiled NopoX 1.0.53**:
-- `sources/com/planproductive/nopox/features/blockerPage/service/MyVpnService.java`
-- `sources/com/planproductive/nopox/features/blockerPage/service/MyVpnService$onStartCommand$2.java`
-- `sources/com/planproductive/nopox/features/blockerPage/utils/VpnServiceUtils.java`
-- `sources/com/planproductive/nopox/features/blockerPage/identifiers/VpnConnectionTypeIdentifiers.java`
-- `sources/com/planproductive/nopox/database/vpnCustomDns/VpnCustomDnsDao.java`
-- `sources/com/planproductive/nopox/database/vpnCustomDns/VpnCustomDnsItemModel.java`
-- `sources/com/planproductive/nopox/database/vpnCustomDns/VpnCustomDnsValues.java`
-- `sources/com/planproductive/nopox/database/switchStatus/SwitchStatusDao.java`
-- `sources/com/planproductive/nopox/database/switchStatus/SwitchStatusItemModel.java`
+**Decompiled reference**:
+- `sources/com/planproductive/features/blockerPage/service/MyVpnService.java`
+- `sources/com/planproductive/features/blockerPage/service/MyVpnService$onStartCommand$2.java`
+- `sources/com/planproductive/features/blockerPage/utils/VpnServiceUtils.java`
+- `sources/com/planproductive/features/blockerPage/identifiers/VpnConnectionTypeIdentifiers.java`
+- `sources/com/planproductive/database/vpnCustomDns/VpnCustomDnsDao.java`
+- `sources/com/planproductive/database/vpnCustomDns/VpnCustomDnsItemModel.java`
+- `sources/com/planproductive/database/vpnCustomDns/VpnCustomDnsValues.java`
+- `sources/com/planproductive/database/switchStatus/SwitchStatusDao.java`
+- `sources/com/planproductive/database/switchStatus/SwitchStatusItemModel.java`
 
 **Existing documentation**:
 - `docs/VPN_DEEP_ANALYSIS.md` (19 issues documented against the older Future-Brand branch)
@@ -1845,7 +1845,7 @@ The following files were read in full during this analysis:
 
 ## 11. Conclusion
 
-The VPN subsystem on `main` is in good shape overall — the NopoX-style DNS-only tunnel design is correctly implemented, the schema corruption crash from v1.0.56 is fixed, and 14 of the 19 issues from the earlier `VPN_DEEP_ANALYSIS.md` have been addressed. The foreground notification is now state-aware, the AtomicBoolean guard prevents concurrent `establish()` calls, and the `VpnRestartWorker` correctly uses expedited WorkManager to bypass Android 12+ background-start restrictions.
+The VPN subsystem on `main` is in good shape overall — the reference-style DNS-only tunnel design is correctly implemented, the schema corruption crash from v1.0.56 is fixed, and 14 of the 19 issues from the earlier `VPN_DEEP_ANALYSIS.md` have been addressed. The foreground notification is now state-aware, the AtomicBoolean guard prevents concurrent `establish()` calls, and the `VpnRestartWorker` correctly uses expedited WorkManager to bypass Android 12+ background-start restrictions.
 
 However, **20 new bugs** were identified in this analysis, of which **3 are Critical** and **4 are High**. The most dangerous category is "silent protection failure" — 6 bugs can cause the user to think they're protected when they're not. For a content-blocking app whose entire value proposition is protection, this is the highest-priority category to fix.
 

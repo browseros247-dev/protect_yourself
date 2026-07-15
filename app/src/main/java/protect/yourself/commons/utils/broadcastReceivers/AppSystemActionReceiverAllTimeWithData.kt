@@ -28,7 +28,7 @@ import timber.log.Timber
  *  1. **Missing `isFirstInstall` check.** Previously, ANY `PACKAGE_ADDED`
  *     broadcast (including app updates) would add the package to the new
  *     install block list. Now we verify the package is a genuine fresh
- *     install, matching the NopoX_1.0.53.apk reference implementation
+ *     install, matching the reference implementation
  *     (`DeviceAppDataUtil.isFirstInstall`).
  *
  *  2. **No pre-insert cleanup.** Previously, if a row already existed for
@@ -36,7 +36,7 @@ import timber.log.Timber
  *     REPLACE it — but stale rows under a DIFFERENT identifier (e.g. the
  *     regular blocklist) would remain. Now we clean up the
  *     `BLOCK_NEW_INSTALL_APPS` identifier for the package before inserting,
- *     matching NopoX's `appInstallRemoveCallback` pattern.
+ *     matching the reference's `appInstallRemoveCallback` pattern.
  *
  *  3. **Silent failure when accessibility service is not connected.**
  *     Previously, `MyAccessibilityService.instance?.refreshBlockingConfig()`
@@ -55,7 +55,7 @@ import timber.log.Timber
  *     For most package names these are identical, but for package names
  *     containing URL-reserved characters they differ. Now we use the
  *     encoded form via [NewInstallBlockingUtils.extractPackageName] to match
- *     NopoX exactly.
+ *     the reference exactly.
  *
  *  6. **No error handling around the DB write.** Previously, a DB exception
  *     would bubble up to the outer try/catch and be logged generically. Now
@@ -84,7 +84,7 @@ class AppSystemActionReceiverAllTimeWithData : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         Timber.i("Package event: action=${intent.action} data=${intent.data}")
-        // Mirror NopoX: attempt self-heal on every package event. The most
+        // Mirror the reference: attempt self-heal on every package event. The most
         // important one is MY_PACKAGE_REPLACED — after an app update, Android
         // sometimes re-evaluates accessibility permissions and may disable
         // the service. selfHealSafe re-arms it instantly.
@@ -159,7 +159,7 @@ class AppSystemActionReceiverAllTimeWithData : BroadcastReceiver() {
      *     update) via [NewInstallBlockingUtils.isFirstInstall].
      *  3. If it's a first install:
      *     a. Clean up any existing row for this package under the
-     *        BLOCK_NEW_INSTALL_APPS identifier (defensive — matches NopoX's
+     *        BLOCK_NEW_INSTALL_APPS identifier (defensive — matches the reference's
      *        `appInstallRemoveCallback` pattern).
      *     b. Insert the new row with `isSelected = true`.
      *     c. Verify the insert succeeded by reading the row back.
@@ -193,7 +193,7 @@ class AppSystemActionReceiverAllTimeWithData : BroadcastReceiver() {
         }
 
         // Verify this is a genuine first install, not an update.
-        // NopoX uses DeviceAppDataUtil.isFirstInstall for this — we port
+        // The reference uses DeviceAppDataUtil.isFirstInstall for this — we port
         // that logic in NewInstallBlockingUtils.
         val isFirstInstall = try {
             NewInstallBlockingUtils.isFirstInstall(context, packageName)

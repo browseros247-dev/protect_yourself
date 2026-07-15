@@ -57,7 +57,7 @@ class MyAccessibilityServiceTest {
 
     // SET-02 fix: verify that the new extractSettingsPageTitle method
     // exists. This method extracts the actual toolbar title from specific
-    // Settings-app view IDs (matching NopoX 1.0.53), instead of checking
+    // Settings-app view IDs (matching the reference), instead of checking
     // the entire window text.
     @Test
     fun `extractSettingsPageTitle method exists`() {

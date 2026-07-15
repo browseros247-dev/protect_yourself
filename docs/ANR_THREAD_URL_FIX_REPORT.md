@@ -7,7 +7,7 @@ This release fixes 3 critical issues identified in the crash log analysis:
 2. **Chrome URL extraction returning null** — missing `contentDescription` fallback
 3. **ANR 5,002–7,346ms** — unbounded node-tree traversal on main thread
 
-All fixes are verified against the NopoX 1.0.53 reference APK. The release APK
+All fixes are verified against the reference APK. The release APK
 v1.0.58 builds successfully and all unit tests pass.
 
 ---
@@ -30,14 +30,14 @@ triggers accessibility content change events that `ViewRootImpl` validates
 against the thread that created the view hierarchy (the main thread). Calling
 these from a background thread throws `CalledFromWrongThreadException`.
 
-**NopoX 1.0.53 reference**: NopoX has the **exact same bug** — `PornBlockPage.java`
+**Reference**: The reference has the **exact same bug** — `PornBlockPage.java`
 line 254 uses `TimersKt.timer().scheduleAtFixedRate(...)` to call
 `performGlobalAction` from a background thread. This was tolerated on older
 Android versions but Android 14 enforces the thread check strictly.
 
 **Fix**: Dispatch all `performGlobalAction` calls to the main thread via
 `Handler(Looper.getMainLooper()).post { ... }`. This is an improvement over
-NopoX 1.0.53.
+the reference.
 
 ---
 
@@ -56,7 +56,7 @@ but URL extraction returned null — url bar view id may have changed
 in the address bar or when the page is still loading. The code only checked
 `node.text`, never `node.contentDescription`.
 
-**NopoX 1.0.53 reference**: NopoX also only checks `text` (decompiled
+**Reference**: Reference also only checks `text` (decompiled
 `checkPornUrlSearch`). The rebuild inherited this, but Chrome has since changed.
 
 **Fix**: Added `contentDescription` fallback in both:
@@ -81,8 +81,8 @@ that run on the main thread. On complex pages (Chrome with many tabs), the
 recursive traversal can visit thousands of nodes, each requiring an IPC
 round-trip — blocking the main thread for 5+ seconds.
 
-**NopoX 1.0.53 reference**: NopoX has the same architecture (all accessibility
-event processing on the main thread), but NopoX doesn't have an ANR watchdog
+**Reference**: Reference has the same architecture (all accessibility
+event processing on the main thread), but the reference doesn't have an ANR watchdog
 so the issue was invisible. The rebuild's `AnrWatchdog` made it visible.
 
 **Fix**: Added hard node-count limits to prevent unbounded traversal:
@@ -117,4 +117,4 @@ the traversal is an acceptable tradeoff.
 - [x] Release APK v1.0.58 builds successfully
 - [x] All existing tests pass (no regressions)
 - [x] Changes are on feature branch, not main
-- [x] Verified against NopoX 1.0.53 reference APK (decompiled via jadx)
+- [x] Verified against reference APK (decompiled via jadx)

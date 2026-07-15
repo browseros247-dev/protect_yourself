@@ -1,6 +1,6 @@
 # Scheduled App Restrictions — Comprehensive Implementation Plan
 
-**Project**: Protect-Yourself (rebuild of NopoX 1.0.53)
+**Project**: Protect-Yourself
 **Branch analysed**: `main` (HEAD = `a3b8723`, v1.0.61 — includes the 19 VPN bug fixes)
 **Plan date**: 2026-07-13
 **Mode**: **PLAN ONLY — no code changes**

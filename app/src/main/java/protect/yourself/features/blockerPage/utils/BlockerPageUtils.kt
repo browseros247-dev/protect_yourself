@@ -302,33 +302,33 @@ class BlockerPageUtils {
     /**
      * Get the SafeSearch-enforced URL for a given search-engine URL.
      *
-     * **SS-01 fix (v1.0.54)**: Rewritten to match the NopoX 1.0.53 reference
+     * **SS-01 fix (v1.0.54)**: Rewritten to match the reference
      * APK's `getSafeUrl()` behaviour exactly. The previous implementation had
      * several bugs that broke SafeSearch enforcement:
      *
      *  1. Used exact-host matching against a fixed map of 20 country TLDs —
-     *     missed 180+ Google TLDs (google.co.za, google.com.ph, …). NopoX
+     *     missed 180+ Google TLDs (google.co.za, google.com.ph, …). The reference
      *     uses substring host matching (`host.contains("google")`).
      *  2. Redirected Google → `forcesafesearch.google.com` (different host).
      *     This host is a CNAME that doesn't resolve on all networks/DNS and
-     *     breaks browser cookies/sessions. NopoX keeps the SAME host and
+     *     breaks browser cookies/sessions. The reference keeps the SAME host and
      *     appends the `&safe=active` query parameter, which is more reliable.
      *  3. Did NOT require a `/search` path — so opening `google.com` (the
      *     homepage) triggered an immediate redirect, breaking the homepage.
-     *     NopoX only redirects when the path contains `search`.
+     *     The reference only redirects when the path contains `search`.
      *  4. Used `family=1` for Yandex — the correct parameter is `family=yes`.
      *     Yandex SafeSearch was silently never activated.
      *  5. Same Bing issue: redirected to `strict.bing.com` instead of appending
      *     `&adlt=strict` on the same host.
      *
-     * NopoX reference behaviour (decompiled from BlockerPageUtils.getSafeUrl):
+     * Reference behaviour (decompiled from BlockerPageUtils.getSafeUrl):
      *  - Google  (host contains "google"):  append `&safe=active` if path has "search"
      *  - Bing    (host contains "bing.com"): append `&adlt=strict` if path has "search"
      *  - Yahoo   (host contains "yahoo.com"): append `&vm=r` if path has "search"
      *  - Yandex  (host contains "yandex"):    append `&family=yes` if path has "search"
      *  - DuckDuckGo (host contains "duckduckgo.com"): replace host with safe.duckduckgo.com
      *  - YouTube (host contains "youtube.com" or "youtu.be"): replace host with
-     *    restrict.youtube.com — extension beyond NopoX (NopoX doesn't redirect
+     *    restrict.youtube.com — extension beyond the reference (the reference doesn't redirect
      *    YouTube), kept because the app's UI advertises YouTube SafeSearch.
      *
      * @return the safe URL, or null if:
@@ -356,7 +356,7 @@ class BlockerPageUtils {
             val lowerUrl = url.lowercase(Locale.ROOT)
 
             // ===== Google (any TLD) — append &safe=active =====
-            // NopoX: host.contains("google") && path.contains("search")
+            // Reference: host.contains("google") && path.contains("search")
             // && !url.contains("&safe=active") && !url.contains("?safe=active")
             if (host.contains("google") && path.contains("search")) {
                 if (!lowerUrl.contains("&safe=active") && !lowerUrl.contains("?safe=active") &&
@@ -368,7 +368,7 @@ class BlockerPageUtils {
             }
 
             // ===== DuckDuckGo — replace host with safe.duckduckgo.com =====
-            // NopoX: host.contains("duckduckgo.com") → replace host
+            // Reference: host.contains("duckduckgo.com") → replace host
             // No path check — DDG safe host enforces SafeSearch site-wide.
             if (host.contains("duckduckgo.com")) {
                 // Preserve scheme (prefer https), path, query, fragment.
@@ -384,7 +384,7 @@ class BlockerPageUtils {
             }
 
             // ===== Bing — append &adlt=strict =====
-            // NopoX: host.contains("bing.com") && path.contains("search")
+            // Reference: host.contains("bing.com") && path.contains("search")
             // && !url.contains("&adlt=strict")
             if (host.contains("bing.com") && path.contains("search")) {
                 if (!lowerUrl.contains("adlt=strict")) {
@@ -394,7 +394,7 @@ class BlockerPageUtils {
             }
 
             // ===== Yahoo — append &vm=r =====
-            // NopoX: host.contains("yahoo.com") && path.contains("search")
+            // Reference: host.contains("yahoo.com") && path.contains("search")
             // && !url.contains("&vm=r")
             if (host.contains("yahoo.com") && path.contains("search")) {
                 if (!hasQueryParam(lowerUrl, "vm", "r")) {
@@ -404,7 +404,7 @@ class BlockerPageUtils {
             }
 
             // ===== Yandex — append &family=yes (NOT family=1) =====
-            // NopoX: host.contains("yandex") && path.contains("search")
+            // Reference: host.contains("yandex") && path.contains("search")
             // && !url.contains("&family=yes")
             // SS-01 fix: was "family=1" — wrong parameter. Yandex uses "family=yes".
             if (host.contains("yandex") && path.contains("search")) {
@@ -415,7 +415,7 @@ class BlockerPageUtils {
             }
 
             // ===== YouTube — replace host with restrict.youtube.com =====
-            // Extension beyond NopoX (NopoX doesn't redirect YouTube). Kept
+            // Extension beyond the reference (the reference doesn't redirect YouTube). Kept
             // because the app's UI advertises YouTube SafeSearch. Uses host
             // replacement (not parameter) because YouTube doesn't honour a
             // query-parameter-based SafeSearch — restrict.youtube.com is the
@@ -563,7 +563,7 @@ class BlockerPageUtils {
          *
          * **DEPRECATED (v1.0.54, SS-01 fix)**: No longer used by
          * [getSafeSearchUrl]. Kept for backward compatibility and as
-         * reference data. The new implementation uses NopoX-style substring
+         * reference data. The new implementation uses reference-style substring
          * host matching (e.g. `host.contains("google")`) which catches ALL
          * country TLDs automatically, instead of this fixed list of 20.
          *
@@ -674,10 +674,10 @@ class BlockerPageUtils {
          * Text IDs in browser address bars across supported browsers.
          * Used by accessibility service to find the URL field.
          *
-         * Ported from NopoX's viewIdSupportedBrowserApps() — decoded from
+         * Ported from the reference's viewIdSupportedBrowserApps() — decoded from
          * the base64-encoded JSON list in the original APK.
          *
-         * NopoX uses a flat list; we use a Map<packageName, List<viewId>>
+         * The reference uses a flat list; we use a Map<packageName, List<viewId>>
          * for O(1) lookup by package.
          *
          * Key differences from the original rebuild (which only had 6 browsers
@@ -686,7 +686,7 @@ class BlockerPageUtils {
          *  - Added: Firefox Rocket, SpinBrowser, Opera GX, Opera Mini,
          *    Tor Browser, Google Search Lite, Cast Web Video, FreeAdblockerBrowser
          *  - Chrome: added title_bar as a fallback view ID
-         *  - Samsung Internet: kept from rebuild (not in NopoX's list but
+         *  - Samsung Internet: kept from rebuild (not in the reference's list but
          *    common on Samsung devices)
          */
         val BROWSER_URL_VIEW_IDS: Map<String, List<String>> = mapOf(
@@ -708,7 +708,7 @@ class BlockerPageUtils {
             "com.brave.browser" to listOf(
                 "com.brave.browser:id/url_bar"
             ),
-            // Samsung Internet (not in NopoX but common)
+            // Samsung Internet (not in the reference but common)
             "com.sec.android.app.sbrowser" to listOf(
                 "com.sec.android.app.sbrowser:id/location_bar_edit_text",
                 "com.sec.android.app.sbrowser:id/url_bar"
@@ -759,7 +759,7 @@ class BlockerPageUtils {
         /**
          * Class names of known in-app browsers (to detect inside other apps).
          *
-         * Ported from NopoX's inAppBrowsersClassName() — NopoX uses only
+         * Ported from the reference's inAppBrowsersClassName() — the reference uses only
          * 2 entries: WebView + Facebook browser. The original rebuild had
          * 6 entries including Chromium internal classes that caused false
          * positives (e.g. WebContentDelegateImpl appears in many non-browser
@@ -779,13 +779,13 @@ class BlockerPageUtils {
         /**
          * Outlook in-app browser address bar view ID.
          *
-         * NopoX 1.0.53 has a special case for Microsoft Outlook's in-app
+         * The reference has a special case for Microsoft Outlook's in-app
          * browser: when the user taps a link in an email, Outlook opens its
          * own internal browser (not a WebView) with a custom address bar
          * view ID. This view ID is checked as a fallback when neither the
          * className match nor the URL-in-text check fires.
          *
-         * Source: NopoX 1.0.53 APK smali — checkBlockBrowsers() checks
+         * Source: the reference APK smali — checkBlockBrowsers() checks
          * `accessibilityNodeInfoByViewId(sourceNode,
          *   "com.microsoft.office.outlook:id/browser_top_address")`.
          */

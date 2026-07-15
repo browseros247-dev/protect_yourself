@@ -182,7 +182,7 @@
     <!-- App-specific -->
     <!-- Streak widget strings removed in v1.0.62 (Streak feature replaced by Scheduled App Restrictions) -->
 
-    <!-- App Lock settings cards (mirrors NopoX 1.0.53 reference) -->
+    <!-- App Lock settings cards (mirrors reference behavior) -->
     <string name="set_app_lock_card_title">Set app lock</string>
     <string name="set_app_lock_card_info">Require PIN, password, or pattern to open the app</string>
     <string name="set_app_lock_page_card_message">Choose a lock method to protect this app</string>

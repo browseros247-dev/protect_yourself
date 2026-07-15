@@ -19,22 +19,22 @@ import java.util.concurrent.TimeUnit
  *     incorrectly added to the block list, polluting the user's blocklist
  *     with apps they had previously unblocked.
  *
- *  2. **Missing NopoX parity.** The reference implementation
- *     (`NopoX_1.0.53.apk → DeviceAppDataUtil.isFirstInstall`) performs a
+ *  2. **Missing reference parity.** The reference implementation
+ *     (`reference_1.0.53.apk → DeviceAppDataUtil.isFirstInstall`) performs a
  *     two-step check: `firstInstallTime == lastUpdateTime` (true only for
  *     fresh installs, not updates) AND the install happened within the last
  *     hour (guards against delayed broadcasts re-adding long-installed apps).
  *
- * This utility ports NopoX's `isFirstInstall` logic faithfully, with these
+ * This utility ports the reference's `isFirstInstall` logic faithfully, with these
  * improvements over the decompiled source:
  *
  *  - Uses `java.util.concurrent.TimeUnit` instead of Joda-Time (avoids a
  *    600 KB dependency for a single call site).
  *  - Adds structured logging at each decision branch for diagnostics.
  *  - Handles `SecurityException` (thrown by some OEMs when querying packages
- *    with `QUERY_ALL_PACKAGES` not granted) — NopoX only catches
+ *    with `QUERY_ALL_PACKAGES` not granted) — the reference only catches
  *    `NameNotFoundException`.
- *  - Returns `true` on `NameNotFoundException` to match NopoX (the package
+ *  - Returns `true` on `NameNotFoundException` to match the reference (the package
  *    was already uninstalled by the time we checked, so we treat it as a
  *    fresh install that was immediately removed — harmless because the
  *    insert will be cleaned up by `ACTION_PACKAGE_REMOVED`).
@@ -48,7 +48,7 @@ import java.util.concurrent.TimeUnit
  * | `firstInstallTime == lastUpdateTime`         |         |                                         |
  * |   AND installed > 1 hour ago                 | `false` | Delayed broadcast — don't re-add        |
  * | `firstInstallTime != lastUpdateTime`         | `false` | App was updated, not freshly installed  |
- * | `NameNotFoundException`                      | `true`  | Package gone — match NopoX behaviour    |
+ * | `NameNotFoundException`                      | `true`  | Package gone — match reference behaviour    |
  * | Other exception                              | `false` | Be safe — don't block on unknown state  |
  *
  * Usage:
@@ -63,7 +63,7 @@ object NewInstallBlockingUtils {
     /**
      * Maximum age (in hours) for a package to be considered a "fresh install".
      *
-     * Matches NopoX's `DeviceAppDataUtil.isFirstInstall` which uses
+     * Matches the reference's `DeviceAppDataUtil.isFirstInstall` which uses
      * `new Interval(firstInstallTime, now).toDuration().getStandardHours() <= 1`.
      *
      * Why 1 hour: PACKAGE_ADDED broadcasts can be delayed by Doze mode, battery
@@ -77,8 +77,8 @@ object NewInstallBlockingUtils {
     /**
      * Determines whether the given package was freshly installed (not updated).
      *
-     * Mirrors `com.planproductive.nopox.commons.utils.DeviceAppDataUtil.isFirstInstall`
-     * from the NopoX_1.0.53.apk reference implementation.
+     * Mirrors `com.planproductive.commons.utils.DeviceAppDataUtil.isFirstInstall`
+     * from the reference APK.
      *
      * @param context any context (application or activity)
      * @param packageName the package name to check
@@ -135,12 +135,12 @@ object NewInstallBlockingUtils {
             )
             isFresh
         } catch (e: PackageManager.NameNotFoundException) {
-            // Match NopoX: return true. The package was already uninstalled
+            // Match the reference: return true. The package was already uninstalled
             // (race with PACKAGE_REMOVED), so treating it as a first install
             // is harmless — the insert will be cleaned up by the REMOVE handler.
             Timber.w(
                 "isFirstInstall: pkg=$packageName not found (already removed?) — " +
-                    "returning true to match NopoX behaviour"
+                    "returning true to match reference behaviour"
             )
             true
         } catch (e: SecurityException) {
@@ -166,7 +166,7 @@ object NewInstallBlockingUtils {
      * Extracts the package name from a PACKAGE_ADDED / PACKAGE_REMOVED intent's
      * data URI.
      *
-     * Uses `getEncodedSchemeSpecificPart()` to match NopoX's behaviour exactly.
+     * Uses `getEncodedSchemeSpecificPart()` to match the reference's behaviour exactly.
      * For most package names this is identical to `getSchemeSpecificPart()`,
      * but for package names containing URL-reserved characters (rare but
      * possible with some sideloaded apps), the encoded form is the canonical

@@ -129,7 +129,7 @@ class NewInstallBlockingIntegrationTest {
         assertThat(rows).isEmpty()
     }
 
-    // ===== Cleanup (pre-insert cleanup matches NopoX appInstallRemoveCallback) =====
+    // ===== Cleanup (pre-insert cleanup matches the reference's appInstallRemoveCallback) =====
 
     @Test
     fun `deleteByIdentifierAndPackage removes only the target package`() = runBlocking {

@@ -19,8 +19,8 @@ import protect.yourself.features.protectedApps.AccessibilityPersistUtils
  *    immediately cancelled serviceScope — the coroutine was killed before
  *    completing. Fixed by introducing a separate selfHealScope that is NOT
  *    cancelled in onDestroy.
- *  - LC-02 (CRITICAL): onDestroy called selfHealSafe at all — NopoX 1.0.53
- *    (the mandatory reference) does NOT call it in onDestroy. Fixed by
+ *  - LC-02 (CRITICAL): onDestroy called selfHealSafe at all — the reference
+ *    does NOT call it in onDestroy. Fixed by
  *    removing the call entirely.
  *  - LC-03 (MINOR): onUnbind launched selfHealSafe on serviceScope which
  *    could be cancelled by a subsequent onDestroy. Fixed by using selfHealScope.
@@ -141,7 +141,7 @@ class MyAccessibilityServiceLifecycleTest {
     }
 
     /**
-     * LC-02 regression guard: verifies that the NopoX 1.0.53 reference
+     * LC-02 regression guard: verifies that the reference
      * behavior (selfHealSafe called in onServiceConnected + onUnbind, NOT in
      * onDestroy) is preserved by the fix.
      *

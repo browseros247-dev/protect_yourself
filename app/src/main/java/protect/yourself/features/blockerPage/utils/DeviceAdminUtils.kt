@@ -24,21 +24,21 @@ import timber.log.Timber
  *
  * ## Error handling
  *
- * All methods are wrapped in try/catch (NopoX pattern). DevicePolicyManager
+ * All methods are wrapped in try/catch (the reference's pattern). DevicePolicyManager
  * calls can throw on rooted devices or on OEM-modified ROMs. The safe
  * fallback is to return false / do nothing — never crash.
  *
- * Ported from NopoX `DeviceAdminUtils.java` (decompiled).
+ * Ported from the reference's `DeviceAdminUtils.java` (decompiled).
  */
 class DeviceAdminUtils {
 
     /**
      * Receiver registered in manifest. Prevents uninstall via "Disable" button.
      *
-     * UP-09 fix: NopoX's `onDisableRequested` returns an empty CharSequence
+     * UP-09 fix: the reference's `onDisableRequested` returns an empty CharSequence
      * (it does NOT show a custom warning). The system shows its own default
      * "Deactivate this device admin app?" dialog, which is sufficient. We
-     * match NopoX's behaviour — returning a custom CharSequence can cause
+     * match the reference's behaviour — returning a custom CharSequence can cause
      * the dialog to be dismissed on some OEM ROMs.
      */
     class MyDeviceAdminReceiver : DeviceAdminReceiver() {
@@ -97,10 +97,10 @@ class DeviceAdminUtils {
         }
 
         override fun onDisableRequested(context: Context, intent: Intent): CharSequence {
-            // UP-09 fix: NopoX returns an empty CharSequence (the system shows
+            // UP-09 fix: the reference returns an empty CharSequence (the system shows
             // its own default dialog). Returning a custom string here can
             // cause the dialog to be dismissed on some OEM ROMs (MIUI, EMUI).
-            // We match NopoX's behaviour.
+            // We match the reference's behaviour.
             return ""
         }
     }

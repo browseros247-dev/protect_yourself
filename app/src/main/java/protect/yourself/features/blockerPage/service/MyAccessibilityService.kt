@@ -89,7 +89,7 @@ class MyAccessibilityService : AccessibilityService() {
     // PB-03 fix (v1.0.55): last URL processed by handleUrlDetected, used to
     // avoid re-processing the SAME url on every accessibility event.
     //
-    // NopoX 1.0.53 reference (decompiled MyAccessibilityService.checkPornUrlSearch):
+    // Reference (decompiled MyAccessibilityService.checkPornUrlSearch):
     //   private static String pornPreviousUrl = "";
     //   ...
     //   if (!Intrinsics.areEqual(pornPreviousUrl, lowerCase)) { ... }
@@ -122,7 +122,7 @@ class MyAccessibilityService : AccessibilityService() {
     // AB-01 fix: Stop Me state is now a persisted end-time timestamp, not an
     // in-memory boolean. This survives process death (reboot, force-stop, OEM
     // killing the service). On every event we check
-    // `System.currentTimeMillis() < stopMeEndTime`. NopoX uses the same pattern
+    // `System.currentTimeMillis() < stopMeEndTime`. The reference uses the same pattern
     // (`private static long stopMeEndTime`).
     // When stopMeEndTime == 0L, no session is active.
     @Volatile
@@ -159,7 +159,7 @@ class MyAccessibilityService : AccessibilityService() {
     /**
      * BlockOverlayManager — WindowManager overlay for non-dismissible block screens.
      *
-     * NopoX uses a WindowManager overlay (TYPE_APPLICATION_OVERLAY) instead of
+     * The reference uses a WindowManager overlay (TYPE_APPLICATION_OVERLAY) instead of
      * an Activity because Activities can be dismissed via Home/Recents/Back
      * gestures, defeating uninstall prevention. The overlay is created lazily
      * on first use.
@@ -209,9 +209,9 @@ class MyAccessibilityService : AccessibilityService() {
         // ANR threshold on a vivo V2206 (crash_20260712_101552_0004), which
         // is why the v1.0.49 fix moved it off the main thread.
         //
-        // NopoX 1.0.53 reference (decompiled line 1511):
+        // Reference (decompiled line 1511):
         //   AccessibilityPersistUtils.selfHealSafe();
-        // NopoX calls it synchronously on the main thread. We use a background
+        // The reference calls it synchronously on the main thread. We use a background
         // coroutine to avoid the ANR — functionally equivalent, just async.
         selfHealScope.launch {
             try {
@@ -286,7 +286,7 @@ class MyAccessibilityService : AccessibilityService() {
      * Called by the system when the last client unbinds from this service.
      *
      * This is one of the earliest signals that Android may be about to kill
-     * or disable the service. NopoX calls `selfHealSafe` here for the same
+     * or disable the service. The reference calls `selfHealSafe` here for the same
      * reason — if WRITE_SECURE_SETTINGS is granted, we can re-arm ourselves
      * in the enabled list before the system finishes tearing us down.
      */
@@ -294,12 +294,12 @@ class MyAccessibilityService : AccessibilityService() {
         // LC-01/LC-03 fix (v1.0.56): launch on selfHealScope (NOT serviceScope)
         // so the self-heal survives a subsequent onDestroy().
         //
-        // NopoX 1.0.53 reference (decompiled line 144-146):
+        // Reference (decompiled line 144-146):
         //   public boolean onUnbind(Intent intent) {
         //       AccessibilityPersistUtils.selfHealSafe();
         //       return super.onUnbind(intent);
         //   }
-        // NopoX calls it synchronously. We use a background coroutine to avoid
+        // The reference calls it synchronously. We use a background coroutine to avoid
         // the main-thread ANR risk documented in crash_20260712_101552_0004.
         //
         // CRITICAL: this is the LAST reliable chance to re-arm the service
@@ -355,7 +355,7 @@ class MyAccessibilityService : AccessibilityService() {
 
         try {
             // IAB-02 fix: Block In-App Browsers must also fire on click/long-click
-            // events, not just window-state changes. NopoX 1.0.53 runs
+            // events, not just window-state changes. The reference runs
             // checkBlockBrowsers on eventType 1 (VIEW_CLICKED), 2
             // (VIEW_LONG_CLICKED), and 32 (WINDOW_STATE_CHANGED). When a user
             // taps a link inside an app that opens an in-app WebView, the
@@ -373,12 +373,12 @@ class MyAccessibilityService : AccessibilityService() {
             }
 
             // PU-02 fix: run prevent-uninstall check on ALL event types (not
-            // just WINDOW_STATE_CHANGED). NopoX 1.0.53 calls checkPreventUninstall
+            // just WINDOW_STATE_CHANGED). The reference calls checkPreventUninstall
             // for every event after the initial filtering. The previous rebuild
             // only called isAppInfoPage from handleWindowStateChange, which meant
             // if the user was already on the app info page and a content-change
             // event fired (e.g. scrolling, tapping Uninstall button), the check
-            // never ran. Now it runs for every event, matching NopoX.
+            // never ran. Now it runs for every event, matching the reference.
             if (isPreventUninstallOn &&
                 packageName != this.packageName &&
                 packageName != "com.android.systemui"
@@ -392,7 +392,7 @@ class MyAccessibilityService : AccessibilityService() {
             }
 
             // SET-03 fix: run settings-page-by-title check on ALL event types
-            // (not just WINDOW_STATE_CHANGED). NopoX 1.0.53 calls
+            // (not just WINDOW_STATE_CHANGED). The reference calls
             // checkSettingAppKeywordClickBlock for event types 1 (VIEW_CLICKED),
             // 8 (WINDOW_CONTENT_CHANGED), and 32 (WINDOW_STATE_CHANGED). The
             // previous rebuild only called isSettingsPage from
@@ -456,7 +456,7 @@ class MyAccessibilityService : AccessibilityService() {
         //    the blocking IPC calls to Settings.Secure — so self-heal NEVER
         //    actually ran during destroy. The entire block was dead code.
         //
-        // 2. NOPOX DIVERGENCE (LC-02): NopoX 1.0.53 (the mandatory reference)
+        // 2. DIVERGENCE (LC-02): the mandatory reference
         //    does NOT call selfHealSafe in onDestroy at all. Decompiled
         //    MyAccessibilityService.java line 1515-1529:
         //      public void onDestroy() {
@@ -464,7 +464,7 @@ class MyAccessibilityService : AccessibilityService() {
         //          try { unregisterReceiver(mAppSystemActionReceiverAllTimeWithData); }
         //          catch (Throwable th) { ... }
         //      }
-        //    NopoX relies on onUnbind (which fires BEFORE onDestroy) for the
+        //    the reference relies on onUnbind (which fires BEFORE onDestroy) for the
         //    final self-heal attempt. By the time onDestroy fires, the
         //    service is already being torn down — re-arming is pointless.
         //
@@ -560,7 +560,7 @@ class MyAccessibilityService : AccessibilityService() {
 
         // ===== Content-blocking checks =====
 
-        // Settings page title blocking (SET-01 fix: rewritten to match NopoX
+        // Settings page title blocking (SET-01 fix: rewritten to match the reference
         // ===== Settings page title blocking =====
         // SET-03 fix: now handled in onAccessibilityEvent for ALL event types
         // (VIEW_CLICKED, WINDOW_CONTENT_CHANGED, WINDOW_STATE_CHANGED).
@@ -617,7 +617,7 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         // Block unsupported browsers
-        // NopoX behavior: when this switch is ON, any browser NOT in the supported
+        // The reference behavior: when this switch is ON, any browser NOT in the supported
         // list AND NOT in the unsupported-browser whitelist gets blocked on launch.
         // A "browser" is defined as an app that handles http/https URLs (via intent filter)
         // OR matches known browser package signatures.
@@ -674,7 +674,7 @@ class MyAccessibilityService : AccessibilityService() {
         // (it just traverses accessibility nodes looking for a URL), and if
         // no URL is found, we fall through to the content-text check.
         //
-        // NopoX 1.0.53 does NOT gate URL scraping on browser detection at all
+        // The reference does NOT gate URL scraping on browser detection at all
         // — it always calls getUrlNode() + extractUrlFromEvent() for every
         // content-change event (decompiled onAccessibilityEvent line 6540+).
         // We now follow the same approach: always attempt URL extraction.
@@ -691,7 +691,7 @@ class MyAccessibilityService : AccessibilityService() {
         // we can't extract a URL.
         //
         // PB-02 fix (v1.0.55): this check is GATED by isPornBlockerOn.
-        // NopoX 1.0.53 gates this exact branch by `pornBlock` alone.
+        // The reference gates this exact branch by `pornBlock` alone.
         if (isPornBlockerOn &&
             packageName != this.packageName &&
             packageName != "com.android.systemui" &&
@@ -724,7 +724,7 @@ class MyAccessibilityService : AccessibilityService() {
         // each carrying the SAME url. Without this guard, the same url is
         // matched against 1189+ keywords on every event AND the block overlay
         // re-launches after the user dismisses it (next content-change event
-        // re-triggers the match). NopoX 1.0.53 uses the exact same pattern
+        // re-triggers the match). The reference uses the exact same pattern
         // (decompiled MyAccessibilityService.checkPornUrlSearch line 1291:
         // `if (!Intrinsics.areEqual(pornPreviousUrl, lowerCase)) { ... }`).
         //
@@ -750,7 +750,7 @@ class MyAccessibilityService : AccessibilityService() {
 
         // ============================================================
         // SS-03 fix (v1.0.54): SafeSearch runs FIRST, BEFORE whitelist
-        // and keyword-block checks — matching the NopoX 1.0.53 reference
+        // and keyword-block checks — matching the reference
         // APK's checkPornUrlSearch() order exactly.
         //
         // Previously, SafeSearch ran LAST. This meant that if the URL
@@ -760,7 +760,7 @@ class MyAccessibilityService : AccessibilityService() {
         // reports — the redirect never fired because the function
         // returned early on the whitelist/keyword check.
         //
-        // NopoX reference order (decompiled):
+        // Reference order (decompiled):
         //   1. SafeSearch redirect (if switch on AND url is search engine)
         //   2. ytSearchBlock / ytShortsBlock checks
         //   3. Whitelist check (overrides block)
@@ -778,7 +778,7 @@ class MyAccessibilityService : AccessibilityService() {
             if (safeUrl != null) {
                 Timber.i("SS-03: SafeSearch redirect triggered for pkg=$packageName url=$decoded")
                 enforceSafeSearch(packageName, decoded, safeUrl)
-                // Do NOT return here — NopoX continues to check whitelist
+                // Do NOT return here — the reference continues to check whitelist
                 // and block keywords on the SAME (original) URL. This is
                 // intentional: if the user's search query itself contains
                 // a blocked keyword, the block screen should still fire
@@ -797,9 +797,9 @@ class MyAccessibilityService : AccessibilityService() {
         // PB-01 note (v1.0.55): the whitelist check runs whether or not the
         // Porn Blocker is on, because SafeSearch also respects the whitelist
         // (a whitelisted URL should not be redirected, since the user
-        // explicitly approved it). This matches NopoX 1.0.53 behaviour:
+        // explicitly approved it). This matches the reference behaviour:
         // the whitelist check is INSIDE `if (pornBlock || blockAllWebsite)`
-        // in NopoX — but only because SafeSearch in NopoX does NOT continue
+        // in the reference — but only because SafeSearch in the reference does NOT continue
         // to the whitelist check (it returns after the redirect). In our
         // rebuild, SafeSearch does NOT return (intentionally, per SS-03),
         // so we must run the whitelist check here even when Porn Blocker
@@ -822,7 +822,7 @@ class MyAccessibilityService : AccessibilityService() {
         // switch toggle and is the primary root cause of "Porn Blocker
         // setting is not functioning correctly" reports.
         //
-        // NopoX 1.0.53 reference (decompiled checkPornUrlSearch line 1305):
+        // Reference (decompiled checkPornUrlSearch line 1305):
         //   if (pornBlock || blockAllWebsite) {
         //       ... whitelist check ...
         //       ... blockAllWebsite check ...
@@ -849,7 +849,7 @@ class MyAccessibilityService : AccessibilityService() {
             // (after the user dismisses the block screen) is checked fresh.
             // If we left it set to `decoded`, the same URL would be skipped
             // next time — but if the user navigates AWAY and comes BACK to
-            // the same URL, we WANT to re-block it. NopoX sets
+            // the same URL, we WANT to re-block it. The reference sets
             // `pornPreviousUrl = ""` after blocking (line 1343/1348).
             pornPreviousUrl = ""
             Timber.i("PB-01: block keyword match for pkg=$packageName url=$decoded keyword=$matchedKeyword (pornBlocker ON)")
@@ -862,7 +862,7 @@ class MyAccessibilityService : AccessibilityService() {
         }
 
         // PB-03: no match — track the URL so we don't re-match 1189 keywords
-        // against it on every content-change event. NopoX sets
+        // against it on every content-change event. The reference sets
         // `pornPreviousUrl = lowerCase` at the end of checkPornUrlSearch
         // (line 1354).
         pornPreviousUrl = decoded
@@ -871,11 +871,11 @@ class MyAccessibilityService : AccessibilityService() {
     // ===== SafeSearch enforcement =====
 
     /**
-     * NopoX-style SafeSearch enforcement.
+     * Reference-style SafeSearch enforcement.
      *
-     * **SS-01 fix (v1.0.54)**: Updated to match the NopoX 1.0.53 reference
+     * **SS-01 fix (v1.0.54)**: Updated to match the reference
      * APK's behaviour. The safe URL is now computed by [BlockerPageUtils.getSafeSearchUrl]
-     * which uses NopoX's substring host matching + parameter-append strategy
+     * which uses the reference's substring host matching + parameter-append strategy
      * (same host + `&safe=active` for Google, etc.) instead of redirecting
      * to different hosts (forcesafesearch.google.com).
      *
@@ -966,10 +966,10 @@ class MyAccessibilityService : AccessibilityService() {
         // The new URL loads in the same browser tab, replacing the unsafe
         // search page. The user sees the SafeSearch results directly.
         //
-        // NopoX's loadUrl() uses Intent.ACTION_VIEW with FLAG_ACTIVITY_NEW_TASK
+        // The reference's loadUrl() uses Intent.ACTION_VIEW with FLAG_ACTIVITY_NEW_TASK
         // and targets the same browser package. We follow the same pattern but
         // also add FLAG_ACTIVITY_CLEAR_TOP to ensure the safe URL replaces the
-        // unsafe one in the browser's back stack (NopoX doesn't do this, but
+        // unsafe one in the browser's back stack (the reference doesn't do this, but
         // it's a strict improvement — prevents the user from pressing Back to
         // return to the unsafe search results).
         try {
@@ -1036,13 +1036,13 @@ class MyAccessibilityService : AccessibilityService() {
             // Chrome versions (2024+) sometimes expose the URL via
             // contentDescription instead of text — especially when the user
             // is typing in the address bar or when the page is still loading.
-            // NopoX 1.0.53 only checked text, but Chrome has since changed.
+            // The reference only checked text, but Chrome has since changed.
             if (viewIds != null) {
                 for (viewId in viewIds) {
                     val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
                     if (nodes != null && nodes.isNotEmpty()) {
                         val node = nodes[0]
-                        // Check text first (NopoX behaviour)
+                        // Check text first (the reference behaviour)
                         val text = node.text?.toString()
                         if (!text.isNullOrBlank()) return text
                         // URL-01: fallback to contentDescription (Chrome 2024+)
@@ -1075,7 +1075,7 @@ class MyAccessibilityService : AccessibilityService() {
         // Same rationale as collectText — each getChild() is an IPC call.
         if (nodeCounter[0] >= MAX_URL_SEARCH_NODES) return null
         nodeCounter[0]++
-        // Check text (NopoX behaviour)
+        // Check text (the reference behaviour)
         val text = node.text?.toString() ?: ""
         if (text.isNotBlank() && (text.startsWith("http") || text.contains("://"))) {
             return text
@@ -1102,7 +1102,7 @@ class MyAccessibilityService : AccessibilityService() {
      * Detect and block in-app browsers (WebViews, Facebook browser, Outlook
      * browser) inside user-selected apps.
      *
-     * This method is the reference implementation ported from NopoX 1.0.53
+     * This method is the reference implementation ported from the reference
      * (`MyAccessibilityService.checkBlockBrowsers` →
      * `blockInAppBrowserApps` branch, lines 8544-8611 in the jadx output).
      *
@@ -1119,7 +1119,7 @@ class MyAccessibilityService : AccessibilityService() {
      *
      * ## Correct detection (three independent signals)
      *
-     * NopoX 1.0.53 uses three signals. ANY one of them triggers a block:
+     * The reference uses three signals. ANY one of them triggers a block:
      *
      *  1. **ClassName match** — concatenate `event.className`,
      *     `sourceNode.className`, and `rootNode.className` (comma-separated)
@@ -1327,7 +1327,7 @@ class MyAccessibilityService : AccessibilityService() {
     /**
      * Safe wrapper around [collectText] — catches SecurityException and other
      * Throwable that can be thrown when accessing recycled nodes or nodes from
-     * a different package (NopoX pattern). Returns silently on failure.
+     * a different package (the reference pattern). Returns silently on failure.
      *
      * UP-04 fix: needed because [isAppInfoPage] does node-tree traversal as a
      * fallback when event.text is empty.
@@ -1353,7 +1353,7 @@ class MyAccessibilityService : AccessibilityService() {
      * UP-03 fix: no longer dead code — now wired in [handleWindowStateChange]
      * BEFORE the SystemUI blanket-skip.
      *
-     * UP-04 fix: wrapped in try/catch (NopoX pattern).
+     * UP-04 fix: wrapped in try/catch (the reference pattern).
      */
     private fun isNotificationDrawer(className: String, packageName: String): Boolean {
         return try {
@@ -1381,7 +1381,7 @@ class MyAccessibilityService : AccessibilityService() {
      * UP-03 fix: no longer dead code — now wired in [handleWindowStateChange]
      * BEFORE the SystemUI blanket-skip.
      *
-     * UP-04 fix: wrapped in try/catch (NopoX pattern).
+     * UP-04 fix: wrapped in try/catch (the reference pattern).
      */
     private fun isRecentApps(className: String): Boolean {
         return try {
@@ -1403,7 +1403,7 @@ class MyAccessibilityService : AccessibilityService() {
 
     /**
      * Settings page title blocking — rewritten (SET-01 fix) to match the
-     * NopoX 1.0.53 reference implementation.
+     * Reference implementation.
      *
      * ## Root cause of the over-blocking bug
      *
@@ -1414,7 +1414,7 @@ class MyAccessibilityService : AccessibilityService() {
      * blocked — including the main device Settings app. This effectively
      * locked the user out of their own device settings.
      *
-     * ## Correct behavior (NopoX 1.0.53 reference)
+     * ## Correct behavior (Reference)
      *
      * The reference APK's `checkSettingAppKeywordClickBlock` method:
      *   1. Only runs on packages that are EITHER known settings packages
@@ -1452,12 +1452,12 @@ class MyAccessibilityService : AccessibilityService() {
         if (!isSettingsPkg && !isUserSelected) return false
 
         // SET-03 fix: extract the page title from BOTH rootNode AND sourceNode
-        // (NopoX uses both). Also combine event.text with the title text and
-        // remove spaces before matching — NopoX does exactly this.
+        // (the reference uses both). Also combine event.text with the title text and
+        // remove spaces before matching — the reference does exactly this.
         val titleText = extractSettingsPageTitle(event)
         if (titleText.isBlank()) return false
 
-        // SET-03 fix: NopoX concatenates event.text (lowercased, spaces
+        // SET-03 fix: the reference concatenates event.text (lowercased, spaces
         // removed) with the title text (lowercased, spaces removed), then
         // runs isDetectWord on the combined string. This catches cases where
         // the keyword appears in the event text but not in the toolbar title.
@@ -1465,12 +1465,12 @@ class MyAccessibilityService : AccessibilityService() {
             event.text?.joinToString(" ") { it?.toString() ?: "" } ?: ""
         } catch (_: Throwable) { "" }
         val combinedText = "$eventTextStr,$titleText"
-        // NopoX: remove spaces and lowercase before matching
+        // Reference: remove spaces and lowercase before matching
         val normalizedText = combinedText
             .lowercase(Locale.ROOT)
             .replace(" ", "")
 
-        // Use isDetectWord for word-boundary matching (NopoX pattern).
+        // Use isDetectWord for word-boundary matching (the reference pattern).
         val utils = BlockerPageUtils.getInstance()
         val (found, matchedKeyword) = utils.isDetectWord(normalizedText, cachedSettingTitles)
         if (found) {
@@ -1491,12 +1491,12 @@ class MyAccessibilityService : AccessibilityService() {
      * Extract the actual page title text from a Settings-app window by
      * looking up known toolbar view IDs on BOTH the rootNode AND sourceNode.
      *
-     * SET-03 fix: NopoX 1.0.53 looks up view IDs on both p2 (rootNode) and
+     * SET-03 fix: the reference looks up view IDs on both p2 (rootNode) and
      * p3 (sourceNode) — the previous rebuild only used event.source. This
      * caused the title extraction to fail on some OEMs where the toolbar
      * views are only accessible via rootNode, not sourceNode.
      *
-     * NopoX looks up:
+     * The reference looks up:
      *   - `com.android.settings:id/collapsing_appbar_extended_title` on rootNode
      *   - `com.android.settings:id/collapsing_toolbar` on rootNode
      *   - `android:id/alertTitle` on sourceNode
@@ -1513,7 +1513,7 @@ class MyAccessibilityService : AccessibilityService() {
             rootInActiveWindow
         } catch (_: Throwable) { null }
 
-        // NopoX: look up collapsing_appbar_extended_title and collapsing_toolbar
+        // Reference: look up collapsing_appbar_extended_title and collapsing_toolbar
         // on rootNode, and alertTitle on sourceNode.
         val viewIdsOnRoot = listOf(
             "com.android.settings:id/collapsing_appbar_extended_title",
@@ -1606,8 +1606,8 @@ class MyAccessibilityService : AccessibilityService() {
      * Detect if the user is on the app info page for OUR package.
      * This is the page where the Uninstall button lives.
      *
-     * PU-01 fix (scoped to our app only): rewritten to match the NopoX 1.0.53
-     * reference implementation. The previous implementation blocked ANY app's
+     * PU-01 fix (scoped to our app only): rewritten to match the reference
+     * implementation. The previous implementation blocked ANY app's
      * app-info / device-admin / accessibility page because it matched on
      * class-name patterns ("appinfo", "appdetails") and device-admin text
      * patterns WITHOUT requiring our app name to be present in the page text.
@@ -1622,7 +1622,7 @@ class MyAccessibilityService : AccessibilityService() {
      *   3. Force-stop text present + className contains "appinfo" → block
      *      (any app's info page, since every info page has a Force stop button)
      *
-     * ## Correct behavior (NopoX 1.0.53 reference)
+     * ## Correct behavior (Reference)
      *
      * The reference's `checkPreventUninstall` method:
      *   - Computes `appNameInText = eventText.contains(appName)` FIRST.
@@ -1639,7 +1639,7 @@ class MyAccessibilityService : AccessibilityService() {
      * This method now follows that pattern. Every check requires our app
      * name (or our accessibility description) to be present in the page text.
      *
-     * UP-04/UP-05/UP-07: retained try/catch around every branch (NopoX
+     * UP-04/UP-05/UP-07: retained try/catch around every branch (the reference
      * pattern — safe fallback is to NOT block, because a false positive on
      * a legitimate Settings page is worse than a false negative).
      */
@@ -1664,13 +1664,13 @@ class MyAccessibilityService : AccessibilityService() {
         // "App info" — NOT "Protect Yourself". This caused the prevent-uninstall
         // check to NEVER fire, so the user could uninstall freely.
         //
-        // The NopoX 1.0.53 reference uses TWO sources for app-name detection:
+        // The reference uses TWO sources for app-name detection:
         //   1. event.text.contains(appName) — checks the event text payload
         //   2. accessibilityNodeInfoByText(rootNode, appName) — searches the
         //      ENTIRE node tree (all text on the page) for the app name
         //
         // We now use BOTH: if EITHER source contains the app name, we consider
-        // the page to be about our app. This matches the NopoX reference.
+        // the page to be about our app. This matches the reference.
         val appName = try {
             getString(protect.yourself.R.string.app_name).lowercase(Locale.ROOT)
         } catch (_: Throwable) { "" }
@@ -1678,7 +1678,7 @@ class MyAccessibilityService : AccessibilityService() {
 
         // PU-02 fix: also search the node tree for the app name. This is the
         // KEY fix — the node tree contains ALL text on the page, including the
-        // app name in the title bar. NopoX uses accessibilityNodeInfoByText
+        // app name in the title bar. The reference uses accessibilityNodeInfoByText
         // for this (decompiled line 5849).
         val appNameInNodeTree = if (appName.isNotBlank() && !appNameInText) {
             try {
@@ -1690,7 +1690,7 @@ class MyAccessibilityService : AccessibilityService() {
         }
         val appIsOnPage = appNameInText || appNameInNodeTree
 
-        // PU-02 fix: also check for the package uninstaller activity. NopoX
+        // PU-02 fix: also check for the package uninstaller activity. The reference
         // checks if className == "com.android.packageinstaller.UninstallerActivity"
         // AND the app name is in the node tree (decompiled line 5963-5988).
         // This catches the "Do you want to uninstall this app?" confirmation
@@ -1715,7 +1715,7 @@ class MyAccessibilityService : AccessibilityService() {
                 lowerClass.contains("appinfo") ||
                 lowerClass.contains("appdetails") ||
                 lowerClass.contains("appdetail") ||
-                lowerClass.contains("subsettings")  // NopoX checks SubSettings
+                lowerClass.contains("subsettings")  // The reference checks SubSettings
             val hasUninstallKeyword = lower.contains("uninstall") ||
                 lower.contains("disable") ||
                 lower.contains("force stop") ||
@@ -1781,7 +1781,7 @@ class MyAccessibilityService : AccessibilityService() {
         } catch (_: Throwable) {}
 
         // ===== Check 5: Samsung multi-select uninstall =====
-        // NopoX checks if the source node's viewIdResourceName is
+        // The reference checks if the source node's viewIdResourceName is
         // "com.sec.android.app.launcher:id/multi_select_uninstall" (decompiled
         // line 5937-5955). This catches the Samsung launcher's batch-uninstall
         // mode.
@@ -1821,7 +1821,7 @@ class MyAccessibilityService : AccessibilityService() {
      * Detect power menu / ultra power saving mode.
      * Uses localized strings from BlockerPageUtils.HUAWEI_ULTRA_POWER_SAVING_TEXTS.
      *
-     * UP-04 fix: wrapped in try/catch (NopoX pattern).
+     * UP-04 fix: wrapped in try/catch (the reference pattern).
      */
     private fun isPowerMenu(className: String, packageName: String, text: String): Boolean {
         return try {
@@ -2040,7 +2040,7 @@ class MyAccessibilityService : AccessibilityService() {
      * 1. **Try the WindowManager overlay first** via [BlockOverlayManager].
      *    This is non-dismissible (cannot be dismissed by Home/Recents/Back
      *    gestures) and runs a 500ms HOME×5 + BACK×1 kill timer to actually
-     *    kill the offending activity underneath. This is what NopoX does.
+     *    kill the offending activity underneath. This is what the reference does.
      *
      * 2. **If the overlay cannot be shown** (SYSTEM_ALERT_WINDOW not granted,
      *    WindowManager unavailable, or addView throws), fall back to the
@@ -2052,7 +2052,7 @@ class MyAccessibilityService : AccessibilityService() {
      *
      * ## Throttling (UP-10 fix)
      *
-     * NopoX uses a single-flight guard (`if (isPageShow) return`) — only
+     * The reference uses a single-flight guard (`if (isPageShow) return`) — only
      * one block screen visible at a time. There is NO per-package throttle
      * because that creates a bypass window (the user could quickly switch
      * between two blocked apps to bypass a per-package throttle).

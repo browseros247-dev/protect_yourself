@@ -404,7 +404,7 @@ private fun LockTypeSelector(
     // — toggling one would not visibly update the other until the page was
     // reloaded, and the two UIs could drift out of sync.
     //
-    // The reference APK (NopoX_1.0.53) keeps these as standalone toggle cards
+    // The reference APK keeps these as standalone toggle cards
     // on the main settings page, with error toasts if the user tries to enable
     // them without an app lock set. We now do the same: the toggles live ONLY
     // on the Blocker settings page, and this page is used solely for picking

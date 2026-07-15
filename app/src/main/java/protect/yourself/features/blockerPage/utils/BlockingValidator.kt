@@ -12,7 +12,7 @@ package protect.yourself.features.blockerPage.utils
  *  - Kept in sync between the UI pre-check and the ViewModel's authoritative
  *    check (single source of truth)
  *
- * Rules (mirrors NopoX v1.0.53 behaviour):
+ * Rules (mirror the reference v1.0.53 behaviour):
  *  - Min 2 characters (after trim)
  *  - Max 100 characters (prevents abuse / performance issues)
  *  - Not blank (after trim)

@@ -1,9 +1,9 @@
 # Accessibility Auto-Disable Fix — v1.0.38
 
 **Date**: 2026-07-11
-**Commit**: `c5eb879` on branch `analysis-nopox-20260711`
+**Commit**: `c5eb879` on branch `analysis-reference-20260711`
 **APK**: `apk/protect.yourself-v1.0.38-release-accessibility-fix.apk` (16 MB)
-**Reference**: NopoX v1.0.53 (decompiled with jadx 1.5.1)
+**Reference**: v1.0.53 (decompiled with jadx 1.5.1)
 
 ## Problem
 
@@ -11,9 +11,9 @@ The accessibility service was being auto-disabled by Android OEMs every 12–48 
 
 ## Root Cause
 
-The previous `AccessibilityPersistUtils` was a **stub** that just logged. NopoX has a real implementation that writes directly to `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES` + sets `ACCESSIBILITY_ENABLED=1`, but only if `WRITE_SECURE_SETTINGS` is granted via ADB.
+The previous `AccessibilityPersistUtils` was a **stub** that just logged. The reference has a real implementation that writes directly to `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES` + sets `ACCESSIBILITY_ENABLED=1`, but only if `WRITE_SECURE_SETTINGS` is granted via ADB.
 
-## Fix (ported from NopoX)
+## Fix (ported from the reference)
 
 ### New files
 - `AccessibilityPersistUtils.kt` — real self-heal implementation (replaces stub)
@@ -24,7 +24,7 @@ The previous `AccessibilityPersistUtils` was a **stub** that just logged. NopoX 
 - `AccessibilityGuard.kt` — adds `ContentObserver` for instant re-arm (vs 30s polling)
 - `ProtectedAppsActivity.kt` — full Compose UI (was a stub)
 
-### Integration points (matching NopoX pattern)
+### Integration points (matching the reference pattern)
 `selfHealSafe(context)` is now called from:
 - `ProtectYourselfApp.onCreate()`
 - `MainActivity.onResume()`

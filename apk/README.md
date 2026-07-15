@@ -58,12 +58,12 @@ This directory contains the **latest** pre-built, signed APK of **Protect Yourse
 - Shake animation + haptic feedback on incorrect PIN entry.
 - Timber logging at every state transition for diagnostics.
 - All user-facing strings moved to `strings.xml` for localization (29 new string resources).
-- "Forgot PIN?" shown for PIN locks, "Forgot password?" otherwise (matches NopoX 1.0.53 reference).
+- "Forgot PIN?" shown for PIN locks, "Forgot password?" otherwise (matches the reference behavior).
 
 #### Duplicate Settings Removed (AppLockSetupPage.kt, BlockerPageViewModel.kt)
 - Removed duplicate Touch ID + Disable Forgot Password toggles from `AppLockSetupPage`'s `LockTypeSelector` (replaced with a hint card pointing users to the main settings page).
 - Made `TOUCH_ID_SWITCH` and `DISABLE_FORGOT_PASSWORD_SWITCH` cards on the main settings page **directly toggleable** (previously they just opened `AppLockSetup`).
-- Error toasts when toggling ON without an app lock set (matches NopoX 1.0.53 strings).
+- Error toasts when toggling ON without an app lock set (matches the reference strings).
 - Updated card labels to match reference APK: "Set app lock", "Enable touch ID with app lock", "Disable the forgot password option".
 
 ### From `main` (v1.0.49-v1.0.54 features)
@@ -85,7 +85,7 @@ This directory contains the **latest** pre-built, signed APK of **Protect Yourse
 - Repaired detection logic that was incorrectly blocking supported browsers.
 
 #### SafeSearch Enforcement Rewrite (SS-01/02/03/04)
-- Rewrote SafeSearch to match NopoX 1.0.53 reference behavior.
+- Rewrote SafeSearch to match the reference behavior.
 
 #### Whitelist Unsupported Browser Fix
 - Picker now shows only unsupported browsers (was showing all browsers).
@@ -96,7 +96,7 @@ This directory contains the **latest** pre-built, signed APK of **Protect Yourse
 
 ## Reference APK
 
-The reference implementation is `NopoX_1.0.53.apk` (in the repo root). This build's lock screen + settings labels mirror that reference's behavior.
+This build's lock screen + settings labels mirror the reference app's behavior.
 
 ## Removed APKs
 

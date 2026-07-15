@@ -157,7 +157,7 @@ class BlockerPageViewModel(
             // reported as "duplicate cards appearing when App Lock is not
             // set up."
             //
-            // NopoX 1.0.53 behavior: these toggles only appear after the user
+            // Reference behavior: these toggles only appear after the user
             // sets up an app lock. We replicate this by filtering them out
             // when SET_APP_LOCK_SWITCH is false.
             val appLockEnabled = itemsWithDependencies
@@ -492,7 +492,7 @@ class BlockerPageViewModel(
             // DEDUP FIX (v1.0.54): Previously these switches were also rendered
             // inside AppLockSetupPage — meaning two UIs could write to the same
             // switch and drift out of sync. The toggles now live ONLY here on
-            // the main settings page (mirrors NopoX 1.0.53 reference behavior).
+            // the main settings page (mirrors reference behavior).
             //
             // Behavior:
             //   - If turning ON and app lock is NOT set → show error toast,
@@ -1199,7 +1199,7 @@ class BlockerPageViewModel(
                 // Other
                 SettingPageItemIdentifiers.REQUEST_HISTORY -> BlockerPageNavigation.OpenRequestHistory
                 SettingPageItemIdentifiers.SUGGEST_PROTECTIVE_MODE -> BlockerPageNavigation.OpenUrl("mailto:support@protectyourself.app?subject=Suggest%20Protective%20Mode")
-                SettingPageItemIdentifiers.KEEP_NOPOX_LIVE -> BlockerPageNavigation.OpenFaq
+                SettingPageItemIdentifiers.KEEP_APP_LIVE -> BlockerPageNavigation.OpenFaq
 
                 else -> {
                     Timber.w("Unhandled action: ${item.identifier}")
@@ -1282,7 +1282,7 @@ class BlockerPageViewModel(
         ))
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_FAQ, "Keep Protect Yourself Live", isSection = true))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.KEEP_NOPOX_LIVE, "How to keep app running", info = "Battery + performance tips", actionLabel = "View"))
+        add(SettingPageItemModel(SettingPageItemIdentifiers.KEEP_APP_LIVE, "How to keep app running", info = "Battery + performance tips", actionLabel = "View"))
     }
 
     // ===== VPN Management Page =====
@@ -1501,7 +1501,7 @@ class BlockerPageViewModel(
         }
     }
 
-    // ===== Custom DNS preset add / delete (NopoX parity gap fix) =====
+    // ===== Custom DNS preset add / delete (reference parity gap fix) =====
 
     /**
      * Adds a user-defined custom DNS preset to the vpn_custom_dns table.

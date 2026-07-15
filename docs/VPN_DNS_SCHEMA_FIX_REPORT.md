@@ -26,10 +26,10 @@ while compiling: INSERT OR IGNORE INTO vpn_custom_dns
 (key, display_name, first_dns, second_dns, is_selected) VALUES (?, ?, ?, ?, ?)
 ```
 
-### NopoX 1.0.53 Reference (Mandatory)
+### v1.0.53 Reference (Mandatory)
 
-Decompiled `VpnCustomDnsDao_Impl.java` shows NopoX 1.0.53 uses **snake_case**
-column names: `first_dns`, `second_dns`, `is_selected`. This is because NopoX
+Decompiled `VpnCustomDnsDao_Impl.java` shows the reference uses **snake_case**
+column names: `first_dns`, `second_dns`, `is_selected`. This is because it
 was built with an older Room version that auto-converts camelCase fields to
 snake_case columns.
 

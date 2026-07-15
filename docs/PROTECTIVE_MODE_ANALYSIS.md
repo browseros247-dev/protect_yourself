@@ -2,8 +2,8 @@
 
 > **Branch**: `protective-mode-fixes` (off `main` at commit `3154d6d`)
 > **Analysis date**: 2026-07-11
-> **Scope**: Every Protective Mode setting — Time Delay, Real Friend, Daily Report, Suggest, Request History, Stop Me, Streak, App Lock, Long Sentence — evaluated individually against the decompiled NopoX v1.0.53 reference.
-> **Methodology**: Static source review + JADX decompilation of NopoX v1.0.53 (21,067 Java files) + line-by-line comparison of TimeDelayTriggerCheckWorker, StreakPageViewModel, AccountabilityPartnerTypeIdentifiers, and the BlockerPageViewModel toggleSwitch logic.
+> **Scope**: Every Protective Mode setting — Time Delay, Real Friend, Daily Report, Suggest, Request History, Stop Me, Streak, App Lock, Long Sentence — evaluated individually against the decompiled reference.
+> **Methodology**: Static source review + JADX decompilation of the reference (21,067 Java files) + line-by-line comparison of TimeDelayTriggerCheckWorker, StreakPageViewModel, AccountabilityPartnerTypeIdentifiers, and the BlockerPageViewModel toggleSwitch logic.
 
 ---
 
@@ -11,7 +11,7 @@
 
 The Protective Mode subsystem manages 9 features: Time Delay, Real Friend, Daily Report, Suggest, Request History, Stop Me, Streak, App Lock, and Long Sentence (always-on, no UI). The features are wired into the settings UI and the DB schema is correct, but several features are **incomplete or non-functional**:
 
-- **PM-01 (Critical)**: Time Delay is a boolean flag with no actual delay enforcement. When enabled, the user should have to wait N seconds before a switch toggle takes effect. Currently, enabling Time Delay does nothing — all switches toggle instantly regardless. NopoX has a dedicated `TimeDelayTriggerCheckWorker` that enforces the delay.
+- **PM-01 (Critical)**: Time Delay is a boolean flag with no actual delay enforcement. When enabled, the user should have to wait N seconds before a switch toggle takes effect. Currently, enabling Time Delay does nothing — all switches toggle instantly regardless. Reference has a dedicated `TimeDelayTriggerCheckWorker` that enforces the delay.
 - **PM-02 (High)**: Real Friend stores the partner's email but never sends it. There's no backend to email the partner or track approval. The user enters an email and nothing happens.
 - **PM-03 (High)**: `toggleSwitch` mutual-exclusion logic sets other protective modes to `false` in the UI state BEFORE calling `loadSettingItems()`, causing a visual flicker where all three modes briefly appear OFF.
 - **PM-04 (Medium)**: `AppDataCheckWorker` has 3 unimplemented TODOs: streak date rollover, Stop Me schedule check, and accessibility re-apply. Only DB integrity checks are done.
@@ -34,9 +34,9 @@ When Time Delay is enabled as the protective mode, the user must wait N seconds 
 
 **Nothing.** The `TIME_DELAY_DURATION_SET` switch is toggled on/off, `ACCOUNTABILITY_PARTNER_TYPE` is set to `2L` (TIME_DELAY), and `TIME_DELAY_CUSTOM_DURATION` stores the duration. But no code reads these values to enforce a delay. The `toggleSwitch` method toggles switches instantly regardless of whether Time Delay is active.
 
-### 1.3 NopoX comparison
+### 1.3 Reference comparison
 
-NopoX has a dedicated `TimeDelayTriggerCheckWorker` (51 lines, decompiled) that:
+Reference has a dedicated `TimeDelayTriggerCheckWorker` (51 lines, decompiled) that:
 1. Receives a `requestId` as input data.
 2. Launches a coroutine that (presumably) waits for the delay period, then checks if the request is still pending and approves it.
 
@@ -44,7 +44,7 @@ The rebuild has no equivalent. This is the biggest functional gap in the Protect
 
 ### 1.4 Fix (PM-01)
 
-Implement Time Delay enforcement in the UI: when the user toggles a switch while Time Delay is active, show a countdown dialog ("Please wait N seconds...") that blocks the toggle until the countdown completes. This is simpler than NopoX's WorkManager approach (which is designed for background delays) and more appropriate for an in-app toggle.
+Implement Time Delay enforcement in the UI: when the user toggles a switch while Time Delay is active, show a countdown dialog ("Please wait N seconds...") that blocks the toggle until the countdown completes. This is simpler than the reference's WorkManager approach (which is designed for background delays) and more appropriate for an in-app toggle.
 
 ---
 
@@ -58,9 +58,9 @@ When Real Friend is enabled, the user must get their accountability partner's ap
 
 The user enters the partner's email (stored in `REAL_FRIEND_EMAIL`), `ACCOUNTABILITY_PARTNER_TYPE` is set to `3L`, and `REAL_FRIEND_VISIBLE` is set to `true`. But the email is never sent — there's no email-sending code, no backend, no approval tracking. The `REAL_FRIEND_EMAIL` value is stored in the DB and never read again.
 
-### 2.3 NopoX comparison
+### 2.3 Reference comparison
 
-NopoX has Firebase Firestore backend for accountability partner requests. The rebuild removed Firebase entirely. This is a known, accepted gap — implementing a full backend is out of scope.
+Reference has Firebase Firestore backend for accountability partner requests. The rebuild removed Firebase entirely. This is a known, accepted gap — implementing a full backend is out of scope.
 
 ### 2.4 Fix (PM-02)
 

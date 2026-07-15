@@ -2,19 +2,19 @@
 
 > **Branch**: `Future-Brand` (commit `52a87d7`, v1.0.35-debug)
 > **Analysis date**: 2026-07-11
-> **Scope**: Every keyword-based blocking setting, evaluated individually against the NopoX reference implementation, with focus on (a) matching correctness, (b) performance, (c) UI/UX, (d) bugs / inconsistencies / improvement opportunities.
-> **Methodology**: Static source review of the Future-Brand keyword-blocking code path + JADX decompilation of `protect.yourself-v1.0.33-release.apk` + cross-reference with `docs/NOPOX_ANALYSIS.md` and `docs/COMPARISON_REPORT.md` (both written from a full JADX decompilation of `NopoX_1.0.53.apk`).
-> **Reference**: NopoX v1.0.53 (`com.planproductive.nopoz`).
+> **Scope**: Every keyword-based blocking setting, evaluated individually against the reference implementation, with focus on (a) matching correctness, (b) performance, (c) UI/UX, (d) bugs / inconsistencies / improvement opportunities.
+> **Methodology**: Static source review of the Future-Brand keyword-blocking code path + JADX decompilation of `protect.yourself-v1.0.33-release.apk` + cross-reference with `docs/COMPARISON_REPORT.md` (written from a full JADX decompilation of the reference APK).
+> **Reference**: v1.0.53 (reference package).
 
 ---
 
 ## Executive Summary
 
-The Future-Brand branch ships a working keyword-blocking subsystem with four distinct keyword lists, a real Keyword Manager UI (closing the biggest NopoX-parity gap from v1.0.33), and URL extraction that covers 6 known browsers + a fallback node-tree search. The core matching logic (`isDetectWordInUrl` for URLs, `isDetectWord` for text, `isAnyTitleBlocked` for settings titles) is correct and fixes the critical NopoX bug where URLs were stripped before matching (so `pornhub.com` would never match the keyword `porn`).
+The Future-Brand branch ships a working keyword-blocking subsystem with four distinct keyword lists, a real Keyword Manager UI (closing the biggest reference-parity gap from v1.0.33), and URL extraction that covers 6 known browsers + a fallback node-tree search. The core matching logic (`isDetectWordInUrl` for URLs, `isDetectWord` for text, `isAnyTitleBlocked` for settings titles) is correct and fixes the critical reference bug where URLs were stripped before matching (so `pornhub.com` would never match the keyword `porn`).
 
-However, a setting-by-setting deep review against NopoX and against accessibility-service best practice reveals **23 issues** of varying severity. The most important are:
+However, a setting-by-setting deep review against the reference and against accessibility-service best practice reveals **23 issues** of varying severity. The most important are:
 
-- **KB-01 (Critical)** — `extractTextFromEvent` / `collectText` are defined but **never called**. Content-text keyword matching (`isDetectWord`) is not wired into the live event pipeline. Only URL matching and title matching are active. This means the "Porn blocker" switch blocks URLs but does NOT block pornographic text that appears in app content (e.g. a search-results page that says "porn" in the body but not in the URL). NopoX has the same limitation, but the dead code suggests it was intended to work.
+- **KB-01 (Critical)** — `extractTextFromEvent` / `collectText` are defined but **never called**. Content-text keyword matching (`isDetectWord`) is not wired into the live event pipeline. Only URL matching and title matching are active. This means the "Porn blocker" switch blocks URLs but does NOT block pornographic text that appears in app content (e.g. a search-results page that says "porn" in the body but not in the URL). The reference has the same limitation, but the dead code suggests it was intended to work.
 - **KB-02 (Critical)** — The keyword cache (`cachedBlockKeywords`, `cachedWhitelistKeywords`, `cachedSettingTitles`) is a plain `List<String>`. Matching is `O(N)` linear scan per keyword per event. With the default 532 English block keywords, every URL detection triggers up to 532 `.contains()` calls. On a slow device with rapid content changes, this can cause accessibility-event processing to back up. Should use a HashSet or Aho-Corasick.
 - **KB-03 (High)** — `refreshBlockingConfig()` is called from the ViewModel after every add/delete, but it relaunches a coroutine that reads **all** keyword lists + all app lists from the DB every time. Adding one keyword re-reads 1189+ rows. Should use targeted refresh (only the list that changed).
 - **KB-04 (High)** — `isDetectWordInUrl` does case-insensitive `.contains()` matching, but does NOT normalize the URL first. `https://PornHub.com` matches but `https://p⊕rnhub.com` (homograph attack using Unicode lookalikes) does not. Also, IDN domains (`https://xn--...`) are not decoded.
@@ -23,8 +23,8 @@ However, a setting-by-setting deep review against NopoX and against accessibilit
 - **KB-07 (Medium)** — `extractUrlFromEvent` calls `rootInActiveWindow` which can return a stale node tree if the event is delayed. No check for `event.eventTime` staleness. Can match a URL from a previous page.
 - **KB-08 (Medium)** — The `BROWSER_URL_VIEW_IDS` map only has 6 browsers. The `DefaultSupportedBrowsers` list has 11. The 5 missing browsers (Vivaldi, DuckDuckGo, Mi Browser, Fennec, Bromite) fall through to the fallback `findUrlInNode` search, which is less reliable. Should add view IDs for all 11.
 - **KB-09 (Medium)** — `isAnyTitleBlocked` matches against the event `text` AND the `className`. Matching against className is fragile — class names are implementation details and change between app versions. A keyword like "battery" will never match a class name, but a keyword like "settings" will match almost every settings-related class name, causing false positives.
-- **KB-10 (Medium)** — The Keyword Manager "Add" flow does not validate the keyword (no min length, no max length, no duplicate check). A user can add an empty string (well, `isNotBlank` catches that), a 10000-char string, or a duplicate of an existing keyword. NopoX enforces a 2-character minimum.
-- **KB-11 (Medium)** — The Keyword Manager does not show a confirmation when deleting a keyword. A tap on the delete icon instantly removes it. NopoX uses long-press to delete (less accidental).
+- **KB-10 (Medium)** — The Keyword Manager "Add" flow does not validate the keyword (no min length, no max length, no duplicate check). A user can add an empty string (well, `isNotBlank` catches that), a 10000-char string, or a duplicate of an existing keyword. The reference enforces a 2-character minimum.
+- **KB-11 (Medium)** — The Keyword Manager does not show a confirmation when deleting a keyword. A tap on the delete icon instantly removes it. The reference uses long-press to delete (less accidental).
 - **KB-12 (Medium)** — `insertPresetKeywords()` uses `upsertAll` (INSERT OR REPLACE). If a user has deleted a preset keyword, re-seeding on app update will re-add it. Should use `INSERT OR IGNORE` or check a "has been seeded" flag.
 - **KB-13 (Medium)** — The `preset_block_keywords.json` is 15 KB and parsed on first launch via Gson. If the JSON is malformed, `loadJsonMap` returns `emptyMap()` and the user gets zero block keywords silently. Should log + show a user-visible error.
 - **KB-14 (Low/Medium)** — The Keyword Manager search is case-insensitive but does not normalize Unicode. Searching for "porn" will not find "p⊕rn" (homograph).
@@ -38,7 +38,7 @@ However, a setting-by-setting deep review against NopoX and against accessibilit
 - **KB-22 (Low)** — The `browserCache` is a `mutableMapOf` (not thread-safe). `onAccessibilityEvent` can fire on the main thread while `refreshBlockingConfig` runs on `Dispatchers.Default`. Concurrent access to `browserCache` can cause a `ConcurrentModificationException`.
 - **KB-23 (Low)** — The `lastSafeSearchUrl` throttle compares the full URL string. If the URL has a changing query parameter (e.g. `?t=12345`), the throttle never triggers, causing redirect loops.
 
-The detailed analysis below walks through every keyword setting one by one, explains what it does, how it compares to NopoX, and lists the specific issues that apply to it.
+The detailed analysis below walks through every keyword setting one by one, explains what it does, how it compares to the reference, and lists the specific issues that apply to it.
 
 ---
 
@@ -88,7 +88,7 @@ fun isDetectWordInUrl(url: String, words: List<String>): Pair<Boolean, String> {
 
 **What it does**: Case-insensitive substring match of each keyword against the URL. Returns the matched keyword as the second pair element (for context display).
 
-**NopoX comparison**: Per `docs/COMPARISON_REPORT.md` line 195: NopoX's `isDetectWord()` strips URLs before matching (bug: keywords never match URLs). The rebuild's `isDetectWordInUrl()` does NOT strip URLs — this is the critical bug fix. ✅ Rebuild is stronger.
+**Reference comparison**: Per `docs/COMPARISON_REPORT.md` line 195: the reference's `isDetectWord()` strips URLs before matching (bug: keywords never match URLs). The rebuild's `isDetectWordInUrl()` does NOT strip URLs — this is the critical bug fix. ✅ Rebuild is stronger.
 
 **Issues**:
 - **KB-02**: O(N) linear scan. With 532 English keywords, every URL detection does up to 532 `.contains()` calls.
@@ -121,7 +121,7 @@ fun isDetectWord(detectText: String, words: List<String>): Pair<Boolean, String>
 
 **What it does**: Strips URLs from the text (so keywords don't match URL substrings), then does case-insensitive substring match. Returns a 20-char context window around the match.
 
-**NopoX comparison**: This is the original NopoX matching function. The rebuild keeps it for text matching but added `isDetectWordInUrl` for URL matching. ✅ Correct split.
+**Reference comparison**: This is the original reference matching function. The rebuild keeps it for text matching but added `isDetectWordInUrl` for URL matching. ✅ Correct split.
 
 **Issues**:
 - **KB-01 (Critical)**: `isDetectWord` is **never called** from the live event pipeline. `handleContentChange` only calls `handleUrlDetected` (which uses `isDetectWordInUrl`). `extractTextFromEvent` / `collectText` are defined but unused. So content-text matching is dead code.
@@ -141,7 +141,7 @@ fun isSafeUrl(url: String, whitelistKeywords: List<String>): Boolean {
 
 **What it does**: Case-insensitive substring match of each whitelist keyword against the decoded URL. If any matches, the URL is safe (overrides block).
 
-**NopoX comparison**: Same behaviour. ✅ Equivalent.
+**Reference comparison**: Same behaviour. ✅ Equivalent.
 
 **Issues**:
 - **KB-02**: O(N) linear scan.
@@ -176,7 +176,7 @@ private fun isAnyTitleBlocked(packageName: String, className: String, text: Stri
 }
 ```
 
-**NopoX comparison**: Per `docs/NOPOX_ANALYSIS.md` section 1.2.3, NopoX's `isSettingsPage` is identical. `isAnyTitleBlocked` is a rebuild addition (NopoX only checks settings packages). ✅ Rebuild is stronger (checks any app).
+**Reference comparison**: The reference's `isSettingsPage` is identical. `isAnyTitleBlocked` is a rebuild addition (the reference only checks settings packages). ✅ Rebuild is stronger (checks any app).
 
 **Issues**:
 - **KB-09**: `isAnyTitleBlocked` matches against `className`. Class names are implementation details — a keyword like "settings" matches almost every settings-related class name, causing false positives.
@@ -198,7 +198,7 @@ private fun isPackageOrIntentBlocked(packageName: String, className: String): Bo
 }
 ```
 
-**NopoX comparison**: Per `docs/COMPARISON_REPORT.md` line 114, this is a **rebuild-only addition** — NopoX does not have package+intent name blocking. ✅ Rebuild is stronger.
+**Reference comparison**: Per `docs/COMPARISON_REPORT.md` line 114, this is a **rebuild-only addition** — the reference does not have package+intent name blocking. ✅ Rebuild is stronger.
 
 **Issues**:
 - **KB-02**: O(N) linear scan (but the list is typically small).
@@ -214,14 +214,14 @@ private fun isPackageOrIntentBlocked(packageName: String, className: String): Bo
 
 UI: A `SwitchRow` in the Content Blocking category. Toggling calls `viewModel.toggleSwitch(item)`, which persists the switch state. The accessibility service picks up the new state on the next `refreshBlockingConfig()` call.
 
-### 3.2 Comparison with NopoX
+### 3.2 Comparison with the reference
 
-Per `docs/COMPARISON_REPORT.md` line 99: "Porn blocker (URL keyword matching) | ✅ | ✅ | Rebuild adds `isDetectWordInUrl()` that doesn't strip URLs (NopoX had a bug where URLs were stripped before matching)". ✅ Rebuild is stronger.
+Per `docs/COMPARISON_REPORT.md` line 99: "Porn blocker (URL keyword matching) | ✅ | ✅ | Rebuild adds `isDetectWordInUrl()` that doesn't strip URLs (the reference had a bug where URLs were stripped before matching)". ✅ Rebuild is stronger.
 
 ### 3.3 Issues
 
 - **KB-01**: The switch is labeled "Block content based on keyword list" but only blocks URLs. Content-text matching (`isDetectWord`) is dead code. Either implement it or relabel the switch to "Block URLs based on keyword list".
-- The switch defaults to ON (correct — matches NopoX).
+- The switch defaults to ON (correct — matches the reference).
 
 ---
 
@@ -233,7 +233,7 @@ The `selected_keyword_table` rows with `identifier = "porn_block_words"`. Seeded
 
 UI: `BLOCKER_CUSTOM_KEYWORD_WEBSITE` row in Content Blocking → "Manage" → Keyword Manager (Blocklist tab). The row's action label shows the count (well, actually it shows "Manage" — the count is only shown for `BLOCK_SETTING_PAGE_BY_TITLE`).
 
-### 4.2 Comparison with NopoX
+### 4.2 Comparison with the reference
 
 Per `docs/COMPARISON_REPORT.md` line 100: "Custom keyword list management | ✅ Full page | ⚠️ Stub". In v1.0.33, the Keyword Manager was a stub (`SimpleSubPage("Keyword Manager")`). The Future-Brand branch implemented the full Keyword Manager page. ✅ Gap closed.
 
@@ -258,13 +258,13 @@ The `selected_keyword_table` rows with `identifier = "porn_white_list_words"`. S
 
 UI: Only reachable via the Keyword Manager (Whitelist tab). There is no dedicated row in the BlockerPage settings list — the user must know to tap "Blocklist keywords" → Manage → Whitelist tab.
 
-### 5.2 Comparison with NopoX
+### 5.2 Comparison with the reference
 
 Per `docs/COMPARISON_REPORT.md` line 101: "Whitelist keyword list | ✅ | ✅ | Same". ✅ Equivalent.
 
 ### 5.3 Issues
 
-- **Discoverability**: The whitelist is hidden behind the blocklist. A user who wants to whitelist a site has to navigate to Blocklist keywords → Manage → Whitelist tab. NopoX has a dedicated whitelist entry point. Consider adding a "Whitelist keywords" row in Content Blocking.
+- **Discoverability**: The whitelist is hidden behind the blocklist. A user who wants to whitelist a site has to navigate to Blocklist keywords → Manage → Whitelist tab. The reference has a dedicated whitelist entry point. Consider adding a "Whitelist keywords" row in Content Blocking.
 - Same KB-10, KB-11, KB-15, KB-16, KB-17 issues as K2.
 
 ---
@@ -277,7 +277,7 @@ Per `docs/COMPARISON_REPORT.md` line 101: "Whitelist keyword list | ✅ | ✅ | 
 
 UI: A `SwitchRow` in the Uninstall Protection category. Toggling persists the switch state.
 
-### 6.2 Comparison with NopoX
+### 6.2 Comparison with the reference
 
 Per `docs/COMPARISON_REPORT.md` line 112: "Title-based settings page blocking | ✅ Toggle + keyword manager page | ✅ Text input + manage page". ✅ Equivalent.
 
@@ -302,14 +302,14 @@ UI: Two rows in Uninstall Protection:
 
 The "Add" row's action label shows the count: `if (count > 0) "$count titles" else "Add"`.
 
-### 7.2 Comparison with NopoX
+### 7.2 Comparison with the reference
 
 Per `docs/COMPARISON_REPORT.md` line 112: "Rebuild uses text-input dialog instead of dedicated keyword page". The Future-Brand branch now has both paths (text input + dedicated page). ✅ Stronger than v1.0.33.
 
 ### 7.3 Issues
 
 - **KB-18**: The `block_setting_title_input` switch key is a raw string, not declared in `SwitchIdentifier`.
-- **KB-10**: No validation (min length 2 as NopoX requires, no duplicate check).
+- **KB-10**: No validation (min length 2 as the reference requires, no duplicate check).
 - Same KB-11, KB-12, KB-15, KB-16, KB-17 issues.
 
 ---
@@ -324,7 +324,7 @@ UI: Two rows in Advanced Features:
 - "Package + Intent Blocking" (switch) — master toggle.
 - "Manage blocked packages/intents" (Manage) — opens PackageIntentPage.
 
-### 8.2 Comparison with NopoX
+### 8.2 Comparison with the reference
 
 Per `docs/COMPARISON_REPORT.md` line 114: "Package + Intent name blocking | ❌ Not present | ✅ New feature added in v1.0.26". ✅ Rebuild-only addition.
 
@@ -344,9 +344,9 @@ Per `docs/COMPARISON_REPORT.md` line 114: "Package + Intent name blocking | ❌ 
 
 UI: A `SwitchRow` in Content Blocking.
 
-### 9.2 Comparison with NopoX
+### 9.2 Comparison with the reference
 
-Per `docs/COMPARISON_REPORT.md` line 104: "SafeSearch enforcement | ✅ DNS-level via VPN redirect | ⚠️ Accessibility-level only (blocks unsafe Google search URL) | **Weaker**". The rebuild uses accessibility-level redirect (press HOME + open the safe URL in the same browser). NopoX uses DNS-level redirect via VPN. ❌ Rebuild is weaker.
+Per `docs/COMPARISON_REPORT.md` line 104: "SafeSearch enforcement | ✅ DNS-level via VPN redirect | ⚠️ Accessibility-level only (blocks unsafe Google search URL) | **Weaker**". The rebuild uses accessibility-level redirect (press HOME + open the safe URL in the same browser). The reference uses DNS-level redirect via VPN. ❌ Rebuild is weaker.
 
 ### 9.3 Issues
 
@@ -364,7 +364,7 @@ Per `docs/COMPARISON_REPORT.md` line 104: "SafeSearch enforcement | ✅ DNS-leve
 1. **Known view IDs**: Looks up the package in `BROWSER_URL_VIEW_IDS` and queries the accessibility node tree by view ID.
 2. **Fallback**: `findUrlInNode` recurses the node tree looking for any node whose text starts with "http" or contains "://".
 
-### 10.2 Comparison with NopoX
+### 10.2 Comparison with the reference
 
 Per `docs/COMPARISON_REPORT.md` line 194: "View ID map for 6 browsers + fallback node search (same) + node-tree URL search when no view IDs match | ✅ Rebuild slightly stronger (v1.0.27 fix)". ✅ Rebuild is stronger.
 
@@ -413,7 +413,7 @@ A user can bypass the blocklist by using a homograph domain: `https://p⊕rnhub.
 
 ### 12.2 No keyword validation (KB-10)
 
-A user can add a 10000-char keyword (which would slow down matching) or a duplicate keyword (which wastes memory). NopoX enforces a 2-char minimum.
+A user can add a 10000-char keyword (which would slow down matching) or a duplicate keyword (which wastes memory). The reference enforces a 2-char minimum.
 
 **Fix**: Validate in `addBlockKeyword` etc.: min 2 chars, max 100 chars, not a duplicate.
 
@@ -485,6 +485,6 @@ The block screen does not show which keyword triggered the block. A user who is 
 
 ## 15. Conclusion
 
-The Future-Brand keyword-blocking subsystem is functional and closes the biggest NopoX-parity gap (the Keyword Manager UI). The core matching logic correctly fixes the NopoX URL-stripping bug. However, the matching engine has significant performance (KB-02, KB-03), correctness (KB-01, KB-04, KB-09), and UX (KB-10, KB-11, KB-19) gaps that should be addressed before the subsystem is considered production-ready.
+The Future-Brand keyword-blocking subsystem is functional and closes the biggest reference-parity gap (the Keyword Manager UI). The core matching logic correctly fixes the reference URL-stripping bug. However, the matching engine has significant performance (KB-02, KB-03), correctness (KB-01, KB-04, KB-09), and UX (KB-10, KB-11, KB-19) gaps that should be addressed before the subsystem is considered production-ready.
 
 The 23 issues identified above are prioritised in section 14. Addressing the top 6 (KB-02, KB-01, KB-04, KB-03, KB-06, KB-12) would bring the keyword subsystem from "works on the developer's device" to "safe to ship to real users". The remaining 17 are important for polish and robustness but are not blockers.

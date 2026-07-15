@@ -66,8 +66,8 @@ class NewInstallBlockingUtilsTest {
     }
 
     @Test
-    fun `isFirstInstall returns true for non-existent package (matches NopoX NameNotFoundException behaviour)`() {
-        // NopoX returns true on NameNotFoundException — the package was already
+    fun `isFirstInstall returns true for non-existent package (matches reference NameNotFoundException behaviour)`() {
+        // The reference returns true on NameNotFoundException — the package was already
         // uninstalled (race with PACKAGE_REMOVED), so treating it as a first
         // install is harmless because the insert will be cleaned up.
         // Robolectric's PackageManager doesn't have this package, so it throws
