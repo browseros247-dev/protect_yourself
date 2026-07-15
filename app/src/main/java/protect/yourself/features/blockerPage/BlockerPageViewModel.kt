@@ -390,15 +390,61 @@ class BlockerPageViewModel(
         SwitchIdentifier.BLOCK_UNSUPPORTED_BROWSERS_SWITCH -> switchValues.isBlockUnsupportedBrowsersSwitchOn()
         SwitchIdentifier.BLOCK_PACKAGE_INTENT_SWITCH -> switchValues.isBlockPackageIntentSwitchOn()
         SwitchIdentifier.VPN_SWITCH -> {
-            // FIX: Check both the DB value AND the actual service state.
-            // If VPN_SWITCH is true but the service is not running (e.g. user
-            // revoked VPN permission from system settings), show the switch as OFF.
+            // Check both the DB value AND the actual service state.
+            //
+            // RACE CONDITION FIX: The previous implementation checked
+            // MyVpnService.isRunning() and reset VPN_SWITCH=false if the
+            // service wasn't running. But during the VPN startup window
+            // (between MyVpnService.start() sending the intent and the
+            // service's startVpn() coroutine setting isRunning=true),
+            // isRunning() returns false. This caused onVpnPermissionGranted()
+            // → loadSettingItems() → loadSwitchValue(VPN_SWITCH) to reset
+            // VPN_SWITCH=false immediately after the user turned it ON,
+            // resulting in:
+            //   - Toast "VPN enabled" but toggle shows OFF
+            //   - VPN only works after tapping toggle a second time
+            //   - VPN auto-disconnects when ScheduleEngine reads VPN_SWITCH=false
+            //
+            // FIX: Use observableVpnState (which transitions to CONNECTING
+            // synchronously at the start of startVpn()) instead of isRunning().
+            // Only reset VPN_SWITCH if the service is truly IDLE or FAILED
+            // (not CONNECTING or CONNECTED). When the service is IDLE/FAILED
+            // but VPN_SWITCH=true, try to restart the VPN instead of silently
+            // resetting the user's intent — this handles process-death recovery.
             val dbValue = switchValues.isVpnSwitchOn()
-            if (dbValue && !protect.yourself.features.blockerPage.service.MyVpnService.isRunning()) {
-                // Service is not running but DB says ON — sync the DB to false
-                Timber.w("VPN_SWITCH=true but service not running — syncing DB to false")
-                switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
-                false
+            if (dbValue) {
+                val serviceState = protect.yourself.features.blockerPage.service.MyVpnService.observableVpnState
+                when (serviceState) {
+                    protect.yourself.features.blockerPage.service.MyVpnService.VpnState.CONNECTED,
+                    protect.yourself.features.blockerPage.service.MyVpnService.VpnState.CONNECTING -> {
+                        // Service is running or starting — all good, keep VPN_SWITCH=true
+                        dbValue
+                    }
+                    else -> {
+                        // IDLE or FAILED — VPN_SWITCH=true but service not running.
+                        // Try to restart the VPN if permission is still granted.
+                        // If permission was revoked, onRevoke() should have already
+                        // synced VPN_SWITCH=false. But as a fallback, check here.
+                        Timber.w("VPN_SWITCH=true but service state=$serviceState — attempting restart")
+                        try {
+                            val ctx = getApplication<Application>()
+                            if (android.net.VpnService.prepare(ctx) == null) {
+                                // Permission still granted — restart the VPN
+                                protect.yourself.features.blockerPage.service.MyVpnService.start(ctx)
+                                dbValue
+                            } else {
+                                // Permission revoked — sync VPN_SWITCH=false
+                                Timber.w("VPN permission revoked — syncing VPN_SWITCH=false")
+                                switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
+                                false
+                            }
+                        } catch (t: Throwable) {
+                            Timber.e(t, "Failed to restart VPN in loadSwitchValue")
+                            // Keep the toggle ON — don't reset user's intent on error
+                            dbValue
+                        }
+                    }
+                }
             } else {
                 dbValue
             }
@@ -1336,14 +1382,42 @@ class BlockerPageViewModel(
      */
     fun loadVpnManagementState() {
         safeLaunch {
-            // M1 FIX: Check both DB value AND actual service running state.
-            // If VPN_SWITCH is true but the service is not running (e.g. user
-            // revoked VPN from system settings), sync DB to false and show OFF.
+            // RACE CONDITION FIX: Same fix as loadSwitchValue(VPN_SWITCH).
+            // The previous implementation checked MyVpnService.isRunning()
+            // and reset VPN_SWITCH=false if the service wasn't running.
+            // But during the VPN startup window (between MyVpnService.start()
+            // sending the intent and startVpn() setting isRunning=true),
+            // isRunning() returns false. This caused onVpnPermissionGranted()
+            // → loadVpnManagementState() to reset VPN_SWITCH=false immediately
+            // after the user turned it ON.
+            //
+            // FIX: Use observableVpnState instead of isRunning(). Only reset
+            // VPN_SWITCH if the service is truly IDLE or FAILED (not CONNECTING
+            // or CONNECTED). When IDLE/FAILED but VPN_SWITCH=true, try to
+            // restart the VPN instead of silently resetting the user's intent.
             var vpnOn = switchValues.isVpnSwitchOn()
-            if (vpnOn && !MyVpnService.isRunning()) {
-                Timber.w("loadVpnManagementState: VPN_SWITCH=true but service not running — syncing to false")
-                switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
-                vpnOn = false
+            if (vpnOn) {
+                val serviceState = MyVpnService.observableVpnState
+                if (serviceState != MyVpnService.VpnState.CONNECTED &&
+                    serviceState != MyVpnService.VpnState.CONNECTING) {
+                    // IDLE or FAILED — VPN_SWITCH=true but service not running
+                    Timber.w("loadVpnManagementState: VPN_SWITCH=true but service state=$serviceState — attempting restart")
+                    try {
+                        val ctx = getApplication<Application>()
+                        if (android.net.VpnService.prepare(ctx) == null) {
+                            // Permission still granted — restart the VPN
+                            MyVpnService.start(ctx)
+                        } else {
+                            // Permission revoked — sync VPN_SWITCH=false
+                            Timber.w("loadVpnManagementState: VPN permission revoked — syncing VPN_SWITCH=false")
+                            switchValues.storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
+                            vpnOn = false
+                        }
+                    } catch (t: Throwable) {
+                        Timber.e(t, "loadVpnManagementState: failed to restart VPN")
+                        // Keep vpnOn=true — don't reset user's intent on error
+                    }
+                }
             }
             val mode = switchValues.getVpnConnectionType()
             val presets = db.vpnCustomDnsDao().getAll()
