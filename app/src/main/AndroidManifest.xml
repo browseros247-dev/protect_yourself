@@ -122,6 +122,7 @@
         android:theme="@style/Theme.ProtectYourself"
         android:largeHeap="true"
         android:isAccessibilityTool="true"
+        android:enableOnBackInvokedCallback="true"
         android:appComponentFactory="androidx.core.app.CoreComponentFactory"
         tools:targetApi="33">
 

@@ -260,8 +260,17 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
     }
 
     private fun initTimberLog() {
-        // Plant DebugTree for logcat + CrashLoggingTree for structured crash logs
-        Timber.plant(Timber.DebugTree())
+        // LOG-SPAM-01 (v1.0.71): DebugTree only in debug builds. Release had
+        // DebugTree planted too, so every VERBOSE statement (full URLs, page
+        // text from a11y events) landed in release logcat — privacy leak plus
+        // main-thread cost on the a11y hot path. Release plants a minimal
+        // INFO+ tree instead; WARN+ still reach CrashLogger via the second
+        // tree (unchanged behaviour for structured crash entries).
+        if (BuildConfig.DEBUG) {
+            Timber.plant(Timber.DebugTree())
+        } else {
+            Timber.plant(protect.yourself.features.crashLog.ReleaseLogTree())
+        }
         crashLogger?.let { Timber.plant(CrashLoggingTree(it)) }
     }
 

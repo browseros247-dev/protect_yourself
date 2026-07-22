@@ -7,77 +7,71 @@ This directory contains the **latest** pre-built, signed APK of **Protect Yourse
 - **Only the latest version** is kept here. When a new version is built, the previous APKs are removed.
 - Each version has two files: `*-debug.apk` (debug build with logging) and `*-release.apk` (production build, recommended).
 
-## Current Version: 1.0.70 (versionCode 70) — A11y self-disable fix + transparent-activity block screen + Close button fix
+## Current Version: 1.0.71 (versionCode 71) — Field crash-log audit: a11y ANRs, WARN spam, breadcrumb NPE
 
 | File | Size | Build Type | Description |
 |---|---|---|---|
-| `protect.yourself-v1.0.70-release.apk` | **~3.46 MB** | Release | **Recommended for installation.** Three reported issues fixed: **(1) Accessibility service auto-disables 1–5 s after manual enable** (A11Y-KILL-01): the app's own block engine was killing it — with Prevent Uninstallation ON, the unsafe-page checks matched the **settings a11y-management screens hosting our own service page** (AOSP `SubSettings` hosts the a11y-service detail page; keywords incl. "permissions", plus a dedicated check matching our `accessibility_service_description`) ⇒ block UI drawn over an a11y-management surface ⇒ Android's consent-integrity/anti-tapjacking protection force-disabled the covering service within ~1–5 s (the Prevent-Uninstall correlation the user suspected was **real**). A new `ProtectedSystemScreens` policy now makes the service **return early** on any a11y-management screen (with a 10 s throttled self-heal trigger instead), the fingerprint-based "Check 4" is deleted, and App-Info blocking exempts our own service page — **anti-uninstall itself (App-Info blocking, uninstaller dialog, Device Admin) is fully preserved**. **(2) Block screen no longer needs "Display over other apps"** (ACTIVITY-BLOCK-01): the WindowManager overlay path (`BlockOverlayManager`, `SYSTEM_ALERT_WINDOW`) is **deleted** and replaced by a single-path **transparent activity** (`Theme.TransparentBlock`: translucent, no dim, no preview, no animation), with launch-verify @900 ms → one retry → HOME as last resort; the settings row, navigation branch, and overlay-permission notification were removed, and the permission is gone from the merged manifest. **(3) Block-screen Close button unresponsive** (CLOSE-BTN-01): the button was armed asynchronously after a second DB round-trip inside the countdown callback — a new `CloseGatePolicy` installs the listener **synchronously once**, taps during the 3 s dwell now show a **"Close available in N s" toast**, setup failures fail-open (never trap the user), and closing honors a redirect URL or lands on Home. Carries v1.0.69 a11y persistence + dark-mode contrast, v1.0.68 block-screen reliability, v1.0.67 R8 size optimization, v1.0.66 onboarding permissions. See `docs/A11Y_KILL_TRANSPARENT_BLOCK_REPORT_v1.0.70.md`. 402/402 tests pass. |
-| `protect.yourself-v1.0.70-debug.apk` | ~20.3 MB | Debug | Same code with debug logging, `Protect Yourself DEBUG` label, debuggable, unminified by design. |
+| `protect.yourself-v1.0.71-release.apk` | **~3.46 MB** | Release | **Recommended for installation.** Fixes from a full audit of a real crash export (vivo V2206, Android 14, 49 entries): **(1) 22 FATAL ANRs, main thread blocked 5–12 s** (A11Y-ANR-01): every accessibility event triggered a recursive node-tree walk whose per-node `getChild()` call is a synchronous binder IPC into the remote process — guarded only by node COUNTS (300/500) with a "~2 ms per IPC" assumption that collapses under load (10–50 ms/call ⇒ 5–15 s walks; 7 more ANRs stalled in the twice-per-event `getRootInActiveWindow` fetch itself). Fixed with a **hard time+node traversal budget** (`TraversalBudget`: 150 nodes / 90 ms, injected clock), lower caps (depth 50→12, nodes 300/500→150), a **350 ms per-package heavy-scan throttle** that collapses Chrome render bursts to one scan, and a **single shared root fetch** per scan — URL scraping order (SafeSearch first), content-text keyword matching, and all block behavior are unchanged. **(2) "Invalid block-screen countdown stored (0)" persisted as a crash entry on every read** (SET-COUNTDOWN-01): the DB seeded sentinel `"0"`, and the getter's WARN hit `CrashLoggingTree` per read (22+ junk entries per session) — the DB now seeds `3` and the getter **self-heals the row once** (INFO-level, then silent). **(3) CrashLogger breadcrumb NPE on every cold start** (CRLOG-INIT-01): `breadcrumbBuffer` was declared *below* `init {}` (Kotlin declaration-order init), so `synchronized(breadcrumbBuffer)` always `monitor-enter`-NPE'd at startup and **all persisted breadcrumbs were silently dropped** — one-line declaration-order fix, pinned by tests. **(4) Release log privacy/perf** (LOG-SPAM-01): `Timber.DebugTree` was planted in release too, so full URLs/page text flooded logcat — release now gets an INFO+ `ReleaseLogTree`, and the two hottest per-event log sites are `BuildConfig.DEBUG`-gated (strings not even built in release). **(5)** predictive-back opt-in `enableOnBackInvokedCallback` added. Device-admin "thrash" in the log was investigated and is **user toggle testing, not a defect**. Carries v1.0.70 (a11y self-disable kill-vector + transparent-activity block screen + close-gate), v1.0.69 a11y persistence + dark-mode contrast, v1.0.68 block-screen reliability, v1.0.67 R8 size optimization, v1.0.66 onboarding permissions. See `docs/A11Y_ANR_PERF_AUDIT_REPORT_v1.0.71.md`. 435/435 tests pass. |
+| `protect.yourself-v1.0.71-debug.apk` | ~20.3 MB | Debug | Same code with debug logging, `Protect Yourself DEBUG` label, debuggable, unminified by design. |
 
-## Build verification (v1.0.70)
+## Build verification (v1.0.71)
 
-- `./gradlew :app:assembleRelease` → **BUILD SUCCESSFUL** in 7 m 43 s (R8 minified, 3,460,311 bytes; size held at ~3.46 MB)
-- `./gradlew :app:assembleDebug` → **BUILD SUCCESSFUL** (21,279,699 bytes)
-- `./gradlew :app:testDebugUnitTest` → **402/402 tests pass, 0 failures, 0 errors, 0 skipped** (29 suites; +27 new: 11 `ProtectedSystemScreensTest` + 7 `CloseGatePolicyTest` + 9 `OverlayDependencyRemovedTest`; run AFTER the builds, per release-first process)
+- `./gradlew :app:assembleRelease` → **BUILD SUCCESSFUL** in 5 m 25 s (R8 minified, 3,460,347 bytes; size parity with v1.0.70)
+- `./gradlew :app:assembleDebug` → **BUILD SUCCESSFUL** (21,279,731 bytes)
+- `./gradlew :app:testDebugUnitTest` → **435/435 tests pass, 0 failures, 0 errors, 0 skipped** (33 suites; +33 new: 8 `TraversalBudgetTest` + 7 `CountdownSelfHealTest` + 5 `CrashLoggerInitOrderTest` + 13 `A11yAnrRegressionTest`; run AFTER the builds, per release-first process)
 - `apksigner verify` → **signature valid** for both APKs (debug keystore — re-sign with your own release keystore for Play distribution)
-- `aapt2 dump badging` → package `protect.yourself`, versionCode `70`, versionName `1.0.70`, minSdk 26, targetSdk 35
-- Merged manifest (`aapt2` inspection of the BUILT apk): **`SYSTEM_ALERT_WINDOW` ABSENT**; all other permissions unchanged; `PornBlockActivity` theme `@0x7f12027c` = `style/Theme.TransparentBlock`, `launchMode=singleTop`, `excludeFromRecents=true`, `screenOrientation=portrait`, `showOnLockScreen=true`
-- Post-R8 dex check (mapping-verified): `ProtectedSystemScreens` (`pageTextMatchesOurService`, `isAccessibilityManagementScreen`), `CloseGatePolicy` (incl. `Click$Blocked`/`Click$Close`), `maybeTriggerSelfHealOnA11yScreen`, `tryLaunchBlockScreen` all present in the release APK (renamed consistently); **`BlockOverlayManager` = 0 references**; `string/block_screen_close_available_in` + `style/Theme.TransparentBlock` (day & night qualifiers) present in resources; a11y service manifest block intact
+- `aapt2 dump badging` → package `protect.yourself`, versionCode `71`, versionName `1.0.71`, minSdk 26, targetSdk 35
+- Merged manifest (`aapt2` inspection of the BUILT apk): `enableOnBackInvokedCallback=true` present; `SYSTEM_ALERT_WINDOW` still absent; all other permissions unchanged
+- Post-R8 dex check (mapping-verified): `TraversalBudget` (`tryVisit`, `exhausted`), `ReleaseLogTree`, `lastHeavyScanByPkg` all present in the release APK (renamed consistently); a11y service manifest block intact
 
-## New tests (27 in v1.0.70, all passing)
+## New tests (33 in v1.0.71, all passing)
 
-`features/protectedApps/ProtectedSystemScreensTest` (11) — A11Y-KILL-01 policy pins:
-
-| Test | What it pins |
-|---|---|
-| `protected - AOSP accessibility manage screens` | `Settings > Accessibility` is guarded (never blocked) |
-| `protected - OEM a11y screens in settings and security packages` | Samsung/Xiaomi a11y class variants guarded |
-| `protected - installed-services and service-details marker classes` | The exact toggle-hosting screens guarded |
-| `not protected - App-Info page stays blockable (prevent-uninstall core feature)` | **Anti-uninstall core NOT regressed** |
-| `not protected - uninstaller dialog stays blockable` | Uninstaller still blocked |
-| `not protected - device admin management stays blockable (anti-uninstall feature)` | Anti-tamper still blocked |
-| `not protected - blank class, non-settings package, ordinary content apps` | No false positives on normal apps |
-| `service page fingerprint - matches normalized page text, tolerates truncation` | Our service page fingerprint (40-char prefix) |
-| `service page fingerprint - rejects unrelated text and junk inputs` | null/blank/garbage safe |
-| `settings package detection - AOSP + OEM variants + substring rule` | `isSettingsPackage` parity with old list |
-| `normalize - lowercases and strips spaces` | Fingerprint normalization |
-
-`features/blockerPage/ui/CloseGatePolicyTest` (7) — CLOSE-BTN-01 gate pins:
+`features/blockerPage/service/TraversalBudgetTest` (8, pure JVM, injected clock):
 
 | Test | What it pins |
 |---|---|
-| `zero dwell is armed immediately` | 0 s countdown closes instantly |
-| `dwell boundary - blocked just before, closing exactly at the boundary` | Exact 3 s boundary semantics |
-| `clicks during dwell report remaining whole seconds (ceil)` | Toast matches countdown label |
-| `remainingDwellMs never goes negative` | No negative countdowns |
-| `clock skew backwards clamps to positive remaining rather than arming early` | Monotonic/time-jump safety |
-| `repeated clicks during dwell stay consistent (no state corruption)` | Pure state machine |
-| `negative dwell degrades to immediate close (never traps the user)` | Fail-open guarantee |
+| `node budget - capped exactly at maxNodes` | Hard node ceiling; failed visits don't inflate the counter |
+| `time budget - exhausted when clock reaches the deadline` | 89 ms passes, 90 ms boundary exhausts |
+| `remainingMillis never goes negative` | Stalled-IPC analog clamps to 0 |
+| `backwards clock skew never un-exhausts the node budget` | Node cap is sticky under skew |
+| `backwards clock skew extends time but never arms early` | Safe direction: lenient, never ANR-inducing |
+| `zero-node budget fails the very first visit` | Degenerate config trap-guard |
+| `zero-time budget fails immediately` | Degenerate config trap-guard |
+| `budgets combine - node cap reached first stops before time runs out` | Either-limit-first semantics |
 
-`features/blockScreen/OverlayDependencyRemovedTest` (9) — ACTIVITY-BLOCK-01 structural pins (scan production sources/manifest/resources):
+`features/blockScreen/CountdownSelfHealTest` (7, Robolectric + **real Room DB**):
 
 | Test | What it pins |
 |---|---|
-| `manifest no longer declares SYSTEM_ALERT_WINDOW` | Permission removal locked |
-| `BlockOverlayManager file is gone` | Deletion locked |
-| `no TYPE_APPLICATION_OVERLAY usage remains in production sources` | No resurrected overlay path |
-| `service has no overlay references and goes straight to the activity block screen` | Single-path launch |
-| `service guards block decisions with ProtectedSystemScreens` | A11Y-KILL-01 early guard present |
-| `PornBlockActivity uses the transparent block theme` | Manifest theme reference |
-| `transparent block theme is translucent in day and night resources` | Both `values/` and `values-night/` |
-| `no overlay-permission prompts remain in settings UI or notifications` | Settings row + notification gone |
-| `close gate is synchronous and never unarms (CLOSE-BTN-01)` | Listener installed once, never nulled |
+| `stored zero - returns default AND heals the row` | The exact field case: `"0"` → returns 3, row becomes `"3"`, second read silent |
+| `negative value - returns default AND heals` | Fail-safe |
+| `above-max value - returns default AND heals` | 301 → default (never a longer-than-max lock) |
+| `unparsable value - returns default AND heals` | `"abc"` → default + heal |
+| `valid custom value - honored, row left untouched` | No write amplification for healthy rows |
+| `boundary values 1 and 300 - honored` | Clamp edges unchanged |
+| `absent row - returns default, row stays absent` | No heal-write when simply unset |
+
+`features/crashLog/CrashLoggerInitOrderTest` (5, Robolectric, real logger + files dir):
+
+| Test | What it pins |
+|---|---|
+| `init with pre-existing breadcrumbs file - does not throw` | The monitor-enter NPE can never return |
+| `on-disk breadcrumbs are loaded into the buffer` | Previous-session breadcrumbs actually reachable |
+| `appending keeps previously loaded breadcrumbs` | Ring-buffer merge semantics |
+| `missing breadcrumbs file - init clean, buffer starts empty` | Fresh-install path |
+| `corrupt breadcrumbs file - init never throws, buffer usable` | Crash logger never crashes the app |
+
+`features/blockerPage/service/A11yAnrRegressionTest` (13, static source/manifest pins) — covers: depth cap ≤ 12; URL node cap ≤ 150; text node cap ≤ 150; wall-clock traversal budget ≤ 250 ms; `TraversalBudget` wired into `findUrlInNode`/`collectText` (old `nodeCounter` gone); heavy-scan throttle active in `handleContentChange`; URL/text extractors no longer re-fetch `rootInActiveWindow`; hot per-event VERBOSE logs `BuildConfig.DEBUG`-gated; DB seeds `"3"`; countdown getter heals without per-read WARN; `breadcrumbBuffer` declared before `init {}`; `ReleaseLogTree` planted behind `BuildConfig`; manifest `enableOnBackInvokedCallback="true"`.
 
 ## Manual device checklist (post-install)
 
-1. **A11y persistence (the reported bug)**: enable the accessibility service → stay on its detail page 60 s → it stays ON (previously it flipped OFF within 1–5 s). Repeat with **Prevent Uninstallation ON**.
-2. Browse `Settings > Accessibility` + the installed-services list while blocking is active → no block screen, service stays ON; removing our entry via `adb shell settings put secure enabled_accessibility_services …` gets repaired within ≤ 30 s (v1.0.69 guard still active).
-3. Open a blocked app → block screen appears instantly (transparent window, no flicker) with **no** "Display over other apps" prompt anywhere in the flow.
-4. Close button: tap within 3 s → toast "Close available in N s"; after countdown → closes to Home; with a redirect URL configured → browser opens.
-5. Trigger the block repeatedly → a single block-screen instance (singleTop), correctly dismissed each time.
-6. **Anti-uninstall regression**: with Prevent Uninstallation ON, try uninstalling from App-Info / uninstaller dialog / Device Admin → still blocked.
-7. Blocker settings → **no** "Display pop-up window permission" row; no overlay-permission notification after boot/update.
-8. Dark Mode: block screen readable and instant in dark theme (Theme.TransparentBlock exists in `values-night`).
+1. Browse a heavy desktop-mode page in Chrome for 60 s (Porn Blocker ON) → no "App isn't responding" dialog; keyword/URL blocks still fire.
+2. Release build `logcat`: no `PB-03:` / `WindowStateChange` URL/text spam (debug build still shows them).
+3. Rapidly navigate A→B→C → the final page's block still triggers (throttle window closes on post-load events).
+4. Fresh install → zero "Invalid block-screen countdown" crash-log entries; row seeded `3`.
+5. Upgrade install with stored `0` → opening the block screen heals the row to `3`; no repeat WARN entries.
+6. Kill + cold-start with an existing crash log → new entries include the previous session's breadcrumbs.
+7. Regression sweep: Prevent Uninstall blocks App-Info/uninstaller/Device-Admin; a11y-settings browse keeps the service ON (v1.0.70); block screen is transparent/instant with Close toast + 3 s dwell (v1.0.70); VPN/Schedules/Focus behave as before.
 
 ## Removed APKs
 
