@@ -17,8 +17,13 @@ android {
         applicationId = "protect.yourself"
         minSdk = 26
         targetSdk = 35
-        versionCode = 66
-        versionName = "1.0.66"
+        versionCode = 67
+        versionName = "1.0.67"
+
+        // PERF-01: the app ships English-only strings; strip non-English
+        // resources pulled in from libraries (androidx/material ship many
+        // locales) from the release package.
+        resourceConfigurations += setOf("en")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -48,10 +53,15 @@ android {
         }
         release {
             isDebuggable = false
-            // Disable R8 minification to fit in memory-constrained build environments.
-            // User can re-enable for production Play Store builds.
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // PERF-01 (v1.0.67): R8 shrinking+obfuscation ON — the release APK's dex
+            // payload was ~48 MB uncompressed (94% of raw APK size) purely because
+            // minification was disabled. Pair with isShrinkResources to drop
+            // orphaned library resources. All reflection entry points are covered
+            // by keep rules in proguard-rules.pro (Gson models incl. Room entities,
+            // WorkManager workers, enum constants). If R8 ever OOMs in a constrained
+            // environment, raise the Gradle heap rather than disabling this again.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -138,7 +148,8 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.runtime)
-    implementation(libs.androidx.compose.runtime.livedata)
+    // PERF-05 (v1.0.67): removed unused deps — runtime.livedata (no LiveData /
+    // observeAsState usage anywhere) and lottie.compose (zero imports).
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     // Room
@@ -160,7 +171,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 
     // UI libraries
-    implementation(libs.lottie.compose)
+    // (PERF-05: lottie.compose removed — zero usages; re-add when needed)
 
     // Utility
     implementation(libs.timber)

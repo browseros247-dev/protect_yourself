@@ -61,6 +61,10 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
     override fun onCreate() {
         super<Application>.onCreate()
 
+        // PERF-04 (v1.0.67): measure main-thread init wall time so startup
+        // regressions are visible in logs and crash-log breadcrumbs.
+        val initStartMs = android.os.SystemClock.elapsedRealtime()
+
         // 0. Initialise CrashLogger FIRST — so any crash during subsequent init
         //    steps is captured with full diagnostic context.
         //    Must happen before installCrashHandler() and before any Timber calls.
@@ -129,11 +133,24 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
         }
 
         // 8. Schedule periodic workers (non-critical — app works without them)
+        //    PERF-02 (v1.0.67): run off the main thread. WorkManager on-demand
+        //    initialization + enqueue costs ~30-80ms of main-thread time
+        //    (content-provider + internal DB open). WorkManager.getInstance()
+        //    is documented thread-safe, and periodic schedules are unaffected
+        //    by a few ms of extra deferral.
         safeInit("WorkManager") {
-            protect.yourself.commons.utils.workManager.WorkerUtils.getInstance()
-                .initAppDataCheckWorker(this)
-            // Phase 2: Schedule restrictions check worker (15-min periodic safety net)
-            protect.yourself.commons.utils.workManager.ScheduleCheckWorker.enqueue(this)
+            protect.yourself.core.appCoroutineScope(
+                scopeName = "ProtectYourselfApp-workManagerInit",
+                dispatcher = kotlinx.coroutines.Dispatchers.IO
+            ).launch {
+                safeInit("WorkManager:initAppDataCheckWorker") {
+                    protect.yourself.commons.utils.workManager.WorkerUtils.getInstance()
+                        .initAppDataCheckWorker(this@ProtectYourselfApp)
+                }
+                safeInit("WorkManager:ScheduleCheckWorker") {
+                    protect.yourself.commons.utils.workManager.ScheduleCheckWorker.enqueue(this@ProtectYourselfApp)
+                }
+            }
         }
 
         // 8b. Initialize theme preferences (Light/Dark/System)
@@ -158,17 +175,33 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
             }
         }
 
-        // 11. Check for crashes from the previous session — if any FATAL
-        //     entries exist with timestamp > lastLaunchTime, post a
-        //     "crash detected" notification so the user knows.
-        safeInit("CrashNotification") { notifyIfCrashedSinceLastLaunch() }
-
-        // Record this launch time for next-launch comparison
-        updateLastLaunchTime()
+        // 11. Check for crashes from the previous session + record launch time.
+        //     PERF-03 (v1.0.67): notifyIfCrashedSinceLastLaunch() reads and
+        //     JSON-parses crash-log files from disk (~20-100ms) — previous
+        //     versions did this on the main thread. Moved to background.
+        //     Ordering invariants preserved: (a) launched after step 9 so
+        //     notification channels exist before any post; (b) the
+        //     updateLastLaunchTime() write stays sequentially AFTER the
+        //     lastLaunch read so the crash window is never skipped.
+        safeInit("CrashNotificationAsync") {
+            protect.yourself.core.appCoroutineScope(
+                scopeName = "ProtectYourselfApp-crashCheck",
+                dispatcher = kotlinx.coroutines.Dispatchers.IO
+            ).launch {
+                safeInit("CrashNotification") { notifyIfCrashedSinceLastLaunch() }
+                updateLastLaunchTime()
+            }
+        }
 
         crashLogger?.logBreadcrumb("AppLifecycle", "Application.onCreate completed")
-        Timber.i("Protect Yourself v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) initialized")
-        Log.i(TAG, "App initialized: $packageName")
+        val initTotalMs = android.os.SystemClock.elapsedRealtime() - initStartMs
+        Timber.i("Protect Yourself v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) initialized in ${initTotalMs}ms (main thread)")
+        crashLogger?.logBreadcrumb(
+            "AppLifecycle",
+            "Application.onCreate main-thread init finished",
+            mapOf("mainThreadInitMs" to initTotalMs.toString())
+        )
+        Log.i(TAG, "App initialized: $packageName in ${initTotalMs}ms")
     }
 
     override fun onStop(owner: LifecycleOwner) {
@@ -192,8 +225,12 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
     /**
      * Wrapper that catches any exception from an init step and logs it
      * to CrashLogger + logcat without crashing the app.
+     *
+     * PERF-04 (v1.0.67): also times each step; steps ≥ 8ms get a debug log so
+     * main-thread startup hotspots are visible without a profiler.
      */
     private fun safeInit(stepName: String, block: () -> Unit) {
+        val stepStartMs = android.os.SystemClock.elapsedRealtime()
         try {
             block()
         } catch (t: Throwable) {
@@ -206,6 +243,11 @@ class ProtectYourselfApp : Application(), DefaultLifecycleObserver, Configuratio
                 message = "Init step '$stepName' failed (non-fatal)",
                 extraContext = mapOf("initStep" to stepName)
             )
+        } finally {
+            val elapsedMs = android.os.SystemClock.elapsedRealtime() - stepStartMs
+            if (elapsedMs >= 8L) {
+                Timber.d("Init step '$stepName' took ${elapsedMs}ms")
+            }
         }
     }
 
