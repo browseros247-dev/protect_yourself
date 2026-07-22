@@ -12,7 +12,9 @@ import androidx.compose.ui.graphics.Color
 /**
  * Protect Yourself dark color scheme — matches original (#061620 dark blue, orange accents).
  */
-private val DarkColorScheme = darkColorScheme(
+// DARK-CONTRAST-01: internal (not private) so ColorContrastTest can assert
+// WCAG ratios on every role pairing and prevent contrast regressions.
+internal val DarkColorScheme = darkColorScheme(
     primary = DarkPrimary,
     onPrimary = DarkOnPrimary,
     primaryContainer = DarkPrimary,
@@ -22,9 +24,9 @@ private val DarkColorScheme = darkColorScheme(
     secondaryContainer = AccentCyan,
     onSecondaryContainer = Color.Black,
     tertiary = BrandOrange,
-    onTertiary = Color.White,
-    tertiaryContainer = BrandOrangeLight,
-    onTertiaryContainer = Color.White,
+    onTertiary = DarkOnTertiaryM3,
+    tertiaryContainer = DarkTertiaryContainerM3,
+    onTertiaryContainer = DarkOnTertiaryContainerM3,
     background = DarkBackground,
     onBackground = DarkOnBackground,
     surface = DarkSurface,
@@ -34,11 +36,11 @@ private val DarkColorScheme = darkColorScheme(
     surfaceTint = AccentCyan,
     inverseSurface = Color.White,
     inverseOnSurface = DarkBackground,
-    error = DarkError,
-    onError = Color.White,
-    errorContainer = DarkError,
-    onErrorContainer = Color.White,
-    outline = DarkBottomNavInactive,
+    error = DarkErrorM3,
+    onError = DarkOnErrorM3,
+    errorContainer = DarkErrorContainerM3,
+    onErrorContainer = DarkOnErrorContainerM3,
+    outline = DarkOutlineM3,
     outlineVariant = DarkBottomNavDivider,
     scrim = Color.Black,
 )
@@ -46,7 +48,7 @@ private val DarkColorScheme = darkColorScheme(
 /**
  * Protect Yourself light color scheme — new for rebuild (DayNight support).
  */
-private val LightColorScheme = lightColorScheme(
+internal val LightColorScheme = lightColorScheme(
     primary = LightPrimary,
     onPrimary = LightOnPrimary,
     primaryContainer = LightPrimary,
@@ -56,9 +58,9 @@ private val LightColorScheme = lightColorScheme(
     secondaryContainer = AccentCyan,
     onSecondaryContainer = Color.Black,
     tertiary = BrandOrange,
-    onTertiary = Color.White,
-    tertiaryContainer = BrandOrangeLight,
-    onTertiaryContainer = Color.White,
+    onTertiary = LightOnTertiaryM3,
+    tertiaryContainer = LightTertiaryContainerM3,
+    onTertiaryContainer = LightOnTertiaryContainerM3,
     background = LightBackground,
     onBackground = LightOnBackground,
     surface = LightSurface,
@@ -68,10 +70,10 @@ private val LightColorScheme = lightColorScheme(
     surfaceTint = AccentCyan,
     inverseSurface = DarkBackground,
     inverseOnSurface = Color.White,
-    error = LightError,
+    error = LightErrorM3,
     onError = Color.White,
-    errorContainer = LightError,
-    onErrorContainer = Color.White,
+    errorContainer = LightErrorContainerM3,
+    onErrorContainer = LightOnErrorContainerM3,
     outline = LightBottomNavInactive,
     outlineVariant = LightBottomNavDivider,
     scrim = Color.Black,

@@ -2620,18 +2620,17 @@ class MyAccessibilityService : AccessibilityService() {
          * Check if this accessibility service is enabled (system setting).
          */
         fun isEnabled(context: android.content.Context): Boolean {
-            // CRASH FIX: wrap in try/catch — some restricted profiles (work
-            // profile, secondary user, kiosk mode) throw SecurityException
-            // when reading ENABLED_ACCESSIBILITY_SERVICES.
+            // A11Y-PERSIST-02/03 (v1.0.69): delegate to the EFFECTIVE check —
+            // component-form tolerant (full `pkg/pkg.Svc` vs short `pkg/.Svc`)
+            // AND requiring the master accessibility switch to be ON. The old
+            // raw substring match could false-negative on the short form and
+            // could false-positive while an OEM had flipped the master switch
+            // (home card would show "enabled" while blocking was dead).
             return try {
-                val expectedComponent = context.packageName + "/" + MyAccessibilityService::class.java.name
-                val enabledServices = Settings.Secure.getString(
-                    context.contentResolver,
-                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-                ) ?: return false
-                enabledServices.contains(expectedComponent)
+                protect.yourself.features.protectedApps.AccessibilityPersistUtils
+                    .isAccessibilityEffectivelyEnabled(context)
             } catch (t: Throwable) {
-                Timber.w(t, "isEnabled: failed to read ENABLED_ACCESSIBILITY_SERVICES")
+                Timber.w(t, "isEnabled: failed to read accessibility state")
                 false
             }
         }
