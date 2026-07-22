@@ -39,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -60,8 +61,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -175,7 +179,9 @@ class AppLockViewModel(
                 val success = manager.verify(input)
                 if (success) {
                     Timber.i("Unlock succeeded (tryUnlock)")
-                    _state.update { it.copy(isUnlocked = true, error = null, isLockedOut = false, lockoutRemainingMs = 0L) }
+                    // LOCKSESSION-01: clear the plaintext password from retained
+                    // state — it must never linger in the ViewModel after use.
+                    _state.update { it.copy(isUnlocked = true, error = null, input = "", isLockedOut = false, lockoutRemainingMs = 0L) }
                     onUnlocked()
                 } else {
                     val attempts = _state.value.attempts + 1
@@ -244,7 +250,8 @@ class AppLockViewModel(
                 val success = manager.verify(input)
                 if (success) {
                     Timber.i("Unlock succeeded (tryUnlockWithInput)")
-                    _state.update { it.copy(isUnlocked = true, error = null, isLockedOut = false, lockoutRemainingMs = 0L) }
+                    // LOCKSESSION-01: clear the plaintext input from retained state.
+                    _state.update { it.copy(isUnlocked = true, error = null, input = "", isLockedOut = false, lockoutRemainingMs = 0L) }
                     onUnlocked()
                 } else {
                     val attempts = _state.value.attempts + 1
@@ -283,7 +290,8 @@ class AppLockViewModel(
      */
     fun biometricUnlock(onUnlocked: () -> Unit) {
         Timber.i("Biometric unlock succeeded")
-        _state.update { it.copy(isUnlocked = true, error = null) }
+        // LOCKSESSION-01: clear any partially-typed input on unlock.
+        _state.update { it.copy(isUnlocked = true, error = null, input = "") }
         onUnlocked()
     }
 
@@ -308,6 +316,60 @@ class AppLockViewModel(
                 Timber.i("Lockout expired — user may retry")
             }
         }
+    }
+
+    /**
+     * LOCKSESSION-01/02 fix (v1.0.65): begins a NEW lock session.
+     *
+     * Called every time the lock screen enters the composition (i.e. every
+     * time the app re-engages the lock — app relaunch, return from another
+     * app, MAIN→LOCKED flip). This ViewModel is scoped to (retained by) the
+     * host Activity, so without an explicit reset, stale session state
+     * carried across re-locks:
+     *
+     *  - `input` still holding the PREVIOUS password/PIN/pattern (which made
+     *    the field/dots/pattern appear pre-filled on return — the reported
+     *    bug) or any partial entry left behind mid-typing;
+     *  - `isUnlocked=true` leftover, which also blocked ALL pattern dots and
+     *    full PIN pads (`return@clickable` / `input.length >= 4` guards) —
+     *    effectively locking users OUT of their own app — and suppressed the
+     *    biometric auto-prompt;
+     *  - a stale `error` / attempt counter / shake trigger.
+     *
+     * The password field must always start EMPTY for a new lock session.
+     */
+    fun beginLockSession() {
+        _state.update {
+            it.copy(
+                input = "",
+                error = null,
+                attempts = 0,
+                isUnlocked = false,
+                triggerShake = 0L
+            )
+        }
+        // Sync the lockout countdown immediately (don't wait for the 500 ms
+        // ticker) and reload lock configuration — the user may have changed
+        // lock type or Touch ID while inside the app during the previous
+        // session.
+        refreshLockoutState()
+        loadLockState()
+    }
+
+    /**
+     * LOCKSESSION-01: lightweight reset for returning to the FOREGROUND while
+     * already sitting on the lock screen (the composition was NOT disposed —
+     * e.g. user typed partial input, pressed home, came straight back).
+     * Clears the input field and error so the user can always start typing
+     * immediately, and refreshes the lockout countdown. Does NOT disturb a
+     * just-completed unlock (isUnlocked=true) since the app is about to flip
+     * to MAIN.
+     */
+    fun onForegroundReturn() {
+        if (_state.value.isUnlocked) return
+        _state.update { it.copy(input = "", error = null) }
+        refreshLockoutState()
+        Timber.d("onForegroundReturn: lock screen input reset")
     }
 
     private fun formatLockoutMessage(remainingMs: Long): String {
@@ -383,6 +445,35 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
     val state by viewModel.state.collectAsState()
     var biometricShown by remember { mutableStateOf(false) }
 
+    // LOCKSESSION-01 fix (v1.0.65): begin a fresh lock session on EVERY entry
+    // into this composable. AppLockScreen leaves the composition whenever the
+    // app is unlocked (AppState.MAIN), so this effect fires exactly once per
+    // lock engagement — fresh launch, app reopened, MAIN→LOCKED re-lock on
+    // foreground return. The ViewModel is Activity-retained; without this the
+    // password field showed the previous session's (partial or complete)
+    // input, stale isUnlocked blocked PIN/pattern entry entirely, and the
+    // biometric auto-prompt never re-fired. The password field must ALWAYS
+    // start empty for a new lock session.
+    LaunchedEffect(Unit) {
+        viewModel.beginLockSession()
+    }
+
+    // LOCKSESSION-01: also reset when the app returns to the FOREGROUND while
+    // still sitting on the lock screen (composition never disposed, so the
+    // effect above does not re-fire — e.g. typed 2 digits, pressed home,
+    // came straight back). Consistent across all Android versions: ON_RESUME
+    // is delivered on every foreground return.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.onForegroundReturn()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // Periodically refresh lockout state so the countdown ticks down.
     LaunchedEffect(state.isLockedOut) {
         if (state.isLockedOut) {
@@ -404,9 +495,13 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
         return
     }
 
-    // Auto-launch biometric prompt ONCE if Touch ID is enabled AND biometrics
-    // are actually available + enrolled on this device.
-    LaunchedEffect(state.touchIdEnabled, state.lockType) {
+    // Auto-launch biometric prompt ONCE per lock session if Touch ID is
+    // enabled AND biometrics are actually available + enrolled on this device.
+    // LOCKSESSION-02 fix: `state.isUnlocked` is a key so the effect relaunches
+    // when a new lock session resets a stale isUnlocked=true back to false —
+    // previously the prompt auto-fired only on the FIRST lock after process
+    // start and never on subsequent re-locks (e.g. app switched away & back).
+    LaunchedEffect(state.touchIdEnabled, state.lockType, state.isUnlocked) {
         if (state.touchIdEnabled && state.lockType != AppLockType.OFF &&
             !state.isUnlocked && !biometricShown && !state.isLockedOut) {
             val availability = checkBiometricAvailability(context)

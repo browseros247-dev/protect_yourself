@@ -106,6 +106,16 @@ class AppSystemActionReceiverAllTimeWithData : BroadcastReceiver() {
                         // we refresh the whole config, not just one package.
                         Timber.i("App replaced — refreshing accessibility config")
                         refreshServiceConfig(context, "MY_PACKAGE_REPLACED")
+                        // BOOT-VPN-01 fix: an app update kills the process and
+                        // tears down the VPN tunnel with it — restore the VPN
+                        // (same redundant pipeline as boot). No-ops when the
+                        // VPN switch is OFF or the service is already up.
+                        try {
+                            protect.yourself.commons.utils.vpn.VpnRestoreHelper
+                                .scheduleBootRestore(context, trigger = "my_package_replaced")
+                        } catch (t: Throwable) {
+                            Timber.w(t, "Failed to schedule VPN restore after app update")
+                        }
                     }
 
                     Intent.ACTION_PACKAGE_ADDED -> {

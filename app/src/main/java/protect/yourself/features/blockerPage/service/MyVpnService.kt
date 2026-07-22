@@ -169,15 +169,24 @@ class MyVpnService : VpnService() {
                 // Without this, the DB still says VPN is ON → the toggle
                 // shows ON while no service is running, and on next reboot
                 // the VPN auto-restarts against the user's stop intent.
-                serviceScope.launch {
-                    try {
+                //
+                // BOOT-VPN-03 fix: write SYNCHRONOUSLY (runBlocking) BEFORE
+                // stopVpn()/stopSelf(). The previous implementation launched
+                // the DB write on serviceScope, but stopSelf() → onDestroy()
+                // cancels serviceScope — the write could be cancelled mid-flight,
+                // leaving VPN_SWITCH=true in the DB while the user had explicitly
+                // stopped the VPN. On the next reboot the boot-restore pipeline
+                // (BOOT-VPN-01) would then resurrect a VPN the user turned OFF.
+                // Same rationale + pattern as the BUG-02 fix in onRevoke().
+                try {
+                    kotlinx.coroutines.runBlocking {
                         val db = AppDatabase.getInstance(this@MyVpnService)
                         SwitchStatusValues(db.switchStatusDao())
                             .storeSwitchStatus(SwitchIdentifier.VPN_SWITCH, false)
-                        Timber.i("VPN_SWITCH set to false (user stopped via notification)")
-                    } catch (t: Throwable) {
-                        Timber.e(t, "Failed to sync VPN_SWITCH=false on stop")
                     }
+                    Timber.i("VPN_SWITCH set to false (user stopped via notification)")
+                } catch (t: Throwable) {
+                    Timber.e(t, "Failed to sync VPN_SWITCH=false on stop")
                 }
                 stopVpn()
                 stopSelf()
@@ -192,10 +201,48 @@ class MyVpnService : VpnService() {
                     startVpn()
                 }
             }
-            else -> startVpn()
+            // BOOT-VPN-02 fix: a null intent reaches onStartCommand when the
+            // SYSTEM restarts the service after a kill (START_STICKY). Do NOT
+            // blindly start the VPN — consult the persisted VPN_SWITCH first.
+            // Otherwise a sticky revival could silently re-enable a VPN the
+            // user explicitly turned off (and log "connected" against the
+            // user's intent). Conversely, when the switch is ON this is one
+            // more free chance to restore protection without user interaction.
+            else -> startVpnIfEnabled(reason = "sticky_restart(action=${intent?.action})")
         }
 
         return START_STICKY
+    }
+
+    /**
+     * BOOT-VPN-02: starts the VPN only when the persisted VPN_SWITCH is ON
+     * (or a scheduled per-app block is active). Used for system-initiated
+     * sticky restarts (null intent) where no user action is attached to the
+     * start command. When the switch is OFF, the service stops itself instead
+     * of resurrecting a VPN the user disabled.
+     *
+     * If the DB read fails (e.g. credential storage unavailable), defaults to
+     * enabled=true: startVpn() re-reads the DB itself and fails safe to
+     * stopSelf() if it also cannot read, so a transient read failure can
+     * never leave a ghost VPN running.
+     */
+    private fun startVpnIfEnabled(reason: String) {
+        serviceScope.launch {
+            val enabled = try {
+                val db = AppDatabase.getInstance(this@MyVpnService)
+                SwitchStatusValues(db.switchStatusDao()).isVpnSwitchOn()
+            } catch (t: Throwable) {
+                Timber.w(t, "startVpnIfEnabled($reason): DB check failed — assuming enabled")
+                true
+            }
+            if (enabled || scheduledBlockApps.isNotEmpty()) {
+                Timber.i("startVpnIfEnabled($reason): VPN_SWITCH=$enabled scheduledAppBlock=${scheduledBlockApps.isNotEmpty()} — starting VPN")
+                startVpn()
+            } else {
+                Timber.w("startVpnIfEnabled($reason): VPN_SWITCH=false and no scheduled app block — NOT starting VPN on sticky restart, stopping service")
+                stopSelf()
+            }
+        }
     }
 
     private fun startVpn() {
@@ -802,6 +849,25 @@ class MyVpnService : VpnService() {
         }
 
         fun stop(context: Context) {
+            // VPN-STOP-02 fix (v1.0.64): if the service is not running (and
+            // not mid-start), do NOT send the stop intent. ACTION_STOP goes
+            // through startForegroundService(), which STARTS the service just
+            // to stop it — onStartCommand posts the placeholder
+            // "Connecting…" notification (BUG-01b fix) before stopSelf(),
+            // so stopping an already-dead VPN produced a confusing
+            // notification flash plus a wasted service start/stop cycle.
+            //
+            // State correctness is preserved: every stop caller already
+            // persists VPN_SWITCH=false itself (ViewModel toggle, navigation
+            // handler, service ACTION_STOP handler, onRevoke), and when the
+            // service IS alive the intent flows through unchanged.
+            val state = observableVpnState
+            if (instance == null &&
+                (state == VpnState.IDLE || state == VpnState.FAILED)
+            ) {
+                Timber.d("MyVpnService.stop(): service not running (state=$state) — skipping stop intent")
+                return
+            }
             val intent = Intent(context, MyVpnService::class.java).apply {
                 action = ACTION_STOP
             }

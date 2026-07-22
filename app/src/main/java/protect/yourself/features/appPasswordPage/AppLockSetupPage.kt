@@ -80,6 +80,33 @@ class AppLockSetupViewModel(
         loadCurrentState()
     }
 
+    /**
+     * LOCKSESSION-03 fix (v1.0.65): begins a fresh setup session.
+     *
+     * This ViewModel is retained by the host Activity, so without an explicit
+     * reset a user who started configuring a lock (e.g. typed the first PIN
+     * entry, then backgrounded the app mid-setup) would return to a stale
+     * CONFIRM step with `firstEntry` pre-filled but no recollection of what
+     * they typed — the same stale-session class of bug as the lock screen
+     * (LOCKSESSION-01). Called on every entry into AppLockSetupPage, which
+     * restarts setup from the lock-type selector with empty entry fields.
+     */
+    fun beginSetupSession() {
+        _state.update {
+            it.copy(
+                selectedLockType = null,
+                setupStep = SetupStep.NONE,
+                firstEntry = "",
+                secondEntry = "",
+                error = null,
+                toastMessage = null
+            )
+        }
+        // Reload persisted configuration so the selector always reflects the
+        // current lock state (it may have changed since the session started).
+        loadCurrentState()
+    }
+
     private fun loadCurrentState() {
         viewModelScope.launch {
             try {
@@ -271,6 +298,14 @@ fun AppLockSetupPage(onBack: () -> Unit) {
         factory = AppLockSetupViewModel.factory(context, AppDatabase.getInstance(context))
     )
     val state by viewModel.state.collectAsState()
+
+    // LOCKSESSION-03 fix (v1.0.65): restart from the type selector with empty
+    // entry fields on every entry into this page. The ViewModel is Activity-
+    // retained — without this, backgrounding the app mid-setup and returning
+    // resumed a stale CONFIRM step with a pre-filled firstEntry.
+    LaunchedEffect(Unit) {
+        viewModel.beginSetupSession()
+    }
 
     if (state.isLoading) {
         Box(

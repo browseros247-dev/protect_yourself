@@ -244,6 +244,22 @@
             </intent-filter>
         </receiver>
 
+        <!-- Backup VPN restore alarm (BOOT-VPN-01 fix, v1.0.63) — one-shot
+             alarm armed by VpnRestoreHelper after boot/app-update. Alarm
+             execution places the app on the temporary allowlist, so this
+             path may start the VPN foreground service even on Android 12+
+             when the WorkManager expedited job could not (quota exhaustion,
+             WM failure, OEM interference). Non-exported: only reachable via
+             the app's own explicit PendingIntent. -->
+        <receiver
+            android:name="protect.yourself.commons.utils.broadcastReceivers.BootVpnRestoreAlarmReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter android:priority="999">
+                <action android:name="protect_yourself.action.VPN_RESTORE_AFTER_BOOT" />
+            </intent-filter>
+        </receiver>
+
         <!-- Package install/remove -->
         <!--
             IMPORTANT: The `<data android:scheme="package" />` filter applies

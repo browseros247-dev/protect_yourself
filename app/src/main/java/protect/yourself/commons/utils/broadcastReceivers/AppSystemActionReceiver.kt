@@ -25,9 +25,20 @@ import timber.log.Timber
  * the VPN tunnel during a network transition and Android did not auto-
  * rebind it.
  *
+ * VPN-CONN-01 fix (v1.0.64): the restart previously called
+ * `MyVpnService.start(context)` DIRECTLY from this broadcast receiver —
+ * on Android 12+ (API 31+) that throws
+ * ForegroundServiceStartNotAllowedException, which was silently swallowed
+ * inside the service starter, making this path dead code on every modern
+ * device (the exact same failure class as BOOT-VPN-01). The receiver now
+ * schedules the expedited [VpnRestartWorker] instead — expedited jobs get
+ * a temporary FGS-start exemption, and the worker re-checks switch state,
+ * VPN consent, and verifies the service actually came up.
+ *
  * Note: this receiver is also a defense-in-depth for BUG-13 (tunnel death
- * detection). For a more robust tunnel-death detection, see the periodic
- * health-check polling proposed in BUG-13 (not yet implemented).
+ * detection). A periodic 15-minute reconcile now also runs in
+ * [protect.yourself.commons.utils.workManager.ScheduleCheckWorker]
+ * (BOOT-VPN-01 fix, v1.0.63).
  */
 class AppSystemActionReceiver : BroadcastReceiver() {
 
@@ -40,10 +51,22 @@ class AppSystemActionReceiver : BroadcastReceiver() {
                 val db = AppDatabase.getInstance(context)
                 val switchValues = SwitchStatusValues(db.switchStatusDao())
                 val vpnShouldBeOn = switchValues.isVpnSwitchOn()
-                val vpnIsRunning = MyVpnService.isRunning()
-                if (vpnShouldBeOn && !vpnIsRunning) {
-                    Timber.i("BUG-12: VPN_SWITCH is ON but service is not running on connectivity change — restarting")
-                    MyVpnService.start(context)
+                if (!vpnShouldBeOn) return@launch
+                // Treat CONNECTING/CONNECTED as running — isRunning() alone
+                // misses the startup window (isRunning flips true only post-
+                // establish), which would enqueue a duplicate restore while
+                // a start is already in flight.
+                val state = MyVpnService.observableVpnState
+                val vpnRunningOrStarting = MyVpnService.isRunning() ||
+                    state == MyVpnService.VpnState.CONNECTING ||
+                    state == MyVpnService.VpnState.CONNECTED
+                if (!vpnRunningOrStarting) {
+                    // VPN-CONN-01: expedited WorkManager job (exempt from the
+                    // Android 12+ background-FGS-start restriction) instead of
+                    // a direct MyVpnService.start() from this receiver.
+                    Timber.i("BUG-12: VPN_SWITCH is ON but service is not running on connectivity change — scheduling restore worker")
+                    protect.yourself.commons.utils.workManager.VpnRestartWorker
+                        .enqueue(context.applicationContext)
                 }
             } catch (t: Throwable) {
                 Timber.e(t, "BUG-12: failed to re-evaluate VPN state on connectivity change")

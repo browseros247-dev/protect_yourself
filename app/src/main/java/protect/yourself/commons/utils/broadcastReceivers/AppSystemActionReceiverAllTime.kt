@@ -6,7 +6,6 @@ import android.content.Intent
 import kotlinx.coroutines.launch
 import protect.yourself.core.appCoroutineScope
 import protect.yourself.database.core.AppDatabase
-import protect.yourself.database.switchStatus.SwitchStatusValues
 import protect.yourself.features.blockerPage.service.MyAccessibilityService
 import timber.log.Timber
 
@@ -55,22 +54,28 @@ class AppSystemActionReceiverAllTime : BroadcastReceiver() {
                         // Refresh accessibility blocking config
                         MyAccessibilityService.instance?.refreshBlockingConfig()
 
-                        // Restart VPN if it was active before reboot.
+                        // Restore VPN if it was active before reboot.
                         // VPN-05 fix: on Android 12+ (API 31+) a broadcast
                         // receiver cannot start a foreground service directly —
                         // the system throws ForegroundServiceStartNotAllowedException.
-                        // Schedule an expedited WorkManager request instead,
-                        // which is exempt from the background-start restriction.
+                        //
+                        // BOOT-VPN-01 fix (v1.0.63): delegate to
+                        // VpnRestoreHelper.scheduleBootRestore, which arms TWO
+                        // redundant, exemption-holding start paths:
+                        //   1. an expedited WorkManager job (VpnRestartWorker) —
+                        //      NOTE: the pre-fix request was invalid
+                        //      (setExpedited + setInitialDelay are mutually
+                        //      exclusive), so it threw at build() and NEVER ran;
+                        //   2. a backup AlarmManager one-shot whose execution is
+                        //      also exempt from the background-FGS restriction.
+                        // The helper checks the persisted VPN_SWITCH itself and
+                        // no-ops when the device is still locked (direct boot) —
+                        // BOOT_COMPLETED fires after unlock and re-arms this.
                         try {
-                            val db = AppDatabase.getInstance(context)
-                            val switchValues = SwitchStatusValues(db.switchStatusDao())
-                            if (switchValues.isVpnSwitchOn()) {
-                                protect.yourself.commons.utils.workManager.VpnRestartWorker
-                                    .enqueue(context)
-                                Timber.i("VPN restart scheduled after boot (via WorkManager)")
-                            }
+                            protect.yourself.commons.utils.vpn.VpnRestoreHelper
+                                .scheduleBootRestore(context, trigger = "boot_receiver")
                         } catch (t: Throwable) {
-                            Timber.w(t, "Failed to check VPN state after boot")
+                            Timber.w(t, "Failed to schedule VPN restore after boot")
                         }
 
                         // Phase 2: Re-arm scheduled app restrictions after boot

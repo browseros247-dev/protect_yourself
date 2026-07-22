@@ -119,7 +119,24 @@ object NotificationHelper {
      * must open the app and enable VPN manually — we cannot launch the VPN
      * permission dialog from a background context.
      */
-    fun showVpnPermissionRequiredNotification(context: Context) {
+    /**
+     * Posts a "VPN permission required" notification.
+     *
+     * VPN-NOTIF-04 fix (v1.0.64): the copy used to be hardcoded to the
+     * scheduled-app-restriction scenario, but this notification is ALSO
+     * posted from the boot-restore path when VPN consent was revoked —
+     * where the schedule-specific text was misleading. Callers now pass
+     * scenario-appropriate copy; the defaults preserve the original
+     * scheduled-restriction wording for the existing ScheduleEngine call site.
+     */
+    fun showVpnPermissionRequiredNotification(
+        context: Context,
+        title: String = "Scheduled app restriction needs VPN permission",
+        text: String = "Tap to open the app and enable VPN to block internet for scheduled apps.",
+        bigText: String = "A scheduled app restriction is active, but the app needs VPN permission " +
+            "to block internet access for the selected apps. Tap to open the app and " +
+            "enable VPN in the Blocker settings."
+    ) {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -130,14 +147,9 @@ object NotificationHelper {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ACCESSIBILITY_ALERT)
             .setSmallIcon(R.drawable.ic_info)
-            .setContentTitle("Scheduled app restriction needs VPN permission")
-            .setContentText("Tap to open the app and enable VPN to block internet for scheduled apps.")
-            .setStyle(NotificationCompat.BigTextStyle()
-                .bigText(
-                    "A scheduled app restriction is active, but the app needs VPN permission " +
-                    "to block internet access for the selected apps. Tap to open the app and " +
-                    "enable VPN in the Blocker settings."
-                ))
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(bigText))
             .setContentIntent(pending)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)

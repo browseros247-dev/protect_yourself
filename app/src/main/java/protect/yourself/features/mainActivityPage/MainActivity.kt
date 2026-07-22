@@ -176,7 +176,31 @@ class MainActivity : FragmentActivity() {
 
                 appState = when {
                     !termsAccepted -> AppState.ONBOARDING
-                    lockEnabled -> AppState.LOCKED
+                    lockEnabled -> {
+                        // LOCKSESSION-01 fix (v1.0.65): reset the retained
+                        // lock-screen ViewModel BEFORE Compose recomposes into
+                        // AppLockScreen, so not even a single frame shows the
+                        // previous session's input. The composable's own
+                        // LaunchedEffect(Unit) → beginLockSession() performs
+                        // the same reset as a redundant invariant; both are
+                        // idempotent. The ViewModel is keyed by class with the
+                        // default key, so this resolves to the SAME instance
+                        // the composable uses (or creates it lazily on first
+                        // lock).
+                        try {
+                            androidx.lifecycle.ViewModelProvider(
+                                this@MainActivity,
+                                protect.yourself.features.appPasswordPage.AppLockViewModel.factory(
+                                    this@MainActivity,
+                                    AppDatabase.getInstance(this@MainActivity)
+                                )
+                            )[protect.yourself.features.appPasswordPage.AppLockViewModel::class.java]
+                                .beginLockSession()
+                        } catch (t: Throwable) {
+                            Timber.w(t, "Pre-lock session reset failed (non-fatal — composable will retry)")
+                        }
+                        AppState.LOCKED
+                    }
                     else -> AppState.MAIN
                 }
                 Timber.i("App state: $appState (terms=$termsAccepted, lock=$lockEnabled)")
