@@ -21,6 +21,10 @@
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- OB-PERM-02 (v1.0.66): direct battery-optimization whitelist dialog from
+         onboarding (ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS). Fallback to
+         ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS needs no permission. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 

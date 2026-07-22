@@ -7,7 +7,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import protect.yourself.R
+import timber.log.Timber
 import protect.yourself.features.mainActivityPage.MainActivity
 
 /**
@@ -80,6 +82,34 @@ object NotificationHelper {
     }
 
     /**
+     * OB-PERM-05 (v1.0.66): fail-fast gate — skip building + posting when the
+     * app-level notification toggle is OFF (POST_NOTIFICATIONS denied on API
+     * 33+, or user blocked notifications in settings). Previously every caller
+     * built the notification, did PendingIntent plumbing and called notify()
+     * which silently no-op'd (logcat noise, wasted work, and a potential
+     * SecurityException on strict OEM builds).
+     *
+     * Fail-OPEN on read errors: a broken settings read must never silence a
+     * critical protection alert — posting while disabled is a safe platform
+     * no-op anyway.
+     */
+    private fun canPostNotifications(context: Context, what: String, notifId: Int): Boolean {
+        val enabled = try {
+            NotificationManagerCompat.from(context).areNotificationsEnabled()
+        } catch (t: Throwable) {
+            Timber.w(t, "NotificationHelper: areNotificationsEnabled() failed — treating as enabled")
+            true
+        }
+        if (!enabled) {
+            Timber.w(
+                "NotificationHelper: skipping '$what' (id=$notifId) — notifications are disabled " +
+                    "(grant POST_NOTIFICATIONS via onboarding or system settings)"
+            )
+        }
+        return enabled
+    }
+
+    /**
      * Show daily report notification.
      *
      * Streak feature removed in v1.0.62 — no longer includes streak days.
@@ -88,6 +118,7 @@ object NotificationHelper {
         context: Context,
         blockCount: Int
     ) {
+        if (!canPostNotifications(context, "daily report", NOTIF_ID_DAILY_REPORT)) return
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -137,6 +168,7 @@ object NotificationHelper {
             "to block internet access for the selected apps. Tap to open the app and " +
             "enable VPN in the Blocker settings."
     ) {
+        if (!canPostNotifications(context, "vpn permission required", NOTIF_ID_VPN_PERMISSION_REQUIRED)) return
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -164,6 +196,7 @@ object NotificationHelper {
      * Show accessibility disabled alert (high-priority).
      */
     fun showAccessibilityDisabledNotification(context: Context) {
+        if (!canPostNotifications(context, "accessibility disabled", NOTIF_ID_ACCESSIBILITY_ALERT)) return
         val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
@@ -202,6 +235,7 @@ object NotificationHelper {
         val lastMs = prefs.getLong(KEY_LAST_OVERLAY_NOTIF_MS, 0L)
         val now = System.currentTimeMillis()
         if (now - lastMs < OVERLAY_THROTTLE_MS) return
+        if (!canPostNotifications(ctx, "overlay permission", NOTIF_ID_OVERLAY_PERMISSION)) return
 
         try {
             val intent = Intent(
