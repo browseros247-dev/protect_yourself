@@ -17,8 +17,8 @@ android {
         applicationId = "protect.yourself"
         minSdk = 26
         targetSdk = 35
-        versionCode = 67
-        versionName = "1.0.67"
+        versionCode = 68
+        versionName = "1.0.68"
 
         // PERF-01: the app ships English-only strings; strip non-English
         // resources pulled in from libraries (androidx/material ship many

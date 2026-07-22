@@ -2127,7 +2127,10 @@ class MyAccessibilityService : AccessibilityService() {
 
         // ===== Strategy 2: Activity fallback =====
         // Throttle the Activity fallback (300ms global) to prevent storm-launching.
-        val now = System.currentTimeMillis()
+        // BLOCK-SCREEN-04 (v1.0.68): use the monotonic clock — wall-clock jumps
+        // (NTP/manual time change) could freeze the throttle and silently drop
+        // legitimate blocks (or let a storm through).
+        val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastBlockTimeMs < BLOCK_THROTTLE_GLOBAL_MS) {
             return
         }
@@ -2153,6 +2156,43 @@ class MyAccessibilityService : AccessibilityService() {
             serviceScope.launch {
                 kotlinx.coroutines.delay(200)
                 try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Throwable) {}
+            }
+            // BLOCK-SCREEN-02 (v1.0.68): startActivity() from a background
+            // accessibility service can be SILENTLY dropped on API 29+ by the
+            // background-activity-launch restrictions (no exception — the call
+            // "succeeds" and nothing appears: the reported "does not appear at
+            // all"). Verify the screen actually came up; if not, escalate:
+            // retry the overlay (the permission may have been granted since the
+            // first check) and, failing that, press HOME as the last resort so
+            // the offending content never stays visible after a confirmed block.
+            serviceScope.launch {
+                kotlinx.coroutines.delay(FALLBACK_VERIFY_DELAY_MS)
+                try {
+                    val activityShowing = protect.yourself.features.blockerPage.ui.PornBlockActivity.isShowing.get()
+                    val overlayShowing = getBlockOverlayManager().isShowing()
+                    if (activityShowing || overlayShowing) {
+                        Timber.d("Block fallback verified (activity=%s overlay=%s)", activityShowing, overlayShowing)
+                        return@launch
+                    }
+                    Timber.w("Block fallback did NOT appear (BAL-dropped?) — escalating for pkg=$packageName")
+                    protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                        "BlockFallback",
+                        "activity not visible after ${FALLBACK_VERIFY_DELAY_MS}ms for pkg=$packageName — escalating"
+                    )
+                    val mgr = getBlockOverlayManager()
+                    val retried = try {
+                        mgr.canDrawOverlays() && mgr.showBlockOverlay(packageName, messageResKey, matchedKeyword)
+                    } catch (t: Throwable) {
+                        Timber.w(t, "Overlay escalation retry failed")
+                        false
+                    }
+                    if (!retried) {
+                        Timber.e("All block paths failed for pkg=$packageName — HOME press as last resort")
+                        try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Throwable) {}
+                    }
+                } catch (t: Throwable) {
+                    Timber.w(t, "Block fallback verification failed")
+                }
             }
         } catch (t: Throwable) {
             Timber.e(t, "Activity fallback also failed — pressing HOME as last resort")
@@ -2496,6 +2536,13 @@ class MyAccessibilityService : AccessibilityService() {
         const val EXTRA_BLOCK_MESSAGE_KEY = "extra_block_message_key"
         // KB-19: extra key for the matched keyword, passed to PornBlockActivity.
         const val EXTRA_MATCHED_KEYWORD = "extra_matched_keyword"
+
+        /**
+         * BLOCK-SCREEN-02 (v1.0.68): delay before verifying that the Activity
+         * fallback actually became visible (guards against silent background
+         * activity-launch drops on API 29+).
+         */
+        const val FALLBACK_VERIFY_DELAY_MS = 900L
 
         // KB-06: throttle constants.
         private const val BLOCK_THROTTLE_GLOBAL_MS = 300L

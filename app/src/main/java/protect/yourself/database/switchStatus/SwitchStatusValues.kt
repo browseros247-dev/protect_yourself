@@ -51,6 +51,14 @@ import timber.log.Timber
  */
 class SwitchStatusValues(private val dao: SwitchStatusDao) {
 
+    companion object {
+        /** TIMER-DEFAULT-01 (v1.0.68): default Close-button countdown when no valid custom value is set. */
+        const val DEFAULT_BLOCK_SCREEN_COUNTDOWN_SECONDS = 3
+        /** Valid range for a custom countdown (per block-screen design "3-300s"). */
+        const val MIN_BLOCK_SCREEN_COUNTDOWN_SECONDS = 1
+        const val MAX_BLOCK_SCREEN_COUNTDOWN_SECONDS = 300
+    }
+
     // ===== Reads: Booleans =====
 
     suspend fun isPornBlockerSwitchOn(): Boolean =
@@ -172,8 +180,39 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
     suspend fun getBlockScreenStoreImagePath(): String? =
         dao.get(SwitchIdentifier.BLOCK_SCREEN_STORE_IMAGE_PATH)?.asString()?.takeIf { it.isNotBlank() }
 
-    suspend fun getBlockScreenCountDownSeconds(): Int =
-        dao.get(SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET)?.asInt() ?: 0
+    /**
+     * Block screen Close-button countdown (seconds).
+     *
+     * TIMER-DEFAULT-01 (v1.0.68): previously this returned 0 when the stored
+     * row was missing — and since NO code path in the app ever persists a
+     * custom value (grep-verified: no setter/callback seed), the countdown
+     * was effectively always disabled. Spec: the app MUST default to
+     * [DEFAULT_BLOCK_SCREEN_COUNTDOWN_SECONDS] (3s) whenever a valid custom
+     * value has not been set, so a fresh install gets the intended 3-second
+     * dwell on every block screen (overlay AND Activity path).
+     *
+     * A stored custom value is honored only when it parses and falls inside
+     * [MIN_BLOCK_SCREEN_COUNTDOWN_SECONDS]..[MAX_BLOCK_SCREEN_COUNTDOWN_SECONDS]
+     * — anything missing, unparsable, zero, negative, or above the max counts
+     * as "not set" and falls back to the default (fail-safe, never a
+     * longer-than-max lock or an instant-close bypass).
+     */
+    suspend fun getBlockScreenCountDownSeconds(): Int {
+        val stored = dao.get(SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET)?.asInt()
+        return if (stored != null &&
+            stored in MIN_BLOCK_SCREEN_COUNTDOWN_SECONDS..MAX_BLOCK_SCREEN_COUNTDOWN_SECONDS
+        ) {
+            stored
+        } else {
+            if (stored != null) {
+                Timber.w(
+                    "Invalid block-screen countdown stored (%s) — using default %ds",
+                    stored, DEFAULT_BLOCK_SCREEN_COUNTDOWN_SECONDS
+                )
+            }
+            DEFAULT_BLOCK_SCREEN_COUNTDOWN_SECONDS
+        }
+    }
 
     /**
      * Clear the persisted block-screen custom message and its "is set" flag.
