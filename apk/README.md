@@ -7,23 +7,22 @@ This directory contains the **latest** pre-built, signed APK of **Protect Yourse
 - **Only the latest version** is kept here. When a new version is built, the previous APKs are removed.
 - Each version has two files: `*-debug.apk` (debug build with logging) and `*-release.apk` (production build, recommended).
 
-## Current Version: 1.0.66 (versionCode 66) — Onboarding Permission Requests (OB-PERM)
+## Current Version: 1.0.67 (versionCode 67) — App Size & Performance Optimization (PERF)
 
 | File | Size | Build Type | Description |
 |---|---|---|---|
-| `protect.yourself-v1.0.66-release.apk` | ~15.5 MB | Release | **Recommended for installation.** The onboarding flow previously never requested any runtime/special-access permission (OB-PERM-01..06) — notifications (`POST_NOTIFICATIONS`, API 33+), battery-optimization exemption ("background running"), exact alarms (`SCHEDULE_EXACT_ALARM`, API 31+), and the accessibility service were left to chance, silently breaking protection alerts and background reliability on fresh installs. Onboarding is now a two-step flow (Terms → Permission checklist) with live grant-state detection, per-row grant actions, safe system-intent fallbacks, and crash-log breadcrumbs. Also: `NotificationHelper` now gates posting on `areNotificationsEnabled()` (OB-PERM-05), and onboarding state survives rotation/process death (OB-PERM-06). Carries all previous fixes (v1.0.63 boot-VPN restore, v1.0.64 VPN review, v1.0.65 App Lock session reset). See `docs/ONBOARDING_PERMISSIONS_REPORT_v1.0.66.md`. 340/340 tests pass. |
-| `protect.yourself-v1.0.66-debug.apk` | ~22.5 MB | Debug | Same code with debug logging, `Protect Yourself DEBUG` label, debuggable. |
+| `protect.yourself-v1.0.67-release.apk` | **~3.3 MB** | Release | **Recommended for installation.** Size & performance round (PERF-01..05): release APK shrank from **15.5 MB → 3.3 MB (−78%; raw payload 51 → 6.5 MB, −87%)** by enabling R8 code shrinking+obfuscation and unused-resource shrinking, English-only `resourceConfigurations`, and removing two unused dependencies (`runtime.livedata`, `lottie.compose`). All reflection entry points are pinned by keep rules + a regression-guard test (Gson backup/crash-log models incl. Room entities, WorkManager workers, enum constants). Startup improved: WorkManager scheduling and the crash-log disk scan now run off the main thread (PERF-02/03), and per-step + total init timing is logged (PERF-04). All functionality preserved — carry-over: v1.0.66 onboarding permissions, v1.0.63–65 VPN + App Lock fixes. See `docs/PERF_SIZE_OPTIMIZATION_REPORT_v1.0.67.md`. 348/348 tests pass. |
+| `protect.yourself-v1.0.67-debug.apk` | ~20.3 MB | Debug | Same code with debug logging, `Protect Yourself DEBUG` label, debuggable, unminified by design. |
 
-## Build verification (v1.0.66)
+## Build verification (v1.0.67)
 
-- `./gradlew :app:assembleRelease` → **BUILD SUCCESSFUL**
+- `./gradlew :app:assembleRelease` → **BUILD SUCCESSFUL** (R8 `minifyReleaseWithR8` + `shrinkReleaseRes` completed)
 - `./gradlew :app:assembleDebug` → **BUILD SUCCESSFUL**
-- `./gradlew :app:testDebugUnitTest` → **340/340 tests pass, 0 failures, 0 errors, 0 skipped** (22 suites; +14 new OnboardingPermissionsTest cases)
+- `./gradlew :app:testDebugUnitTest` → **348/348 tests pass, 0 failures, 0 errors, 0 skipped** (23 suites; +8 new ProguardRulesRegressionTest guards)
+- Size delta measured on the packaged artifacts: release **15.48 MB → 3.30 MB** (−78.7%); raw uncompressed **51.0 MB → 6.54 MB**; dex payload **48.2 MB → 4.85 MB**
 - `apksigner verify` → **signature valid** for both APKs (debug keystore per `release { signingConfig = signingConfigs.getByName("debug") }` — re-sign with your own release keystore for Play Store distribution)
-- `aapt2 dump badging` → package `protect.yourself`, versionCode `66`, versionName `1.0.66`, minSdk 26, targetSdk 35
-- `aapt2 dump permissions` → `POST_NOTIFICATIONS`, `SCHEDULE_EXACT_ALARM`, `USE_EXACT_ALARM`, and new `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (OB-PERM-02) all present in the merged manifest
-- `OnboardingPermissions` code verified present in DEX of both APKs
-- Prior-round artifacts still verified: `BootVpnRestoreAlarmReceiver` receiver + `VpnRestoreHelper` live-restore funnel
+- `aapt2 dump badging` → package `protect.yourself`, versionCode `67`, versionName `1.0.67`, minSdk 26, targetSdk 35
+- Post-R8 integrity: critical FQNs verified present in dex (`VpnRestartWorker`, `ScheduleCheckWorker`, `BackupEnvelope`, `CrashLogEntry`, `MyVpnService`, `BootVpnRestoreAlarmReceiver`, `MyAccessibilityService`, `OnboardingPermissions`); 26 manifest components intact; baseline profile + all four ABI `libandroidx.graphics.path.so` retained
 
 ## New tests (10 across v1.0.63+v1.0.64, all passing)
 
