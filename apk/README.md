@@ -7,99 +7,51 @@ This directory contains the **latest** pre-built, signed APK of **Protect Yourse
 - **Only the latest version** is kept here. When a new version is built, the previous APKs are removed.
 - Each version has two files: `*-debug.apk` (debug build with logging) and `*-release.apk` (production build, recommended).
 
-## Current Version: 1.0.54 (versionCode 54) — Merged: PIN Lock UI Fix + Main's v1.0.49-v1.0.54 Features
+## Current Version: 1.0.65 (versionCode 65) — VPN Fixes + App Lock Session Reset Fix
 
 | File | Size | Build Type | Description |
 |---|---|---|---|
-| `protect.yourself-v1.0.54-release.apk` | ~15.4 MB | Release | **Recommended for installation.** Built from merged `main` after integrating `fix/pin-lock-ui-and-dedup-settings`. Combines: (1) **PIN lock screen UI fix** — replaced broken `LazyVerticalGrid` keypad with fixed `Column-of-Rows` layout; added biometric availability check, lockout countdown, shake animation, full string-resource localization. (2) **Settings dedup** — removed duplicate Touch ID + Disable Forgot Password toggles from `AppLockSetupPage`; made the cards directly toggleable with app-lock-not-set error toasts. (3) **Main's v1.0.49-v1.0.54 features** — block-screen motivation image + custom message UI/UX overhaul, preview block screen, new install blocking fix (6 root-cause bugs), Block In-App Browser detection fix (IAB-01/IAB-02), SafeSearch enforcement rewrite (SS-01/02/03/04), whitelist unsupported browser fix, crash log fixes (ANR fix for `selfHealSafe`), DB migration v8→v9 fix (`displayName` column). 259/259 tests pass. |
+| `protect.yourself-v1.0.65-release.apk` | ~15.5 MB | Release | **Recommended for installation.** Includes the VPN boot-restore fix (v1.0.63: VPN never restarted after reboot on Android 12+), the comprehensive VPN review (v1.0.64: 5 confirmed issues fixed), and the App Lock session-reset fix (v1.0.65 / LOCKSESSION-01/02/03): the password field was never reset when returning to the app because `AppLockState` lived in the Activity-retained ViewModel — the leftover session showed the previous credential, stale `isUnlocked` hard-locked PIN/pattern users out, and the biometric prompt never re-fired. The lock screen now begins a fresh, empty session on every engagement and foreground return. See `docs/APP_LOCK_SESSION_RESET_FIX_REPORT_v1.0.65.md`. 326/326 tests pass. |
+| `protect.yourself-v1.0.65-debug.apk` | ~22.5 MB | Debug | Same code with debug logging, `Protect Yourself DEBUG` label, debuggable. |
 
-## Build verification (v1.0.54 — merged)
+## Build verification (v1.0.65)
 
 - `./gradlew :app:assembleRelease` → **BUILD SUCCESSFUL**
-- `./gradlew :app:testDebugUnitTest` → **259/259 tests pass, 0 failures, 0 errors, 0 skipped**
-- APK signed with debug keystore (per `release { signingConfig = signingConfigs.getByName("debug") }` config — re-sign with your own release keystore for Play Store distribution)
-- package: `protect.yourself`
-- versionCode: 54
-- versionName: `1.0.54`
-- minSdk: 26, targetSdk: 35
-- APK size: ~15.4 MB
+- `./gradlew :app:assembleDebug` → **BUILD SUCCESSFUL**
+- `./gradlew :app:testDebugUnitTest` → **318/318 tests pass, 0 failures, 0 errors, 0 skipped**
+- `apksigner verify --verbose` → **v2 signature valid, 1 signer** (debug keystore per `release { signingConfig = signingConfigs.getByName("debug") }` — re-sign with your own release keystore for Play Store distribution)
+- `aapt2 dump badging` → package `protect.yourself`, versionCode `65`, versionName `1.0.65`, minSdk 26, targetSdk 35
+- Verified `BootVpnRestoreAlarmReceiver` present in merged manifest (non-exported, `protect_yourself.action.VPN_RESTORE_AFTER_BOOT`) and in DEX
 
-## Test breakdown (259/259 pass)
+## New tests (10 across v1.0.63+v1.0.64, all passing)
 
-| Test class | Tests | Status |
-|---|---:|---|
-| BuildConfigSmokeTest | 4 | ✅ |
-| database.AllDaosTest | 22 | ✅ |
-| database.core.AppDatabaseSchemaRepairTest | 9 | ✅ (new on main) |
-| database.switchStatus.SwitchStatusDaoTest | 18 | ✅ |
-| blockerPage.identifiers.IdentifiersTest | 25 | ✅ |
-| blockerPage.service.MyAccessibilityServiceTest | 3 | ✅ |
-| blockerPage.utils.BlockerPageUtilsTest | 34+264 | ✅ (expanded on main) |
-| blockerPage.utils.BlockingValidatorTest | 43 | ✅ |
-| blockerPage.utils.PresetDataTest | 14+21 | ✅ (expanded on main) |
-| blockerPage.utils.StopMeManagerTest | 7 | ✅ |
-| blockerPage.utils.BlockScreenImageLoaderTest | 4 | ✅ (new on main) |
-| blockerPage.utils.NewInstallBlockingUtilsTest | 6 | ✅ (new on main) |
-| blockerPage.utils.NewInstallBlockingIntegrationTest | 14 | ✅ (new on main) |
-| streakPage.identifiers.StreakIdentifiersTest | 11 | ✅ |
-| appPasswordPage.AppLockManagerTest | 6 | ✅ (new on feature branch) |
-| **TOTAL** | **259** | **✅** |
+v1.0.63 — boot-restore regression suite (`VpnRestartWorkerEnqueueTest`):
 
-## What's in this build (merged from two branches)
+| Test | What it pins |
+|---|---|
+| `expedited request with initial delay throws at build time` | The platform constraint that caused BOOT-VPN-01 — guards against re-introduction |
+| `enqueue schedules the vpn restart unique work` | **The regression test** — after `VpnRestartWorker.enqueue()`, the unique work really exists in WorkManager (pre-fix: always empty) |
+| `repeated enqueues keep a single unique work` | No accumulation of duplicate restore jobs |
+| `vpn restart request is expedited and carries no initial delay` | Request spec: expedited, zero initial delay, non-expedited out-of-quota fallback |
+| `enqueue replaces a pre-existing stale unique work` | REPLACE (not KEEP) policy — a stale request can never block a fresh restore attempt |
 
-### From `fix/pin-lock-ui-and-dedup-settings` (PIN Lock UI Fix + Settings Dedup)
+v1.0.64 — comprehensive review regression suite (`VpnReviewFixesTest`):
 
-#### PIN Lock Screen UI (AppLockScreen.kt)
-- Replaced `LazyVerticalGrid` keypad with `Column { Row { ... } }` — all 12 keys always visible (was clipped to 4 keys visible on most phones due to conflicting `height(240.dp)` + `aspectRatio(1f)` constraints).
-- Same fix applied to the pattern grid.
-- Whole screen now `verticalScroll`-capable so content never overflows on small devices.
-- Added `canUseBiometric()` + `checkBiometricAvailability()` + `BiometricAvailability` enum — returns specific failure reason (NO_HARDWARE, HW_UNAVAILABLE, NONE_ENROLLED, etc.) so the UI can show the right message.
-- Surfaced BUG-22 rate-limiter state to the UI: countdown message, disabled input while locked out, auto-refresh every 500ms.
-- Shake animation + haptic feedback on incorrect PIN entry.
-- Timber logging at every state transition for diagnostics.
-- All user-facing strings moved to `strings.xml` for localization (29 new string resources).
-- "Forgot PIN?" shown for PIN locks, "Forgot password?" otherwise (matches the reference behavior).
+| Test | What it pins |
+|---|---|
+| `stop does not start the service when the VPN is not running` | VPN-STOP-02 — no service start (no notification flash) when stopping a dead VPN |
+| `vpn permission notification keeps scheduled-restriction copy by default` | VPN-NOTIF-04 — schedule call-site copy unchanged |
+| `vpn permission notification uses custom copy when provided` | VPN-NOTIF-04 — boot-restore scenario shows correct copy |
+| `restoreIfEnabled returns NOT_ENABLED when vpn switch is off` | DB switch is the source of truth for restore decisions |
+| `backup alarm delay is longer than the worker verify window` | Layered-restore invariant (backup fires after primary path) |
 
-#### Duplicate Settings Removed (AppLockSetupPage.kt, BlockerPageViewModel.kt)
-- Removed duplicate Touch ID + Disable Forgot Password toggles from `AppLockSetupPage`'s `LockTypeSelector` (replaced with a hint card pointing users to the main settings page).
-- Made `TOUCH_ID_SWITCH` and `DISABLE_FORGOT_PASSWORD_SWITCH` cards on the main settings page **directly toggleable** (previously they just opened `AppLockSetup`).
-- Error toasts when toggling ON without an app lock set (matches the reference strings).
-- Updated card labels to match reference APK: "Set app lock", "Enable touch ID with app lock", "Disable the forgot password option".
+## Manual device checklist (post-install)
 
-### From `main` (v1.0.49-v1.0.54 features)
-
-#### Block Screen Motivation Image + Custom Message UI/UX (v1.0.54)
-- New `BlockScreenImageLoader` for safe image loading with size validation (20 MB max).
-- New `saveBlockScreenImageUri`, `clearBlockScreenImage`, `clearBlockScreenMessage`, `saveBlockScreenMessage`, `previewBlockScreen` methods in `BlockerPageViewModel`.
-- New `ClearBlockScreenImage`, `ClearBlockScreenMessage`, `PreviewBlockScreen` navigation events.
-- Localized action labels: "Choose" / "Change" / "Remove" for image; "Default" / "Custom" for message.
-- Preview block screen feature.
-
-#### New Install Blocking Fix (v1.0.49)
-- New `NewInstallBlockingUtils` class.
-- Fixed 6 root-cause bugs preventing the feature from working.
-- AndroidManifest fix: split intent-filters so `MY_PACKAGE_REPLACED` (no data URI) doesn't get filtered out by `<data android:scheme="package" />`.
-
-#### Block In-App Browser Detection Fix (IAB-01, IAB-02)
-- New `UnsupportedBrowserDetector` class.
-- Repaired detection logic that was incorrectly blocking supported browsers.
-
-#### SafeSearch Enforcement Rewrite (SS-01/02/03/04)
-- Rewrote SafeSearch to match the reference behavior.
-
-#### Whitelist Unsupported Browser Fix
-- Picker now shows only unsupported browsers (was showing all browsers).
-
-#### Crash Log Fixes (v1.0.49)
-- ANR fix: moved `selfHealSafe` to a background coroutine in `ProtectYourselfApp.onCreate` (was blocking the main thread for 100-500ms on some OEMs).
-- DB migration v8→v9 fix: column name changed from `display_name` (snake_case) to `displayName` (camelCase) to match Room 2.6.1's default naming.
-
-## Reference APK
-
-This build's lock screen + settings labels mirror the reference app's behavior.
+1. Enable VPN → confirm "Connected".
+2. Reboot → do NOT open the app → VPN notification + tunnel re-appear (WorkManager path within seconds of BOOT_COMPLETED/unlock; backup alarm within ~45 s worst case).
+3. Turn VPN off → reboot → VPN stays OFF.
+4. App update (`adb install -r`) without reboot → VPN restored via `MY_PACKAGE_REPLACED` path.
 
 ## Removed APKs
 
-The previous `protect.yourself-v1.0.48-release.apk` was replaced by this v1.0.54 build (per the "only the latest version" policy).
-
-Older versions are still accessible via git history (e.g. `git show v1.0.47:apk/protect.yourself-v1.0.47-release.apk > old.apk`).
+All previous APK files were removed per the policy above (only the latest version is kept).
