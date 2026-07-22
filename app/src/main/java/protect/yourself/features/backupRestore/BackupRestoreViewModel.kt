@@ -104,6 +104,77 @@ class BackupRestoreViewModel(
                     protect.yourself.features.blockerPage.service.MyAccessibilityService.instance
                         ?.refreshBlockingConfig()
                 } catch (_: Throwable) {}
+                // VPN-RESTORE-03 fix (v1.0.64): reconcile the live VPN service
+                // with the RESTORED state. Previously only the accessibility
+                // service was refreshed — a backup with VPN_SWITCH=ON restored
+                // onto a device where the VPN wasn't running left protection
+                // silently off (and vice versa) until the next reboot or VPN
+                // page visit. Restored VPN_CONNECTION_TYPE / custom DNS presets
+                // also only took effect on the next VPN session. The app is in
+                // the foreground here, so starting the FGS directly is allowed
+                // on every API level.
+                reconcileVpnWithRestoredState()
+            }
+        }
+    }
+
+    /**
+     * VPN-RESTORE-03: aligns the running VPN service with the just-restored
+     * VPN_SWITCH / VPN_CONNECTION_TYPE / custom-DNS preset state:
+     *
+     *  - switch ON  + not running → start (if consent still granted; if the
+     *    restored switch is ON but consent is missing on THIS device, sync
+     *    the switch OFF so the UI reflects reality);
+     *  - switch OFF + running     → stop;
+     *  - switch ON  + running     → restart so the restored mode/DNS presets
+     *    apply immediately;
+     *  - switch OFF + not running → nothing to do.
+     */
+    private fun reconcileVpnWithRestoredState() {
+        viewModelScope.launch {
+            try {
+                val ctx = getApplication<Application>()
+                val db = AppDatabase.getInstance(ctx)
+                val switchValues = protect.yourself.database.switchStatus
+                    .SwitchStatusValues(db.switchStatusDao())
+                val vpnOn = switchValues.isVpnSwitchOn()
+                val serviceState = protect.yourself.features.blockerPage.service
+                    .MyVpnService.observableVpnState
+                val runningOrStarting =
+                    protect.yourself.features.blockerPage.service.MyVpnService.isRunning() ||
+                    serviceState == protect.yourself.features.blockerPage.service.MyVpnService.VpnState.CONNECTING ||
+                    serviceState == protect.yourself.features.blockerPage.service.MyVpnService.VpnState.CONNECTED
+
+                when {
+                    vpnOn && !runningOrStarting -> {
+                        if (android.net.VpnService.prepare(ctx) == null) {
+                            Timber.i("VPN-RESTORE-03: restored VPN_SWITCH=ON, service down — starting VPN")
+                            protect.yourself.features.blockerPage.service.MyVpnService.start(ctx)
+                        } else {
+                            // Consent doesn't exist on this device (VPN consent
+                            // is per-device and is NOT portable via backup).
+                            Timber.w("VPN-RESTORE-03: restored VPN_SWITCH=ON but no VPN consent on this device — syncing switch OFF")
+                            switchValues.storeSwitchStatus(
+                                protect.yourself.database.switchStatus.SwitchIdentifier.VPN_SWITCH,
+                                false
+                            )
+                        }
+                    }
+                    !vpnOn && runningOrStarting -> {
+                        Timber.i("VPN-RESTORE-03: restored VPN_SWITCH=OFF, service running — stopping VPN")
+                        protect.yourself.features.blockerPage.service.MyVpnService.stop(ctx)
+                    }
+                    vpnOn && runningOrStarting -> {
+                        // Apply restored mode/DNS selection to the live tunnel.
+                        Timber.i("VPN-RESTORE-03: restarting VPN to apply restored mode/DNS state")
+                        protect.yourself.features.blockerPage.service.MyVpnService.restart(ctx)
+                    }
+                    else -> {
+                        Timber.d("VPN-RESTORE-03: VPN already matches restored state — nothing to do")
+                    }
+                }
+            } catch (t: Throwable) {
+                Timber.w(t, "VPN-RESTORE-03: post-restore VPN reconcile failed (non-fatal)")
             }
         }
     }

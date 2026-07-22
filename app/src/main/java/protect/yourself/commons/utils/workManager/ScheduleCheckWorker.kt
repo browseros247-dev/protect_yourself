@@ -31,6 +31,19 @@ class ScheduleCheckWorker(
         return try {
             Timber.d("ScheduleCheckWorker running")
             ScheduleEngine.getInstance(applicationContext).reevaluateAndApply()
+            // BOOT-VPN-01 safety net: if the VPN is enabled but somehow not
+            // running (boot-restore paths failed, OEM killed the service,
+            // etc.), re-enqueue the expedited restore worker. Idempotent and
+            // cheap — a DB read plus a static state check per 15-min cycle.
+            try {
+                protect.yourself.commons.utils.vpn.VpnRestoreHelper
+                    .ensureVpnRestoreScheduledIfNeeded(
+                        applicationContext,
+                        trigger = "schedule_check_worker"
+                    )
+            } catch (t: Throwable) {
+                Timber.w(t, "ScheduleCheckWorker: VPN reconcile failed (non-fatal)")
+            }
             Result.success()
         } catch (t: Throwable) {
             Timber.e(t, "ScheduleCheckWorker failed")
