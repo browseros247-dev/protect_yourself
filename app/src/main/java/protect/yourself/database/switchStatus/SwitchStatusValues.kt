@@ -205,10 +205,33 @@ class SwitchStatusValues(private val dao: SwitchStatusDao) {
             stored
         } else {
             if (stored != null) {
-                Timber.w(
-                    "Invalid block-screen countdown stored (%s) — using default %ds",
+                // SET-COUNTDOWN-01 (v1.0.71): pre-v1.0.71 installs carry the
+                // seeded sentinel "0" (field logs: 22+ persisted WARN crash
+                // entries in ONE session — one per read, via CrashLoggingTree).
+                // Instead of warning on every read, silently heal the row to
+                // the default once; subsequent reads store a VALID value, so
+                // the warning path can fire at most once per corrupted value.
+                Timber.i(
+                    "SET-COUNTDOWN-01: invalid block-screen countdown stored (%s) — healing to default %ds",
                     stored, DEFAULT_BLOCK_SCREEN_COUNTDOWN_SECONDS
                 )
+                try {
+                    dao.upsert(SwitchStatusItemModel(
+                        key = SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET,
+                        value = DEFAULT_BLOCK_SCREEN_COUNTDOWN_SECONDS.toString(),
+                        type = "int"
+                    ))
+                } catch (t: Throwable) {
+                    // WARN is fine here ONLY because OncePerSessionLogger caps it
+                    // at once per session — an unthrottled WARN would become a
+                    // persisted crash entry per read via CrashLoggingTree (the
+                    // exact v1.0.69 field spam this fix removes).
+                    protect.yourself.commons.utils.OncePerSessionLogger.warn(
+                        "SET-COUNTDOWN-01-HEAL",
+                        "SET-COUNTDOWN-01: heal write failed — continuing with default",
+                        t
+                    )
+                }
             }
             DEFAULT_BLOCK_SCREEN_COUNTDOWN_SECONDS
         }

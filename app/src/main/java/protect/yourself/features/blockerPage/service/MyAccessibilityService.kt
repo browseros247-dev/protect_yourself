@@ -15,6 +15,7 @@ import protect.yourself.database.core.AppDatabase
 import protect.yourself.database.selectedApps.SelectedAppListIdentifier
 import protect.yourself.database.selectedKeywords.SelectedKeywordIdentifier
 import protect.yourself.database.switchStatus.SwitchStatusValues
+import protect.yourself.BuildConfig
 import protect.yourself.features.blockerPage.utils.BlockerPageUtils
 import timber.log.Timber
 import java.util.Locale
@@ -502,7 +503,13 @@ class MyAccessibilityService : AccessibilityService() {
     private fun handleWindowStateChange(packageName: String, event: AccessibilityEvent) {
         val className = event.className?.toString() ?: ""
         val text = event.text?.joinToString(" ").orEmpty()
-        Timber.v("WindowStateChange pkg=$packageName class=$className text=$text")
+        // A11Y-ANR-01/LOG-SPAM-01 (v1.0.71): this string template (full page
+        // text!) was built and logged on EVERY window-state event in release
+        // builds too — main-thread cost plus URLs/page content leaking into
+        // logcat. Debug builds only.
+        if (BuildConfig.DEBUG) {
+            Timber.v("WindowStateChange pkg=$packageName class=$className text=$text")
+        }
 
         // Skip our own app — we never want to block our own block screen,
         // app lock, or main activity. This also prevents infinite re-block loops
@@ -673,7 +680,27 @@ class MyAccessibilityService : AccessibilityService() {
         // — it always calls getUrlNode() + extractUrlFromEvent() for every
         // content-change event (decompiled onAccessibilityEvent line 6540+).
         // We now follow the same approach: always attempt URL extraction.
-        val url = extractUrlFromEvent(event, packageName)
+        //
+        // A11Y-ANR-01 (v1.0.71): browsers fire content-changed events in
+        // bursts of 5–20/s while rendering, and each scan used to cost a
+        // rootInActiveWindow binder fetch + a full tree walk — on contended
+        // devices these events stacked up into 5–12 s main-thread ANRs.
+        // Throttle the heavy scan per package: one pass per
+        // HEAVY_SCAN_THROTTLE_MS window collapses a render burst to a single
+        // scan. The destination URL is still caught because post-load events
+        // keep arriving after the window closes (and stable pages are cheap:
+        // the PB-03 duplicate guard short-circuits re-matching).
+        val nowMs = android.os.SystemClock.elapsedRealtime()
+        val lastScan = lastHeavyScanByPkg[packageName] ?: 0L
+        if (nowMs - lastScan < HEAVY_SCAN_THROTTLE_MS) return
+        lastHeavyScanByPkg[packageName] = nowMs
+
+        // A11Y-ANR-01: fetch the root ONCE per scan and share it between the
+        // URL and text passes — this used to be two separate binder fetches
+        // per event (7 field ANRs blocked inside getRootInActiveWindow alone).
+        val root: AccessibilityNodeInfo? = try { rootInActiveWindow } catch (_: Throwable) { null }
+
+        val url = if (root != null) extractUrlFromEvent(event, packageName, root) else null
         if (url != null && url.isNotBlank()) {
             handleUrlDetected(packageName, url)
             return  // URL scrape takes priority — don't also do content-text match
@@ -692,7 +719,8 @@ class MyAccessibilityService : AccessibilityService() {
             packageName != "com.android.systemui" &&
             !isStaleEvent(event)
         ) {
-            val text = extractTextFromEvent(event)
+            // A11Y-ANR-01: reuse the root fetched above — no second binder IPC.
+            val text = extractTextFromEvent(event, root)
             if (text.isNotBlank() && text.length < MAX_CONTENT_TEXT_LENGTH) {
                 val utils = BlockerPageUtils.getInstance()
                 val (found, matchedKeyword) = utils.isDetectWord(text, cachedBlockKeywords)
@@ -730,7 +758,11 @@ class MyAccessibilityService : AccessibilityService() {
         if (pornPreviousUrl == decoded) {
             // Already processed this exact URL — skip to avoid re-block loop.
             // Verbose level because this fires on every content-change event.
-            Timber.v("PB-03: skipping duplicate url=$decoded (pornPreviousUrl match)")
+            // LOG-SPAM-01 (v1.0.71): debug builds only — this fires in bursts
+            // of 5–20/s and was leaking full URLs into release logcat.
+            if (BuildConfig.DEBUG) {
+                Timber.v("PB-03: skipping duplicate url=$decoded (pornPreviousUrl match)")
+            }
             return
         }
 
@@ -738,7 +770,9 @@ class MyAccessibilityService : AccessibilityService() {
         // base64 blobs). Matching 1189 keywords against an 8MB string is slow
         // and pointless — no real navigation URL is this long.
         if (decoded.length > MAX_URL_LENGTH_FOR_MATCH) {
-            Timber.v("PB-03: url too long (${decoded.length} > $MAX_URL_LENGTH_FOR_MATCH) — skipping match")
+            if (BuildConfig.DEBUG) {
+                Timber.v("PB-03: url too long (${decoded.length} > $MAX_URL_LENGTH_FOR_MATCH) — skipping match")
+            }
             pornPreviousUrl = decoded
             return
         }
@@ -1020,8 +1054,16 @@ class MyAccessibilityService : AccessibilityService() {
      *  2. Fallback: search any EditText-like node with URL text — used for browsers
      *     added via "Make any browser supported" that don't have known view IDs.
      */
-    private fun extractUrlFromEvent(event: AccessibilityEvent, packageName: String): String? {
-        val root = rootInActiveWindow ?: return null
+    /**
+     * A11Y-ANR-01 (v1.0.71): [root] is now supplied by the caller (fetched
+     * once per heavy scan) instead of being fetched here — this used to be a
+     * second [getRootInActiveWindow] binder IPC per event.
+     */
+    private fun extractUrlFromEvent(
+        event: AccessibilityEvent,
+        packageName: String,
+        root: AccessibilityNodeInfo
+    ): String? {
         val viewIds = BlockerPageUtils.BROWSER_URL_VIEW_IDS[packageName]
 
         try {
@@ -1054,22 +1096,36 @@ class MyAccessibilityService : AccessibilityService() {
             // Strategy 2: fallback — search any EditText-like node with URL text
             //
             // URL-01 fix: also check contentDescription in the recursive search.
-            val fallbackUrl = findUrlInNode(root)
+            // A11Y-ANR-01 (v1.0.71): hard time+node budget — the traversal
+            // gives up and returns whatever it found once either limit hits.
+            val budget = TraversalBudget(MAX_URL_SEARCH_NODES, TRAVERSAL_TIME_BUDGET_MS)
+            val fallbackUrl = findUrlInNode(root, budget = budget)
             if (fallbackUrl != null) return fallbackUrl
+            if (budget.exhausted && budget.remainingMillis() == 0L) {
+                Timber.i("A11Y-ANR-01: URL search budget exhausted (nodes=%s) — skipping fallback this scan", budget.visitedCount)
+            }
         } catch (t: Throwable) {
             Timber.v("URL extraction failed: ${t.message}")
         }
         return null
     }
 
-    private fun findUrlInNode(node: AccessibilityNodeInfo?, depth: Int = 0, nodeCounter: IntArray = intArrayOf(0)): String? {
+    /**
+     * A11Y-ANR-01 (v1.0.71): traversal now carries a [TraversalBudget]
+     * (nodes + wall-clock). The previous node-count-only guard (300 nodes)
+     * assumed ~2 ms IPC — field ANRs proved binder round-trips can take
+     * 10–50 ms under load, so time is now the deterministic ceiling.
+     */
+    private fun findUrlInNode(
+        node: AccessibilityNodeInfo?,
+        depth: Int = 0,
+        budget: TraversalBudget
+    ): String? {
         if (node == null) return null
         // KB-20 fix: depth limit to prevent StackOverflow on deeply nested trees.
         if (depth > MAX_NODE_DEPTH) return null
-        // ANR-01 fix (v1.0.58): node-count limit to prevent main-thread ANR.
-        // Same rationale as collectText — each getChild() is an IPC call.
-        if (nodeCounter[0] >= MAX_URL_SEARCH_NODES) return null
-        nodeCounter[0]++
+        // ANR-01/A11Y-ANR-01: per-node budget check BEFORE any IPC for this node.
+        if (!budget.tryVisit()) return null
         // Check text (the reference behaviour)
         val text = node.text?.toString() ?: ""
         if (text.isNotBlank() && (text.startsWith("http") || text.contains("://"))) {
@@ -1083,9 +1139,9 @@ class MyAccessibilityService : AccessibilityService() {
             return desc
         }
         for (i in 0 until node.childCount) {
-            if (nodeCounter[0] >= MAX_URL_SEARCH_NODES) return null
+            if (budget.exhausted) return null
             val child = node.getChild(i) ?: continue
-            val found = findUrlInNode(child, depth + 1, nodeCounter)
+            val found = findUrlInNode(child, depth + 1, budget)
             if (found != null) return found
         }
         return null
@@ -1273,10 +1329,14 @@ class MyAccessibilityService : AccessibilityService() {
         return false
     }
 
-    private fun extractTextFromEvent(event: AccessibilityEvent): String {
+    /**
+     * A11Y-ANR-01 (v1.0.71): [root] is now supplied by the caller (fetched
+     * once per heavy scan) instead of being fetched here — this used to be a
+     * second [getRootInActiveWindow] binder IPC per event.
+     */
+    private fun extractTextFromEvent(event: AccessibilityEvent, root: AccessibilityNodeInfo?): String {
         val sb = StringBuilder()
         event.text?.forEach { sb.append(it).append(' ') }
-        val root = rootInActiveWindow
         if (root != null) {
             try {
                 // ANR-01 fix (v1.0.58): pass a node counter to enforce a hard
@@ -1284,38 +1344,31 @@ class MyAccessibilityService : AccessibilityService() {
                 // pages (e.g. Chrome with many tabs), the recursive traversal
                 // can visit thousands of nodes — each requiring an IPC round-trip
                 // to getChild() — blocking the main thread for 5+ seconds.
-                val counter = intArrayOf(0)
-                collectText(root, sb, depth = 0, maxDepth = 3, nodeCounter = counter)
+                //
+                // A11Y-ANR-01 (v1.0.71): node count alone can't bound wall time
+                // (binder latency is unbounded) — enforce a hard TraversalBudget.
+                val budget = TraversalBudget(MAX_TEXT_COLLECTION_NODES_CONST, TRAVERSAL_TIME_BUDGET_MS)
+                collectText(root, sb, depth = 0, maxDepth = 3, budget = budget)
             } catch (_: Throwable) {}
         }
         return sb.toString().trim()
     }
-
-    /**
-     * ANR-01 fix (v1.0.58): maximum number of nodes collectText will visit
-     * before bailing out. 500 nodes × ~2ms IPC per getChild = ~1s worst case —
-     * well under the 5s ANR threshold. If the page has more than 500 visible
-     * nodes within depth 3, we truncate the text (the block decision is based
-     * on keyword matching, which works fine with partial text).
-     */
-    private val MAX_TEXT_COLLECTION_NODES = MAX_TEXT_COLLECTION_NODES_CONST
 
     private fun collectText(
         node: AccessibilityNodeInfo,
         sb: StringBuilder,
         depth: Int,
         maxDepth: Int,
-        nodeCounter: IntArray = intArrayOf(0)
+        budget: TraversalBudget
     ) {
         if (depth > maxDepth) return
-        // ANR-01: bail out if we've visited too many nodes
-        if (nodeCounter[0] >= MAX_TEXT_COLLECTION_NODES) return
-        nodeCounter[0]++
+        // A11Y-ANR-01: per-node budget check BEFORE any IPC for this node.
+        if (!budget.tryVisit()) return
         node.text?.let { sb.append(it).append(' ') }
         for (i in 0 until node.childCount) {
-            if (nodeCounter[0] >= MAX_TEXT_COLLECTION_NODES) return
+            if (budget.exhausted) return
             val child = node.getChild(i) ?: continue
-            collectText(child, sb, depth + 1, maxDepth, nodeCounter)
+            collectText(child, sb, depth + 1, maxDepth, budget)
         }
     }
 
@@ -1326,15 +1379,20 @@ class MyAccessibilityService : AccessibilityService() {
      *
      * UP-04 fix: needed because [isAppInfoPage] does node-tree traversal as a
      * fallback when event.text is empty.
+     *
+     * A11Y-ANR-01 (v1.0.71): callers that historically walked an unbounded
+     * subtree through this helper now pass a budget; a sensible default
+     * (node+time) is created when none is given so legacy call sites stay safe.
      */
     private fun safeCollectText(
         node: AccessibilityNodeInfo,
         sb: StringBuilder,
         depth: Int,
-        maxDepth: Int
+        maxDepth: Int,
+        budget: TraversalBudget = TraversalBudget(MAX_TEXT_COLLECTION_NODES_CONST, TRAVERSAL_TIME_BUDGET_MS)
     ) {
         try {
-            collectText(node, sb, depth, maxDepth)
+            collectText(node, sb, depth, maxDepth, budget)
         } catch (_: Throwable) {
             // Recycled node / SecurityException — silent fallback
         }
@@ -2572,6 +2630,11 @@ class MyAccessibilityService : AccessibilityService() {
         @Volatile
         private var lastA11yScreenHealMs = 0L
 
+        // A11Y-ANR-01 (v1.0.71): last heavy content-scan timestamp per package
+        // (monotonic ms). Accessibility events for a service instance are
+        // delivered on the main thread, so a plain HashMap is race-free here.
+        val lastHeavyScanByPkg = HashMap<String, Long>()
+
         // KB-01: max content-text length we'll run keyword matching on. Avoids
         // matching against huge text blobs (e.g. a full article body) which
         // would be slow and produce false positives.
@@ -2584,7 +2647,11 @@ class MyAccessibilityService : AccessibilityService() {
 
         // KB-20: max recursion depth for findUrlInNode to prevent StackOverflow
         // on deeply nested view trees.
-        private const val MAX_NODE_DEPTH = 50
+        // A11Y-ANR-01 (v1.0.71): 50 → 12. The browser address bar lives near
+        // the top of the hierarchy; depth 12 reaches it on every supported
+        // browser while bounding stack depth (field ANR stacks showed 30+
+        // recursive frames) and unreachable-URL searches.
+        private const val MAX_NODE_DEPTH = 12
 
         // ANR-01 fix (v1.0.58): max number of nodes findUrlInNode will visit
         // before bailing out. Each getChild() is a blocking IPC call (~2ms),
@@ -2592,12 +2659,35 @@ class MyAccessibilityService : AccessibilityService() {
         // If the URL isn't found in the first 300 nodes, it's almost certainly
         // not in the address bar (which is always near the root of the view
         // hierarchy).
-        private const val MAX_URL_SEARCH_NODES = 300
+        //
+        // A11Y-ANR-01 (v1.0.71): 300 → 150. The ~2ms/IPC assumption did not
+        // hold on contended devices (field ANRs: 5–12s main-thread blocks).
+        // Node counts alone cannot bound wall time — see TRAVERSAL_TIME_BUDGET_MS.
+        private const val MAX_URL_SEARCH_NODES = 150
 
         // ANR-01 fix (v1.0.58): max number of nodes collectText will visit
         // before bailing out. 500 nodes × ~2ms IPC per getChild = ~1s worst
         // case — well under the 5s ANR threshold.
-        private const val MAX_TEXT_COLLECTION_NODES_CONST = 500
+        //
+        // A11Y-ANR-01 (v1.0.71): 500 → 150 (plus a hard time budget below).
+        // Keyword matching works fine on partial page text — 150 nodes cover
+        // the visible viewport of every realistic page.
+        private const val MAX_TEXT_COLLECTION_NODES_CONST = 150
+
+        // A11Y-ANR-01 (v1.0.71): hard wall-clock budget per tree traversal.
+        // The deterministic backstop node counts can't provide when binder
+        // IPC latency spikes. 90 ms is ~5% of the ANR watchdog threshold and
+        // leaves the 5s ceiling unreachable even with stalled round-trips.
+        internal const val TRAVERSAL_TIME_BUDGET_MS = 90L
+
+        // A11Y-ANR-01 (v1.0.71): per-package throttle for the heavy content
+        // scan (root fetch + URL/text extraction) in handleContentChange.
+        // Browsers fire TYPE_WINDOW_CONTENT_CHANGED 5–20×/s while rendering;
+        // every event used to re-pay a full root fetch + tree walk.
+        // 350 ms collapses a render burst to a single scan while still
+        // catching the settled destination URL (post-load events keep coming
+        // for seconds after navigation commits).
+        internal const val HEAVY_SCAN_THROTTLE_MS = 350L
 
         // SS-03: SafeSearch redirect throttle. Prevents redirect loops and
         // rapid-fire intents when the same URL fires multiple accessibility

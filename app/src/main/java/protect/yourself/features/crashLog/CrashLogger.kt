@@ -109,6 +109,18 @@ class CrashLogger private constructor(private val context: Context) {
     @Volatile private var cachedDiskInfo: DiskInfo? = null
     @Volatile private var cachedDiskInfoAtMs: Long = 0L
 
+    /**
+     * CRLOG-INIT-01 (v1.0.71): this buffer MUST be declared before [init] —
+     * Kotlin runs property initializers and init blocks in declaration order,
+     * and `init` → `loadBreadcrumbsFromDisk()` → `synchronized(breadcrumbBuffer)`.
+     * When it was declared below `init` (line ~875), the buffer was still null
+     * at init time and every process start with an existing breadcrumbs.json
+     * threw `NullPointerException: Null reference used for synchronization
+     * (monitor-enter)` — silently dropping ALL persisted breadcrumbs.
+     * (Field log: `Failed to load breadcrumbs from disk` at every cold start.)
+     */
+    private val breadcrumbBuffer = mutableListOf<Breadcrumb>()
+
     init {
         // Reconcile index against actual files on disk — recovers from
         // interrupted writes (process killed mid-save leaves orphan files).
@@ -871,8 +883,8 @@ class CrashLogger private constructor(private val context: Context) {
     }
 
     // ===== Breadcrumb ring buffer =====
-
-    private val breadcrumbBuffer = mutableListOf<Breadcrumb>()
+    // NOTE (CRLOG-INIT-01): `breadcrumbBuffer` itself is intentionally declared
+    // ABOVE `init {}` (declaration-order initialization) — see its KDoc there.
 
     /**
      * Persist the in-memory breadcrumb buffer to breadcrumbs.json atomically.

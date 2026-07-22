@@ -398,7 +398,12 @@ class AppDatabaseCallback(private val context: Context) : RoomDatabase.Callback(
             Triple(SwitchIdentifier.REAL_FRIEND_EMAIL, "", "string"),
             Triple(SwitchIdentifier.REAL_FRIEND_VISIBLE, "false", "boolean"),
             Triple(SwitchIdentifier.DAILY_REPORT_SWITCH, "false", "boolean"),
-            Triple(SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET, "0", "int"),
+            // SET-COUNTDOWN-01 (v1.0.71): seeding "0" made every read of the
+            // countdown getter hit its "invalid stored value" WARN branch —
+            // which CrashLoggingTree then persisted as a crash entry (22+
+            // entries in a single field session). Seed the real default (3s)
+            // instead; existing installs are healed lazily by the getter.
+            Triple(SwitchIdentifier.BLOCK_SCREEN_COUNT_DOWN_TIME_SET, "3", "int"),
             Triple(SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE_SET, "false", "boolean"),
             Triple(SwitchIdentifier.BLOCK_SCREEN_CUSTOM_MESSAGE, "", "string"),
             Triple(SwitchIdentifier.BLOCK_SCREEN_REDIRECT_URL_SET, "false", "boolean"),
