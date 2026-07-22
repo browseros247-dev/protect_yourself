@@ -29,4 +29,20 @@
         <item name="android:windowAnimationStyle">@null</item>
         <item name="android:windowContentOverlay">@null</item>
     </style>
+
+    <!-- ============ Transparent block screen (v1.0.70, ACTIVITY-BLOCK-01) ============
+         Full-screen translucent activity shown over the offending app. The
+         page_porn_block layout paints its own full-bleed background; the
+         window itself must be transparent with no launch preview/animation
+         flash so the block appears seamlessly over the blocked app — without
+         any "Display over other apps" permission. -->
+    <style name="Theme.TransparentBlock" parent="Theme.Transparent">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowShowWallpaper">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

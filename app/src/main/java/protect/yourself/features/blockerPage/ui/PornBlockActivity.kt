@@ -127,10 +127,11 @@ class PornBlockActivity : AppCompatActivity() {
                 txtWhyContainer.visibility = View.GONE
             }
             if (::txtCloseContainer.isInitialized) {
-                // Prevent a stale immediate-close listener from the old
-                // configuration firing during re-setup.
-                txtCloseContainer.setOnClickListener(null)
-                txtCloseContainer.isClickable = false
+                // CLOSE-BTN-01 (v1.0.70): keep a WORKING close action during
+                // re-setup instead of a dead (null, non-clickable) button —
+                // wireCloseGate installs the correct gated listener as soon as
+                // the new config resolves.
+                txtCloseContainer.setOnClickListener { finish() }
             }
             configureBlockScreen()
         } catch (t: Throwable) {
@@ -345,37 +346,80 @@ class PornBlockActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * CLOSE-BTN-01 (v1.0.70): resolve the dwell + redirect config ONCE (single
+     * IO read), then hand off to [wireCloseGate] on the main thread. The old
+     * implementation armed the listener through a second DB round-trip inside
+     * CountDownTimer.onFinish, leaving the button dead whenever that chain
+     * stalled post-dwell.
+     */
     private fun configureCloseButton() {
         ioScope.launch {
+            val countdownSeconds: Int
+            val isRedirectUrlSet: Boolean
+            val redirectUrl: String?
             try {
                 val db = AppDatabase.getInstance(this@PornBlockActivity)
                 val switchValues = SwitchStatusValues(db.switchStatusDao())
-
-                val countdownSeconds = switchValues.getBlockScreenCountDownSeconds()
-                val isRedirectUrlSet = switchValues.isBlockScreenRedirectUrlSet()
-                val redirectUrl = switchValues.getBlockScreenRedirectUrl()
-
-                if (countdownSeconds > 0) {
-                    // Show countdown on Close button
-                    uiScope.launch {
-                        startCountdown(countdownSeconds)
-                    }
-                } else {
-                    // No countdown — Close button is immediate
-                    txtCloseContainer.setOnClickListener {
-                        handleClose(isRedirectUrlSet, redirectUrl)
-                    }
-                }
+                countdownSeconds = switchValues.getBlockScreenCountDownSeconds()
+                isRedirectUrlSet = switchValues.isBlockScreenRedirectUrlSet()
+                redirectUrl = switchValues.getBlockScreenRedirectUrl()
             } catch (t: Throwable) {
-                Timber.w(t, "PornBlockActivity: failed to configure close button — using immediate close")
-                txtCloseContainer.setOnClickListener { finish() }
+                Timber.w(t, "PornBlockActivity: close config read failed — immediate close")
+                uiScope.launch { wireCloseGate(0, false, null) }
+                return@launch
+            }
+            uiScope.launch {
+                wireCloseGate(countdownSeconds, isRedirectUrlSet, redirectUrl)
             }
         }
     }
 
-    private fun startCountdown(seconds: Int) {
+    /**
+     * CLOSE-BTN-01 (v1.0.70): install the Close click listener SYNCHRONOUSLY
+     * and exactly once — it is never absent, so the button can never sit
+     * dead.
+     *
+     * Semantics (via [CloseGatePolicy]):
+     *  - dwell elapsed (or none) → [handleClose] runs;
+     *  - during the dwell → a short toast with the remaining seconds. A
+     *    silent, unresponsive button reads as "broken" — that was the
+     *    reported "Close button has no effect" perception, now replaced by
+     *    visible countdown text AND tap feedback.
+     *
+     * The countdown label is purely cosmetic; the time-based gate is the
+     * single source of truth (no second DB read at arm time).
+     */
+    private fun wireCloseGate(dwellSeconds: Int, isRedirectUrlSet: Boolean, redirectUrl: String?) {
+        countDownTimer?.cancel()
+        countDownTimer = null
+
+        val gate = CloseGatePolicy(dwellSeconds)
+        txtCloseContainer.isClickable = true
+        txtCloseContainer.setOnClickListener {
+            when (val click = gate.onClick()) {
+                is CloseGatePolicy.Click.Close ->
+                    handleClose(isRedirectUrlSet, redirectUrl)
+                is CloseGatePolicy.Click.Blocked ->
+                    Toast.makeText(
+                        this,
+                        getString(R.string.block_screen_close_available_in, click.remainingSeconds),
+                        Toast.LENGTH_SHORT
+                    ).show()
+            }
+        }
+
+        if (dwellSeconds > 0) {
+            startCountdownLabel(dwellSeconds)
+        } else {
+            txtClose.text = getString(R.string.close)
+        }
+        Timber.d("PornBlockActivity: close gate wired (dwell=%ds)", dwellSeconds)
+    }
+
+    /** Cosmetic countdown on the Close label — the gate policy decides clicks. */
+    private fun startCountdownLabel(seconds: Int) {
         val totalMs = seconds * 1000L
-        txtCloseContainer.isClickable = false
         countDownTimer = object : CountDownTimer(totalMs, 1000) {
             override fun onTick(millisUntilFinished: Long) {
                 // Ceil so the user sees 3,2,1 (not 2,1,0) during a 3s dwell.
@@ -385,19 +429,6 @@ class PornBlockActivity : AppCompatActivity() {
 
             override fun onFinish() {
                 txtClose.text = getString(R.string.close)
-                txtCloseContainer.isClickable = true
-
-                ioScope.launch {
-                    val db = AppDatabase.getInstance(this@PornBlockActivity)
-                    val switchValues = SwitchStatusValues(db.switchStatusDao())
-                    val isRedirectUrlSet = switchValues.isBlockScreenRedirectUrlSet()
-                    val redirectUrl = switchValues.getBlockScreenRedirectUrl()
-                    uiScope.launch {
-                        txtCloseContainer.setOnClickListener {
-                            handleClose(isRedirectUrlSet, redirectUrl)
-                        }
-                    }
-                }
             }
         }.start()
     }
@@ -412,6 +443,21 @@ class PornBlockActivity : AppCompatActivity() {
             } catch (t: Throwable) {
                 Timber.w(t, "PornBlockActivity: failed to redirect to %s", redirectUrl)
                 Toast.makeText(this, R.string.block_screen_redirect_failed_toast, Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            // ACTIVITY-BLOCK-01 (v1.0.70): land the user on the launcher after
+            // Close. With the old overlay kill-timer gone, the blocked app's
+            // task would still be sitting underneath — returning straight to
+            // it would look like the block "did nothing" (and would instantly
+            // re-trigger another block). A CATEGORY_HOME intent from our own
+            // foreground activity is reliable and needs no global action.
+            try {
+                startActivity(Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            } catch (t: Throwable) {
+                Timber.w(t, "PornBlockActivity: HOME intent failed after close")
             }
         }
         finish()

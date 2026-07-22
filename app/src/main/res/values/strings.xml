@@ -70,6 +70,9 @@
     <string name="block_screen_preview_toast">Showing preview of your block screen</string>
 
     <string name="block_screen_redirect_failed_toast">Could not open the redirect URL.</string>
+    <!-- CLOSE-BTN-01 (v1.0.70): feedback shown when Close is tapped during
+         the countdown dwell, replacing the previous silent dead button. -->
+    <string name="block_screen_close_available_in">Close available in %1$d s</string>
     <string name="block_screen_play_store_failed_toast">Could not open the Play Store.</string>
 
     <!-- Stop Me -->

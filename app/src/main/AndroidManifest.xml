@@ -39,8 +39,9 @@
     <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
     <uses-permission android:name="android.permission.REORDER_TASKS" />
 
-    <!-- Overlay / block screen -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- ACTIVITY-BLOCK-01 (v1.0.70): SYSTEM_ALERT_WINDOW removed — the block
+         screen is a transparent activity and no longer depends on the
+         "Display over other apps" permission. -->
 
     <!-- Multi-user (signature-level, for some accessibility self-heal flows) -->
     <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL"
@@ -167,7 +168,9 @@
             android:screenOrientation="portrait"
             android:theme="@style/Theme.ProtectYourself.NoActionBar" />
 
-        <!-- Porn block activity (block screen overlay) -->
+        <!-- Porn block activity — the transparent block screen (ACTIVITY-BLOCK-01):
+             a full-screen translucent activity shown over the offending app.
+             No SYSTEM_ALERT_WINDOW / "Display over other apps" dependency. -->
         <activity
             android:name="protect.yourself.features.blockerPage.ui.PornBlockActivity"
             android:excludeFromRecents="true"
@@ -175,7 +178,7 @@
             android:launchMode="singleTop"
             android:screenOrientation="portrait"
             android:showOnLockScreen="true"
-            android:theme="@style/Theme.ProtectYourself.NoActionBar" />
+            android:theme="@style/Theme.TransparentBlock" />
 
         <!-- Image cropper (CanHub library) — removed, dependency stripped -->
         <!-- <activity android:name="com.canhub.cropper.CropImageActivity" .../> -->
