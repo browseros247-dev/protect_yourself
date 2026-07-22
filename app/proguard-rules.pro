@@ -75,3 +75,46 @@
 
 # --- Keep BuildConfig ---
 -keep class protect.yourself.BuildConfig { *; }
+
+# =====================================================================
+# PERF-01 (v1.0.67) — rules required because release R8 is now enabled.
+# Every Kotlin/Java reflection entry point in the app is covered below;
+# guarded by ProguardRulesRegressionTest.
+# =====================================================================
+
+# --- Gson + Room TypeConverters ---
+# Enum CONSTANT NAMES are data: Gson serializes enums by name() and Room
+# TypeConverters persist them by name(). Renaming would silently corrupt
+# backup files, crash logs, and DB values. Restricted to our package.
+-keepclassmembers enum protect.yourself.** { *; }
+
+# --- CrashLogger models (serialized to / parsed from JSON via Gson) ---
+-keep class protect.yourself.features.crashLog.CrashLogEntry { *; }
+-keep class protect.yourself.features.crashLog.ServiceStateInfo { *; }
+-keep class protect.yourself.features.crashLog.DeviceInfo { *; }
+-keep class protect.yourself.features.crashLog.AppInfo { *; }
+-keep class protect.yourself.features.crashLog.MemoryInfo { *; }
+-keep class protect.yourself.features.crashLog.DiskInfo { *; }
+-keep class protect.yourself.features.crashLog.Breadcrumb { *; }
+-keep class protect.yourself.features.crashLog.CrashLogExport { *; }
+
+# --- BackupRestore models (BackupManager Gson envelope; field names = the
+#     backup file schema — renaming breaks backup compatibility) ---
+-keep class protect.yourself.features.backupRestore.BackupEnvelope { *; }
+-keep class protect.yourself.features.backupRestore.BackupTables { *; }
+-keep class protect.yourself.features.backupRestore.BackupTablesContainer { *; }
+-keep class protect.yourself.features.backupRestore.BackupStats { *; }
+-keep class protect.yourself.features.backupRestore.RestoredCounts { *; }
+
+# --- Room entities: BackupManager serializes ENTITIES directly via Gson, so
+#     entity FIELD names are also part of the backup schema. The class-level
+#     keep above is not enough — preserve members as well.
+-keepclassmembers @androidx.room.Entity class * { *; }
+
+# --- WorkManager ---
+# The default WorkerFactory instantiates workers REFLECTIVELY by persisted
+# class name and calls the (Context, WorkerParameters) constructor.
+-keepnames class * extends androidx.work.ListenableWorker
+-keepclassmembers class * extends androidx.work.ListenableWorker {
+    public <init>(android.content.Context, androidx.work.WorkerParameters);
+}
