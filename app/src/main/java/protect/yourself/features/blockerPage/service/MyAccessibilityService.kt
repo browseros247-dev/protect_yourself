@@ -156,28 +156,10 @@ class MyAccessibilityService : AccessibilityService() {
     private var lastSafeSearchTimeMs: Long = 0
     private var lastSafeSearchUrl: String? = null
 
-    /**
-     * BlockOverlayManager — WindowManager overlay for non-dismissible block screens.
-     *
-     * The reference uses a WindowManager overlay (TYPE_APPLICATION_OVERLAY) instead of
-     * an Activity because Activities can be dismissed via Home/Recents/Back
-     * gestures, defeating uninstall prevention. The overlay is created lazily
-     * on first use.
-     */
-    @Volatile
-    private var blockOverlayManager: BlockOverlayManager? = null
-
-    /**
-     * Get-or-create the BlockOverlayManager. Lazily initialised because it
-     * needs the service context which isn't available at construction time.
-     */
-    private fun getBlockOverlayManager(): BlockOverlayManager {
-        return blockOverlayManager ?: synchronized(this) {
-            blockOverlayManager ?: BlockOverlayManager(this).also {
-                blockOverlayManager = it
-            }
-        }
-    }
+    // ACTIVITY-BLOCK-01 (v1.0.70): the WindowManager BlockOverlayManager was
+    // removed entirely. The block screen is always the transparent
+    // PornBlockActivity — no SYSTEM_ALERT_WINDOW dependency. See
+    // launchBlockActivity() for the single-path launch + verify + retry.
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -352,8 +334,22 @@ class MyAccessibilityService : AccessibilityService() {
         if (event == null) return
         val packageName = event.packageName?.toString() ?: return
         val eventType = event.eventType
+        val eventClassName = event.className?.toString() ?: ""
 
         try {
+            // A11Y-KILL-01 (v1.0.70): NEVER run block logic over the
+            // accessibility-management screens themselves. Drawing our block
+            // UI over the a11y service page makes Android DISABLE this
+            // service automatically (~1–5 s later) — this was the primary
+            // "service turns itself off right after I enable it" vector.
+            // Anti-circumvention for these screens is achieved via the
+            // v1.0.69 self-heal (re-enable), not by obscuring them.
+            if (protect.yourself.features.protectedApps.ProtectedSystemScreens
+                .isAccessibilityManagementScreen(packageName, eventClassName)
+            ) {
+                maybeTriggerSelfHealOnA11yScreen(packageName, eventClassName)
+                return
+            }
             // IAB-02 fix: Block In-App Browsers must also fire on click/long-click
             // events, not just window-state changes. The reference runs
             // checkBlockBrowsers on eventType 1 (VIEW_CLICKED), 2
@@ -383,10 +379,10 @@ class MyAccessibilityService : AccessibilityService() {
                 packageName != this.packageName &&
                 packageName != "com.android.systemui"
             ) {
-                val className = event.className?.toString() ?: ""
+                val className = eventClassName
                 val text = event.text?.joinToString(" ").orEmpty()
                 if (isAppInfoPage(packageName, className, text)) {
-                    launchBlockActivity(packageName, "block_page_default_pu_message")
+                    launchBlockActivity(packageName, "block_page_default_pu_message", eventClassName = className)
                     return
                 }
             }
@@ -407,7 +403,11 @@ class MyAccessibilityService : AccessibilityService() {
                 packageName != "com.android.systemui"
             ) {
                 if (isSettingsPage(packageName, event)) {
-                    launchBlockActivity(packageName, "block_page_default_system_keyword_message")
+                    launchBlockActivity(
+                        packageName,
+                        "block_page_default_system_keyword_message",
+                        eventClassName = eventClassName
+                    )
                     return
                 }
             }
@@ -479,11 +479,6 @@ class MyAccessibilityService : AccessibilityService() {
         //    re-armed then. The next process start (boot receiver, app open,
         //    or scheduled work) will call selfHealSafe again.
 
-        // Hide the block overlay if it's visible (otherwise it would persist
-        // after the service is destroyed, locking the user out).
-        try {
-            blockOverlayManager?.hideBlockOverlay()
-        } catch (_: Throwable) {}
         // Cancel the service scope to stop blocking-config refresh coroutines.
         // selfHealScope is intentionally NOT cancelled — see LC-01 fix above.
         try { serviceScope.cancel() } catch (_: Throwable) {}
@@ -1703,6 +1698,24 @@ class MyAccessibilityService : AccessibilityService() {
             }
         }
 
+        // ===== A11Y-KILL-01 exemption (v1.0.70): OUR a11y service control page =====
+        // Modern AOSP hosts the accessibility service detail page inside
+        // `SubSettings`, and the page shows OUR app name in its node tree —
+        // so Checks 1/2/3 (incl. "subsettings" as an app-info class marker and
+        // keywords like "permissions") WOULD block it. Covering that page
+        // makes Android disable this service within seconds: the original
+        // "turns itself off right after enabling" killer. Detect it by our
+        // service description text (event text AND node tree) and never block;
+        // the only anti-circumvention allowed here is the v1.0.69 self-heal.
+        if (appIsOnPage && isOurAccessibilityServicePage(
+                protect.yourself.features.protectedApps.ProtectedSystemScreens.normalize(text)
+            )
+        ) {
+            Timber.d("PU: a11y service control page for OUR service — not blocking (self-heal guards it)")
+            maybeTriggerSelfHealOnA11yScreen(packageName, className)
+            return false
+        }
+
         // ===== Check 1: app info page for OUR app =====
         // Requires appIsOnPage (app name in event text OR node tree) AND
         // (className contains "appinfo"/"appdetails" OR an uninstall-related
@@ -1758,27 +1771,12 @@ class MyAccessibilityService : AccessibilityService() {
             }
         }
 
-        // ===== Check 4: accessibility settings page for OUR service =====
-        // Match the accessibility service description text against both the
-        // event text AND the node tree.
-        try {
-            val accDesc = getString(protect.yourself.R.string.accessibility_service_description)
-                .lowercase(Locale.ROOT)
-            if (accDesc.isNotBlank()) {
-                if (lower.contains(accDesc)) {
-                    Timber.i("PU: blocking accessibility settings page for our service (pkg=$packageName — event text match)")
-                    return true
-                }
-                // Also search the node tree for the description
-                try {
-                    val root = rootInActiveWindow
-                    if (root?.findAccessibilityNodeInfosByText(accDesc)?.isNotEmpty() == true) {
-                        Timber.i("PU: blocking accessibility settings page for our service (pkg=$packageName — node tree match)")
-                        return true
-                    }
-                } catch (_: Throwable) {}
-            }
-        } catch (_: Throwable) {}
+        // Check 4 REMOVED (v1.0.70, A11Y-KILL-01): the old "block the
+        // accessibility settings page for our service" rule actively KILLED
+        // this service — Android disables any a11y service whose window
+        // obscures the a11y-management screens. Our service page is now
+        // recognized by isOurAccessibilityServicePage() and treated as a
+        // no-block screen guarded by self-heal instead.
 
         // ===== Check 5: Samsung multi-select uninstall =====
         // The reference checks if the source node's viewIdResourceName is
@@ -1804,17 +1802,65 @@ class MyAccessibilityService : AccessibilityService() {
      * UP-07 fix: covers Samsung, MIUI, Huawei, OnePlus, OPLUS settings packages.
      */
     private fun isSettingsPackage(packageName: String): Boolean {
-        if (packageName == "com.android.settings") return true
-        if (packageName.contains(".settings")) return true
-        // OEM settings packages
-        if (packageName == "com.miui.securitycenter") return true
-        if (packageName == "com.android.settings.miui") return true
-        if (packageName == "com.samsung.android.settings") return true
-        if (packageName == "com.huawei.systemmanager") return true
-        if (packageName == "com.coloros.safecenter") return true
-        if (packageName == "com.oppo.safe") return true
-        if (packageName == "com.iqiyi.terms") return true  // some OEMs
-        return false
+        // A11Y-KILL-01 (v1.0.70): delegate to the shared, unit-tested rule
+        // (identical package list incl. the ".settings" substring variant).
+        return protect.yourself.features.protectedApps.ProtectedSystemScreens
+            .isSettingsPackage(packageName)
+    }
+
+    /**
+     * A11Y-KILL-01 (v1.0.70): true when the currently visible settings page is
+     * OUR accessibility service's control (detail/toggle) page. Two detection
+     * layers, mirroring the old (lethal) "Check 4" detection but inverted —
+     * skip instead of block:
+     *
+     *  1. [pageTextNorm] (event text, normalized) contains our service
+     *     description fingerprint.
+     *  2. Node-tree search for the description — needed on OEM/AOSP variants
+     *     that host the detail page inside a generic `SubSettings` window
+     *     whose event text only carries the page title.
+     *
+     * Caller guarantees the window is a settings package showing our app
+     * name, so the node-tree query is rare and bounded.
+     */
+    private fun isOurAccessibilityServicePage(pageTextNorm: String): Boolean {
+        val screens = protect.yourself.features.protectedApps.ProtectedSystemScreens
+        val description = try {
+            getString(protect.yourself.R.string.accessibility_service_description)
+        } catch (_: Throwable) { "" }
+        val descNorm = screens.normalize(description)
+        if (screens.pageTextMatchesOurService(pageTextNorm, descNorm)) return true
+        return try {
+            val probe = description.trim().take(30)
+            if (probe.length < 8) return false
+            val root = rootInActiveWindow ?: return false
+            root.findAccessibilityNodeInfosByText(probe)?.isNotEmpty() == true
+        } catch (t: Throwable) {
+            Timber.w(t, "isOurAccessibilityServicePage: node-tree probe failed — assuming not our page")
+            false
+        }
+    }
+
+    /**
+     * A11Y-KILL-01 (v1.0.70): while the user is on an accessibility-management
+     * screen (e.g. our service detail page), instead of covering it (which
+     * kills us), silently re-arm the service via the v1.0.69 self-heal. The
+     * fast path makes this a no-op-pair of settings reads when healthy;
+     * throttled to once per 10 s so a stream of events costs nothing.
+     */
+    private fun maybeTriggerSelfHealOnA11yScreen(packageName: String, className: String) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastA11yScreenHealMs < A11Y_SCREEN_HEAL_THROTTLE_MS) return
+        lastA11yScreenHealMs = now
+        Timber.d("A11Y-KILL-01: a11y-management screen visible (pkg=$packageName class=$className) — throttled self-heal instead of blocking")
+        selfHealScope.launch {
+            try {
+                protect.yourself.features.protectedApps.AccessibilityPersistUtils
+                    .selfHealSafe(this@MyAccessibilityService)
+            } catch (t: Throwable) {
+                Timber.w(t, "A11Y-KILL-01: selfHealSafe on a11y screen failed")
+            }
+        }
     }
 
     /**
@@ -2035,107 +2081,122 @@ class MyAccessibilityService : AccessibilityService() {
     /**
      * Launch the block screen on top of the offending app.
      *
-     * ## Strategy (UP-01 fix)
+     * ## ACTIVITY-BLOCK-01 (v1.0.70): transparent-activity single path
      *
-     * 1. **Try the WindowManager overlay first** via [BlockOverlayManager].
-     *    This is non-dismissible (cannot be dismissed by Home/Recents/Back
-     *    gestures) and runs a 500ms HOME×5 + BACK×1 kill timer to actually
-     *    kill the offending activity underneath. This is what the reference does.
+     * The WindowManager overlay path was REMOVED. It required the user to
+     * manually grant "Display over other apps" (`SYSTEM_ALERT_WINDOW`) — a
+     * hard dependency the blocking feature must not have (user request).
+     * The block screen is now ALWAYS [PornBlockActivity], a full-screen
+     * activity themed `Theme.TransparentBlock` (translucent window, no
+     * window preview/animation flash) that composes over the offending
+     * app seamlessly without any special permission.
      *
-     * 2. **If the overlay cannot be shown** (SYSTEM_ALERT_WINDOW not granted,
-     *    WindowManager unavailable, or addView throws), fall back to the
-     *    Activity-based `PornBlockActivity`. This IS dismissible but is
-     *    better than nothing.
-     *
-     * 3. **If the Activity fallback also fails**, press GLOBAL_ACTION_HOME
-     *    as a last resort to at least dismiss the offending content.
-     *
-     * ## Throttling (UP-10 fix)
-     *
-     * The reference uses a single-flight guard (`if (isPageShow) return`) — only
-     * one block screen visible at a time. There is NO per-package throttle
-     * because that creates a bypass window (the user could quickly switch
-     * between two blocked apps to bypass a per-package throttle).
-     *
-     * We replicate this: the BlockOverlayManager has its own single-flight
-     * guard via AtomicBoolean. The Activity fallback uses a global throttle
-     * (300ms) to prevent storm-launching activities.
+     * Blocking semantics preserved:
+     *  - Global 300 ms monotonic throttle against storm-launching (KB-06).
+     *  - The offending window is displaced by our activity automatically —
+     *    the old HOME×5+BACK kill timer is unnecessary (a window under a
+     *    resumed activity is stopped); re-entering the app re-triggers a
+     *    block on the next window-state event.
+     *  - BLOCK-SCREEN-02 verify: background activity launches can still be
+     *    silently dropped on API 29+ → after [FALLBACK_VERIFY_DELAY_MS] we
+     *    verify [PornBlockActivity.isShowing], retry once, then press HOME
+     *    as the last resort so blocked content never stays visible.
+     *  - The AB-05 "press HOME 200 ms after launch" workaround was REMOVED:
+     *    the block screen is now the primary UI and must STAY visible until
+     *    the user closes it; the Close button takes the user HOME itself
+     *    (CATEGORY_HOME intent from PornBlockActivity, CLOSE-BTN-01).
      */
     private fun launchBlockActivity(
         packageName: String,
         messageResKey: String,
-        matchedKeyword: String? = null
+        matchedKeyword: String? = null,
+        eventClassName: String = ""
     ) {
+        // A11Y-KILL-01 (v1.0.70): central choke point — never raise ANY block
+        // UI over accessibility-management screens (see the early guard in
+        // onAccessibilityEvent). Defense-in-depth for future block checks.
+        if (eventClassName.isNotBlank() &&
+            protect.yourself.features.protectedApps.ProtectedSystemScreens
+                .isAccessibilityManagementScreen(packageName, eventClassName)
+        ) {
+            Timber.w("Block suppressed over a11y-management screen (pkg=$packageName class=$eventClassName)")
+            maybeTriggerSelfHealOnA11yScreen(packageName, eventClassName)
+            return
+        }
+
         // Log the block attempt to CrashLogger for diagnostics
         protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
             "BlockAttempt",
             "pkg=$packageName messageKey=$messageResKey keyword=$matchedKeyword"
         )
 
-        // ===== Strategy 1: WindowManager overlay (preferred) =====
-        try {
-            val mgr = getBlockOverlayManager()
-            if (mgr.canDrawOverlays()) {
-                val shown = mgr.showBlockOverlay(packageName, messageResKey, matchedKeyword)
-                if (shown) {
-                    Timber.i("Block overlay shown for pkg=$packageName messageKey=$messageResKey keyword=$matchedKeyword")
-                    return
-                }
-                // Use OncePerSessionLogger to prevent log spam — without this,
-                // every block attempt logs the same warning. Crash log analysis
-                // (v1.0.46, vivo V2206) showed 14 identical WARN entries in 20
-                // minutes, one per block. Logging once per session is sufficient
-                // — the user already knows from the first warning.
-                protect.yourself.commons.utils.OncePerSessionLogger.warn(
-                    key = "overlay_show_failed",
-                    message = "Overlay manager returned false — falling back to Activity"
-                )
-            } else {
-                // Use OncePerSessionLogger to prevent log spam — without this,
-                // every block attempt logs the same warning. Crash log analysis
-                // (v1.0.46, vivo V2206) showed 14 identical WARN entries in 20
-                // minutes, one per block. Logging once per session is sufficient
-                // — the user already knows from the first warning.
-                protect.yourself.commons.utils.OncePerSessionLogger.warn(
-                    key = "overlay_permission_missing",
-                    message = "SYSTEM_ALERT_WINDOW not granted — falling back to Activity. " +
-                        "User should grant it via Settings → Apps → Protect Yourself → " +
-                        "Display over other apps."
-                )
-                // Log to CrashLogger so the user can see the recommendation
-                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
-                    "BlockFallback",
-                    "Overlay permission missing — using Activity fallback for pkg=$packageName"
-                )
-                // BUGFIX (v1.0.49): proactively prompt the user to grant the
-                // overlay permission. Throttled to once per 24 hours.
-                try {
-                    protect.yourself.commons.utils.notificationUtils.NotificationHelper
-                        .showOverlayPermissionNotification(this)
-                } catch (_: Throwable) {}
-            }
-        } catch (t: Throwable) {
-            Timber.e(t, "BlockOverlayManager threw — falling back to Activity")
-            protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
-                throwable = t,
-                severity = protect.yourself.features.crashLog.CrashSeverity.ERROR,
-                tag = "BlockOverlay",
-                message = "Overlay show failed for pkg=$packageName",
-                extraContext = mapOf("packageName" to packageName, "messageKey" to messageResKey)
-            )
-        }
-
-        // ===== Strategy 2: Activity fallback =====
-        // Throttle the Activity fallback (300ms global) to prevent storm-launching.
-        // BLOCK-SCREEN-04 (v1.0.68): use the monotonic clock — wall-clock jumps
-        // (NTP/manual time change) could freeze the throttle and silently drop
-        // legitimate blocks (or let a storm through).
+        // ACTIVITY-BLOCK-01 (v1.0.70): the WindowManager overlay strategy was
+        // deleted (no more SYSTEM_ALERT_WINDOW dependency). Single path:
+        // transparent PornBlockActivity.
+        //
+        // Throttle activity launches (300ms global, monotonic clock —
+        // BLOCK-SCREEN-04) to prevent storm-launching.
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastBlockTimeMs < BLOCK_THROTTLE_GLOBAL_MS) {
             return
         }
         lastBlockTimeMs = now
 
+        if (!tryLaunchBlockScreen(packageName, messageResKey, matchedKeyword)) {
+            Timber.e("Block screen startActivity failed for pkg=$packageName — pressing HOME as last resort")
+            protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                "BlockLaunch",
+                "startActivity threw for pkg=$packageName — HOME last resort"
+            )
+            try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Throwable) {}
+            return
+        }
+
+        // BLOCK-SCREEN-02 (v1.0.68): startActivity() from a background
+        // accessibility service can be SILENTLY dropped on API 29+ by the
+        // background-activity-launch restrictions (no exception — the call
+        // "succeeds" and nothing appears). Verify the screen actually came
+        // up; if not, retry the launch once and, failing that, press HOME
+        // as the last resort so the offending content never stays visible
+        // after a confirmed block.
+        serviceScope.launch {
+            kotlinx.coroutines.delay(FALLBACK_VERIFY_DELAY_MS)
+            try {
+                if (protect.yourself.features.blockerPage.ui.PornBlockActivity.isShowing.get()) {
+                    Timber.d("Block screen verified visible for pkg=$packageName")
+                    return@launch
+                }
+                Timber.w("Block screen not visible after ${FALLBACK_VERIFY_DELAY_MS}ms (BAL-dropped?) — one retry for pkg=$packageName")
+                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                    "BlockFallback",
+                    "activity not visible after ${FALLBACK_VERIFY_DELAY_MS}ms for pkg=$packageName — retrying"
+                )
+                if (!tryLaunchBlockScreen(packageName, messageResKey, matchedKeyword)) {
+                    Timber.e("Block screen retry failed for pkg=$packageName — HOME press as last resort")
+                    protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                        "BlockFallback",
+                        "retry failed for pkg=$packageName — HOME last resort"
+                    )
+                    try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Throwable) {}
+                }
+            } catch (t: Throwable) {
+                Timber.w(t, "Block screen verification failed")
+            }
+        }
+    }
+
+    /**
+     * Build + launch [PornBlockActivity] (the transparent block screen).
+     *
+     * @return true when `startActivity` did not throw. NOTE: a true result
+     *   does NOT guarantee visibility on API 29+ (silent BAL drop) — the
+     *   caller verifies via [PornBlockActivity.isShowing] and retries.
+     */
+    private fun tryLaunchBlockScreen(
+        packageName: String,
+        messageResKey: String,
+        matchedKeyword: String?
+    ): Boolean {
         val intent = Intent(this, protect.yourself.features.blockerPage.ui.PornBlockActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -2146,65 +2207,20 @@ class MyAccessibilityService : AccessibilityService() {
                 putExtra(EXTRA_MATCHED_KEYWORD, matchedKeyword)
             }
         }
-        try {
+        return try {
             startActivity(intent)
-            Timber.i("Block Activity (fallback) launched for pkg=$packageName messageKey=$messageResKey")
-            // AB-05 fix (from main): press HOME after a short delay to move the
-            // offending app to the background. The delay lets the block activity
-            // appear first so HOME doesn't dismiss it. Without this, the offending
-            // app stays in the back stack and the user returns to it after Close.
-            serviceScope.launch {
-                kotlinx.coroutines.delay(200)
-                try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Throwable) {}
-            }
-            // BLOCK-SCREEN-02 (v1.0.68): startActivity() from a background
-            // accessibility service can be SILENTLY dropped on API 29+ by the
-            // background-activity-launch restrictions (no exception — the call
-            // "succeeds" and nothing appears: the reported "does not appear at
-            // all"). Verify the screen actually came up; if not, escalate:
-            // retry the overlay (the permission may have been granted since the
-            // first check) and, failing that, press HOME as the last resort so
-            // the offending content never stays visible after a confirmed block.
-            serviceScope.launch {
-                kotlinx.coroutines.delay(FALLBACK_VERIFY_DELAY_MS)
-                try {
-                    val activityShowing = protect.yourself.features.blockerPage.ui.PornBlockActivity.isShowing.get()
-                    val overlayShowing = getBlockOverlayManager().isShowing()
-                    if (activityShowing || overlayShowing) {
-                        Timber.d("Block fallback verified (activity=%s overlay=%s)", activityShowing, overlayShowing)
-                        return@launch
-                    }
-                    Timber.w("Block fallback did NOT appear (BAL-dropped?) — escalating for pkg=$packageName")
-                    protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
-                        "BlockFallback",
-                        "activity not visible after ${FALLBACK_VERIFY_DELAY_MS}ms for pkg=$packageName — escalating"
-                    )
-                    val mgr = getBlockOverlayManager()
-                    val retried = try {
-                        mgr.canDrawOverlays() && mgr.showBlockOverlay(packageName, messageResKey, matchedKeyword)
-                    } catch (t: Throwable) {
-                        Timber.w(t, "Overlay escalation retry failed")
-                        false
-                    }
-                    if (!retried) {
-                        Timber.e("All block paths failed for pkg=$packageName — HOME press as last resort")
-                        try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Throwable) {}
-                    }
-                } catch (t: Throwable) {
-                    Timber.w(t, "Block fallback verification failed")
-                }
-            }
+            Timber.i("Block screen (transparent activity) launched for pkg=$packageName messageKey=$messageResKey")
+            true
         } catch (t: Throwable) {
-            Timber.e(t, "Activity fallback also failed — pressing HOME as last resort")
+            Timber.e(t, "Block screen launch failed for pkg=$packageName")
             protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
                 throwable = t,
                 severity = protect.yourself.features.crashLog.CrashSeverity.ERROR,
                 tag = "BlockLaunch",
-                message = "Both overlay and Activity failed for pkg=$packageName — pressing HOME",
+                message = "PornBlockActivity launch failed for pkg=$packageName",
                 extraContext = mapOf("packageName" to packageName, "messageKey" to messageResKey)
             )
-            // ===== Strategy 3: HOME press (last resort) =====
-            try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (_: Throwable) {}
+            false
         }
     }
 
@@ -2546,6 +2562,15 @@ class MyAccessibilityService : AccessibilityService() {
 
         // KB-06: throttle constants.
         private const val BLOCK_THROTTLE_GLOBAL_MS = 300L
+
+        // A11Y-KILL-01 (v1.0.70): self-heal throttle while the user sits on an
+        // accessibility-management screen. Events stream in continuously there
+        // (switch animations, content changes) — one heal attempt per 10 s is
+        // plenty and keeps the Settings.Secure reads negligible.
+        private const val A11Y_SCREEN_HEAL_THROTTLE_MS = 10_000L
+
+        @Volatile
+        private var lastA11yScreenHealMs = 0L
 
         // KB-01: max content-text length we'll run keyword matching on. Avoids
         // matching against huge text blobs (e.g. a full article body) which

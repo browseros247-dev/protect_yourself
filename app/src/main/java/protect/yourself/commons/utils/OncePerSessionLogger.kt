@@ -10,27 +10,22 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * # Why this exists
  *
- * Crash log analysis (v1.0.46, vivo V2206) showed the warning
- * "SYSTEM_ALERT_WINDOW not granted — falling back to Activity" was logged
- * **14 times in 20 minutes** — every time a block was triggered. This
- * flooded the crash log with duplicate WARN entries, making it harder to
- * spot real issues.
- *
- * The user hasn't granted the "Display over other apps" permission, and
- * every block attempt triggers the same warning. The condition doesn't
- * change between log entries, so logging it once is sufficient — the user
- * already knows from the first warning.
+ * Crash log analysis (v1.0.46, vivo V2206) showed a repeated
+ * permission/fallback warning logged **14 times in 20 minutes** — every
+ * time a block was triggered. This flooded the crash log with duplicate
+ * WARN entries, making it harder to spot real issues. Any condition that
+ * doesn't change between log entries should be logged once per session —
+ * the reader already knows from the first warning.
  *
  * # Usage
  *
  * ```kotlin
- * if (!Settings.canDrawOverlays(context)) {
+ * if (!someRequiredCapability(context)) {
  *     OncePerSessionLogger.warn(
- *         key = "overlay_permission_missing",
- *         message = "SYSTEM_ALERT_WINDOW not granted — falling back to Activity. " +
- *             "User should grant it via Settings → Apps → Protect Yourself → Display over other apps."
+ *         key = "capability_missing",
+ *         message = "Capability X not granted — using fallback path."
  *     )
- *     // ... fall back to Activity
+ *     // ... fall back
  * }
  * ```
  *

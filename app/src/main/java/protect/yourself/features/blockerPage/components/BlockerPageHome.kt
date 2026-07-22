@@ -203,16 +203,6 @@ fun BlockerPageHome() {
                         } catch (_: Throwable) {}
                     }
                 }
-                is BlockerPageNavigation.OpenOverlaySettings -> {
-                    try {
-                        context.startActivity(Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:${context.packageName}")
-                        ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
-                    } catch (t: Throwable) {
-                        android.widget.Toast.makeText(context, "Could not open overlay settings", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                }
                 is BlockerPageNavigation.OpenUrl -> {
                     try {
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(nav.url)).apply {

@@ -46,7 +46,6 @@ sealed class BlockerPageNavigation {
     data object RestartVpn : BlockerPageNavigation()
     data object OpenVpnManagement : BlockerPageNavigation()
     data object OpenAccessibilitySettings : BlockerPageNavigation()
-    data object OpenOverlaySettings : BlockerPageNavigation()
     data object OpenAppLockSetup : BlockerPageNavigation()
     data object OpenUnifiedBlocking : BlockerPageNavigation()
     data object OpenStopMe : BlockerPageNavigation()
@@ -1188,8 +1187,10 @@ class BlockerPageViewModel(
         safeLaunch {
             val nav = when (item.identifier) {
                 // Permissions
+                // ACTIVITY-BLOCK-01 (v1.0.70): the "Display pop-up window
+                // permission" row was removed — the transparent-activity block
+                // screen no longer needs SYSTEM_ALERT_WINDOW.
                 SettingPageItemIdentifiers.ACCESSIBILITY_PERMISSION -> BlockerPageNavigation.OpenAccessibilitySettings
-                SettingPageItemIdentifiers.DISPLAY_POPUP_WINDOW_PERMISSION -> BlockerPageNavigation.OpenOverlaySettings
 
                 // App picker pages
                 SettingPageItemIdentifiers.BLOCKLIST_APPS -> BlockerPageNavigation.OpenSelectAppPage("Blocklist Apps", SelectedAppListIdentifier.BLOCK_APPS)
@@ -1260,7 +1261,9 @@ class BlockerPageViewModel(
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_ALERT, "Alert", isSection = true))
         add(SettingPageItemModel(SettingPageItemIdentifiers.BLOCK_SCREEN_COUNT, "Block screens", info = "Total times content has been blocked", actionLabel = "0"))
         add(SettingPageItemModel(SettingPageItemIdentifiers.ACCESSIBILITY_PERMISSION, "Accessibility permission", info = "Required to block content", actionLabel = "Grant"))
-        add(SettingPageItemModel(SettingPageItemIdentifiers.DISPLAY_POPUP_WINDOW_PERMISSION, "Display pop-up window permission", info = "Required to show block screen", actionLabel = "Grant"))
+        // ACTIVITY-BLOCK-01 (v1.0.70): "Display pop-up window permission" row
+        // removed — the block screen is a transparent activity and needs no
+        // SYSTEM_ALERT_WINDOW grant from the user.
 
         add(SettingPageItemModel(SettingPageItemIdentifiers.SECTION_ACCOUNTABILITY_PARTNER, "Protective Mode", isSection = true))
         // Long Sentence removed from UI — always active in background automatically

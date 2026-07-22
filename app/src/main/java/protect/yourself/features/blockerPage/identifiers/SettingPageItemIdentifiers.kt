@@ -33,7 +33,8 @@ enum class SettingPageItemIdentifiers {
 
     // Permissions
     ACCESSIBILITY_PERMISSION,
-    DISPLAY_POPUP_WINDOW_PERMISSION,
+    // DISPLAY_POPUP_WINDOW_PERMISSION removed in v1.0.70 (ACTIVITY-BLOCK-01) —
+    // transparent-activity block screen; SYSTEM_ALERT_WINDOW no longer used.
 
     // Protective Mode section
     SECTION_ACCOUNTABILITY_PARTNER,
