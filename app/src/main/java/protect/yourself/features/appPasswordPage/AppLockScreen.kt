@@ -76,6 +76,7 @@ import protect.yourself.R
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.features.appPasswordPage.identifiers.AppLockType
 import protect.yourself.theme.BrandOrange
+import protect.yourself.theme.brandButtonColors
 import timber.log.Timber
 
 /**
@@ -658,7 +659,7 @@ fun AppLockScreen(onUnlocked: () -> Unit) {
                                 ).show()
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandOrange)
+                        colors = brandButtonColors()
                     ) {
                         Icon(Icons.Filled.Fingerprint, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
@@ -962,7 +963,7 @@ private fun PasswordUI(
             onClick = { viewModel.tryUnlock(onUnlocked) },
             enabled = state.input.length >= 6 && !state.isLockedOut,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = BrandOrange)
+            colors = brandButtonColors()
         ) {
             Text(stringResource(R.string.lock_screen_unlock), fontWeight = FontWeight.Bold)
         }

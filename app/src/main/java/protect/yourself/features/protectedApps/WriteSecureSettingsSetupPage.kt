@@ -290,10 +290,12 @@ private fun StatusCard(permissionGranted: Boolean, lastCheckedAt: Long) {
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
+            // UI-CONSIST-01 (v1.0.72): semantic status tint via shared tokens
+            // instead of ad-hoc hex literals (#1B5E20/#E65100 at 8%).
             containerColor = if (permissionGranted)
-                Color(0xFF1B5E20).copy(alpha = 0.08f)
+                protect.yourself.theme.StatusSuccess.copy(alpha = 0.10f)
             else
-                Color(0xFFE65100).copy(alpha = 0.08f)
+                protect.yourself.theme.StatusWarning.copy(alpha = 0.10f)
         )
     ) {
         Row(
@@ -306,7 +308,12 @@ private fun StatusCard(permissionGranted: Boolean, lastCheckedAt: Long) {
                 modifier = Modifier
                     .size(40.dp)
                     .background(
-                        if (permissionGranted) Color(0xFF4CAF50) else Color(0xFFFF9800),
+                        // UI-CONSIST-01 (v1.0.72): white icons on the old
+                        // hardcoded #4CAF50/#FF9800 circles reached only
+                        // ≈2.5:1 / ≈2.2:1 (below the WCAG 3:1 non-text floor).
+                        // The shared tokens reach ≈4.9:1 / ≈3.6:1 with white.
+                        if (permissionGranted) protect.yourself.theme.StatusSuccess
+                        else protect.yourself.theme.StatusWarning,
                         CircleShape
                     ),
                 contentAlignment = Alignment.Center
@@ -372,7 +379,11 @@ private fun StepCard(
                 ) {
                     Text(
                         text = stepNumber.toString(),
-                        color = Color.White,
+                        // DARK-BTN-01 (v1.0.72): pair with onPrimary instead of
+                        // hardcoded white — white on the new dark primary
+                        // (#9DB8C6) would be ≈2.3:1; onPrimary is ≈8.1:1 there
+                        // and white (≈13.2:1) in the light scheme.
+                        color = MaterialTheme.colorScheme.onPrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
@@ -428,11 +439,19 @@ private fun DiagnosticRow(label: String, value: String) {
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        // UI-CONSIST-01 (v1.0.72): "Our service component" carries the full
+        // flat component name (>70 chars) — with SpaceBetween and no wrap
+        // control it pushed the label off-row / clipped. Give the value the
+        // remaining width, right-align it, and wrap to a second line instead.
         Text(
             text = value,
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.Medium,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            maxLines = 3,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 16.dp).weight(1f)
         )
     }
 }

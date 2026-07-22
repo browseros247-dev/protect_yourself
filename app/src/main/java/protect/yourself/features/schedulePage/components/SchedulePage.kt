@@ -48,6 +48,7 @@ import protect.yourself.features.schedulePage.ScheduleDisplayItem
 import protect.yourself.features.schedulePage.SchedulePageViewModel
 import protect.yourself.features.schedulePage.identifiers.ScheduleTypeIdentifiers
 import protect.yourself.theme.BrandOrange
+import protect.yourself.theme.BrandOrangeButton
 import java.util.Calendar
 
 /**
@@ -133,7 +134,7 @@ fun SchedulePage(
                 onClick = onCreateSchedule,
                 icon = { Icon(Icons.Filled.Add, contentDescription = "Add") },
                 text = { Text("New Schedule") },
-                containerColor = BrandOrange,
+                containerColor = BrandOrangeButton,
                 contentColor = Color.White
             )
         }

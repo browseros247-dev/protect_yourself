@@ -61,6 +61,7 @@ import protect.yourself.R
 import protect.yourself.database.core.AppDatabase
 import protect.yourself.features.appPasswordPage.identifiers.AppLockType
 import protect.yourself.theme.BrandOrange
+import protect.yourself.theme.brandButtonColors
 import timber.log.Timber
 
 /**
@@ -480,7 +481,7 @@ private fun LockTypeSelector(
             Button(
                 onClick = { viewModel.selectLockType(type) },
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = BrandOrange)
+                colors = brandButtonColors()
             ) {
                 Text("Set ${type.name}", fontWeight = FontWeight.Bold)
             }
@@ -594,7 +595,7 @@ private fun EnterCredentialsPage(
                 AppLockType.OFF -> 0
             },
             modifier = Modifier.weight(1f),
-            colors = ButtonDefaults.buttonColors(containerColor = BrandOrange)
+            colors = brandButtonColors()
         ) {
             Text("Next")
         }
@@ -670,7 +671,7 @@ private fun ConfirmCredentialsPage(
                 AppLockType.OFF -> 0
             },
             modifier = Modifier.weight(1f),
-            colors = ButtonDefaults.buttonColors(containerColor = BrandOrange)
+            colors = brandButtonColors()
         ) {
             Text("Confirm & Save")
         }

@@ -3,7 +3,7 @@
 A privacy-first Android app that blocks pornographic and distracting content at multiple layers — DNS filtering via VPN, accessibility-service-based content/app blocking, anti-uninstall protection, scheduled app restrictions, focus sessions, and crash diagnostics. The app runs entirely on-device; no cloud, no analytics, no accounts.
 
 - **Package**: `protect.yourself`
-- **Current version**: `1.0.71` (versionCode `71`)
+- **Current version**: `1.0.72` (versionCode `72`)
 - **Min SDK**: 26 (Android 8.0) · **Target SDK**: 35 (Android 15)
 - **Language**: Kotlin 2.0.21 · **UI toolkit**: Jetpack Compose (Material 3)
 - **Build system**: Gradle 8.7.2 with Kotlin DSL + Version Catalogs
@@ -1308,7 +1308,7 @@ protect_yourself/
 │       │       └── xml/                             # accessibility_setting.xml, device_admin.xml, file_paths.xml, stop_me_widget_info.xml
 │       ├── androidTest/                             # Instrumentation tests
 │       └── test/                                    # Unit tests (Robolectric)
-├── apk/                                             # Pre-built APKs (v1.0.71 debug + release)
+├── apk/                                             # Pre-built APKs (v1.0.72 debug + release)
 ├── docs/                                            # Analysis + fix reports (per-version subdirs)
 ├── gradle/
 │   ├── libs.versions.toml                           # Version catalog

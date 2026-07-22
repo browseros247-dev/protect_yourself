@@ -828,10 +828,7 @@ private fun AddCustomDnsDialog(
                 onClick = { onSave(name, dns1, dns2) },
                 // BUG-17 fix: gate on live validation, not just non-blank.
                 enabled = isFormValid,
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = BrandOrange,
-                    contentColor = Color.White
-                )
+                colors = protect.yourself.theme.brandButtonColors()
             ) {
                 Text(
                     stringResource(R.string.vpn_custom_dns_add_dialog_save),

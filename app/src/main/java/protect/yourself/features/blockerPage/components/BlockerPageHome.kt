@@ -881,10 +881,7 @@ private fun EditTextDialog(
                         }
                         Button(
                             onClick = { onSave(text) },
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = BrandOrange,
-                                contentColor = androidx.compose.ui.graphics.Color.White
-                            ),
+                            colors = protect.yourself.theme.brandButtonColors(),
                             // Allow saving an empty value when maxLength is
                             // set — for the block screen message, an empty
                             // value means "reset to default".
@@ -992,10 +989,7 @@ private fun EditNumberDialog(
                         Button(
                             onClick = { onSave(parsed ?: min) },
                             enabled = isValid,
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = BrandOrange,
-                                contentColor = androidx.compose.ui.graphics.Color.White
-                            )
+                            colors = protect.yourself.theme.brandButtonColors()
                         ) {
                             Text("Save", fontWeight = FontWeight.Bold)
                         }
@@ -1079,13 +1073,15 @@ private fun AccessibilityWarningCard(context: android.content.Context) {
                 modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // UI-CONSIST-01 (v1.0.72): icon size + spacing now match the
+                // "not enabled" variant of this banner (24dp icon, 12dp gap).
                 Icon(
                     imageVector = androidx.compose.material.icons.Icons.Filled.CheckCircle,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(24.dp)
                 )
-                Spacer(modifier = Modifier.size(8.dp))
+                Spacer(modifier = Modifier.size(12.dp))
                 Text("Accessibility enabled — blocking is active", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer, fontWeight = FontWeight.SemiBold)
             }
         }

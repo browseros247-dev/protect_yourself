@@ -76,3 +76,40 @@ val LightOnTertiaryM3 = Color(0xFF311300)
 val LightTertiaryContainerM3 = Color(0xFFFFE0C8)
 val LightOnTertiaryContainerM3 = Color(0xFF311300)
 
+// === Interactive/button role colors (v1.0.72, DARK-BTN-01) ===
+//
+// Two more "black text on black background" failure classes were reported in
+// Dark Mode — this time on BUTTONS (Allow / Disallow / Export / Import /
+// Open / Close / Cancel …):
+//
+//  1. The dark scheme used the near-black brand navy [DarkPrimary] #1F323F
+//     as M3 `primary`. M3 consumes `primary` as the CONTENT color of every
+//     TextButton / OutlinedButton label and border — #1F323F on the dark
+//     surface #151F26 reaches only ≈1.3:1, i.e. effectively invisible.
+//     [DarkPrimaryInteractive] #9DB8C6 keeps the blue-gray hue identity but
+//     reaches ≈8.1:1 on the dark surface and ≈8.8:1 on the dark background.
+//     Paired [DarkOnPrimaryInteractive] #0A2029 reaches ≈8.1:1 on it, so the
+//     filled-button default (container=primary / content=onPrimary) also
+//     stays ≥4.5:1. The near-black navy survives as `primaryContainer`
+//     (container role: white on it ≈13.2:1) and as the light scheme primary.
+//
+//  2. Filled brand buttons used [BrandOrange] #FF7100 with (near-)white
+//     labels — ≈2.8:1, below even WCAG large-text 3:1. [BrandOrangeButton]
+//     #B85700 keeps the orange hue but reaches ≈4.77:1 with white text, so
+//     every filled brand button meets WCAG AA for normal text. It is used
+//     exclusively via `brandButtonColors()` (see theme/AppButtons.kt), which
+//     also sets legible disabled colors (#B85700 @ 40% + white @ 60%).
+val BrandOrangeButton = Color(0xFFB85700)
+val DarkPrimaryInteractive = Color(0xFF9DB8C6)
+val DarkOnPrimaryInteractive = Color(0xFF0A2029)
+
+// === Semantic status pairs (v1.0.72, UI-CONSIST-01) ===
+//
+// Status indicators that need green=ok / amber=warn semantics independent
+// of the M3 scheme (e.g. the Reliable Accessibility status card). Paired
+// with pure-white icons: white on #2E7D32 ≈ 4.9:1, white on #E65100 ≈ 3.6:1
+// (icons are non-text content; WCAG non-text minimum is 3:1). The previous
+// hardcoded pair #4CAF50/#FF9800 with white reached only ≈2.5:1 / ≈2.2:1.
+val StatusSuccess = Color(0xFF2E7D32)
+val StatusWarning = Color(0xFFE65100)
+
