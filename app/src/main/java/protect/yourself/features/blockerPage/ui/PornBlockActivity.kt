@@ -94,8 +94,57 @@ class PornBlockActivity : AppCompatActivity() {
         // BUG-08 fix: register the predictive-back callback
         onBackPressedDispatcher.addCallback(this, backPressedCallback)
 
+        isShowing.set(true)
         bindViews()
         configureBlockScreen()
+    }
+
+    /**
+     * BLOCK-SCREEN-03 (v1.0.68): the manifest declares this activity
+     * `singleTop`. When a second block fires while an older instance is still
+     * alive on top of its task, Android reuses it and delivers the intent
+     * here — the old code had no override, so the screen kept showing the
+     * PREVIOUS block's package/message ("appears but does not function
+     * correctly"). Rebind against the new extras and cancel any stale
+     * countdown before re-arming it.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        Timber.i("Block screen re-launched via onNewIntent — rebinding to new extras")
+        try {
+            countDownTimer?.cancel()
+            countDownTimer = null
+            // Views may be re-bound cheaply; reset dynamic state first.
+            if (::imgMotivation.isInitialized) {
+                imgMotivation.setImageDrawable(null)
+                imgMotivation.visibility = View.GONE
+            }
+            if (::llRatingContainer.isInitialized) {
+                llRatingContainer.visibility = View.GONE
+            }
+            if (::txtWhyContainer.isInitialized) {
+                txtWhyContainer.visibility = View.GONE
+            }
+            if (::txtCloseContainer.isInitialized) {
+                // Prevent a stale immediate-close listener from the old
+                // configuration firing during re-setup.
+                txtCloseContainer.setOnClickListener(null)
+                txtCloseContainer.isClickable = false
+            }
+            configureBlockScreen()
+        } catch (t: Throwable) {
+            Timber.w(t, "PornBlockActivity: onNewIntent rebind failed")
+        }
+    }
+
+    companion object {
+        /**
+         * BLOCK-SCREEN-02 (v1.0.68): surfaced to MyAccessibilityService so the
+         * fallback launcher can VERIFY the screen actually appeared (guards
+         * against silent background-activity-launch drops on API 29+).
+         */
+        val isShowing = java.util.concurrent.atomic.AtomicBoolean(false)
     }
 
     private fun bindViews() {
@@ -329,7 +378,8 @@ class PornBlockActivity : AppCompatActivity() {
         txtCloseContainer.isClickable = false
         countDownTimer = object : CountDownTimer(totalMs, 1000) {
             override fun onTick(millisUntilFinished: Long) {
-                val secs = millisUntilFinished / 1000
+                // Ceil so the user sees 3,2,1 (not 2,1,0) during a 3s dwell.
+                val secs = (millisUntilFinished + 999) / 1000
                 txtClose.text = "${getString(R.string.close)} ($secs)"
             }
 
@@ -446,6 +496,7 @@ class PornBlockActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isShowing.set(false)
         countDownTimer?.cancel()
         // Drop the motivation bitmap eagerly to release memory faster — the
         // ImageView may hold a reference until the next GC.

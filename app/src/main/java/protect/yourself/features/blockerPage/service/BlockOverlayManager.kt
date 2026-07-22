@@ -110,7 +110,18 @@ class BlockOverlayManager(
     @Volatile
     private var killTimer: KillTimer? = null
 
+    /** Close button of the current overlay (countdown applies via [startCloseCountdown]). */
+    @Volatile
+    private var closeButton: TextView? = null
+
+    /** Close-button countdown timer (TIMER-DEFAULT-01 parity with PornBlockActivity). */
+    @Volatile
+    private var closeCountdownTimer: android.os.CountDownTimer? = null
+
     private val isOverlayShowing = AtomicBoolean(false)
+
+    /** BLOCK-SCREEN diagnostics: true while a block overlay window is attached. */
+    fun isShowing(): Boolean = isOverlayShowing.get() && overlayView != null
 
     /**
      * Main-thread handler for posting the kill-timer start with a settling
@@ -171,8 +182,44 @@ class BlockOverlayManager(
     ): Boolean {
         // Single-flight guard — only one overlay at a time.
         if (!isOverlayShowing.compareAndSet(false, true)) {
-            Timber.d("BlockOverlayManager: overlay already showing — skipping")
-            return true
+            // BLOCK-SCREEN-01 (v1.0.68) — STUCK-LATCH self-heal. Previously the
+            // latch was ONLY released by the Close button, and several real-world
+            // paths remove the window without going through hideBlockOverlay():
+            //  - user revokes SYSTEM_ALERT_WINDOW while the overlay is up
+            //  - accessibility service unbind/rebind in the same process
+            //    (system removes the dead service's windows)
+            //  - removeView() throwing inside an earlier failed attempt
+            // In all of these the latch stayed true forever → every subsequent
+            // block attempt took this branch and NOTHING was ever shown again
+            // (until process death): "the block screen does not appear at all".
+            // Detect the stale latch (no view, or view detached) and recover.
+            val staleView = overlayView
+            val stillShowing = staleView != null &&
+                staleView.isAttachedToWindow &&
+                windowManager != null
+            if (stillShowing) {
+                Timber.d("BlockOverlayManager: overlay already showing — skipping")
+                return true
+            }
+            Timber.w(
+                "BlockOverlayManager: stuck overlay latch without a visible window " +
+                    "(view=%s attached=%s) — self-healing and re-showing for pkg=%s",
+                staleView != null, staleView?.isAttachedToWindow, packageName
+            )
+            protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                "BlockOverlay",
+                "stuck latch self-heal for pkg=$packageName (view=${staleView != null}, attached=${staleView?.isAttachedToWindow})"
+            )
+            killTimer?.cancel()
+            killTimer = null
+            overlayView = null
+            motivationImageView = null
+            closeButton = null
+            isOverlayShowing.set(false)
+            if (!isOverlayShowing.compareAndSet(false, true)) {
+                // Lost a race against a concurrent call that is now showing it.
+                return true
+            }
         }
 
         val wm = windowManager ?: run {
@@ -243,6 +290,13 @@ class BlockOverlayManager(
             // default message, and the customisations are applied as soon as
             // the DB + image decode complete (typically < 50ms).
             applyUserCustomisations(messageText = defaultMessageText(messageResKey))
+
+            // TIMER-DEFAULT-01 (v1.0.68): the overlay close button now gets the
+            // SAME countdown behavior as the Activity path (default 3s when no
+            // valid custom value is set). Previously the overlay close was
+            // immediate while the Activity close had a countdown — inconsistent
+            // UX and effectively a shorter dwell on the primary block path.
+            applyCloseButtonBehavior()
 
             true
         } catch (t: Throwable) {
@@ -344,6 +398,12 @@ class BlockOverlayManager(
         killTimer?.cancel()
         killTimer = null
 
+        // TIMER-DEFAULT-01: cancel a running close-button countdown so a stale
+        // onTick can't post back into a detached view or a NEW overlay's button.
+        closeCountdownTimer?.cancel()
+        closeCountdownTimer = null
+        closeButton = null
+
         val view = overlayView
         if (view != null) {
             try {
@@ -355,6 +415,81 @@ class BlockOverlayManager(
         }
         motivationImageView = null
         isOverlayShowing.set(false)
+    }
+
+    /**
+     * TIMER-DEFAULT-01 (v1.0.68): read the close-button countdown (default 3s
+     * when no valid custom value is set) from the DB off the main thread, then
+     * arm [startCloseCountdown] on the overlay's thread (WindowManager views
+     * must be touched on their owner thread — posted via the view itself).
+     *
+     * Robustness (BLOCK-SCREEN-02 class): if the DB read fails, the close
+     * button is STILL wired to immediate close — the overlay must never get
+     * stuck with a dead close button, that would lock the screen with no
+     * escape short of force-stopping the app.
+     */
+    private fun applyCloseButtonBehavior() {
+        ioScope.launch {
+            val seconds = try {
+                val db = AppDatabase.getInstance(service)
+                SwitchStatusValues(db.switchStatusDao()).getBlockScreenCountDownSeconds()
+            } catch (t: Throwable) {
+                Timber.w(t, "BlockOverlayManager: countdown read failed — using immediate close")
+                0
+            }
+            overlayView?.post {
+                try {
+                    startCloseCountdown(seconds)
+                } catch (t: Throwable) {
+                    Timber.w(t, "BlockOverlayManager: close countdown failed — wiring immediate close")
+                    wireImmediateClose()
+                }
+            }
+        }
+    }
+
+    /** Enables the close button instantly (no dwell). Never leaves a dead button. */
+    private fun wireImmediateClose() {
+        closeCountdownTimer?.cancel()
+        closeCountdownTimer = null
+        closeButton?.let { btn ->
+            btn.text = try { service.getString(R.string.close) } catch (_: Throwable) { "Close" }
+            btn.alpha = 1f
+            btn.isClickable = true
+            btn.setOnClickListener { hideBlockOverlay() }
+        }
+    }
+
+    /**
+     * Runs the Close-button countdown on the overlay path. Mirrors
+     * PornBlockActivity.startCountdown() semantics: button disabled + dimmed
+     * during the dwell, remaining seconds shown in the label, click listener
+     * wired only after the dwell completes (or immediately when seconds <= 0).
+     */
+    private fun startCloseCountdown(seconds: Int) {
+        if (seconds <= 0) {
+            wireImmediateClose()
+            return
+        }
+        val btn = closeButton ?: return
+        closeCountdownTimer?.cancel()
+        btn.isClickable = false
+        btn.alpha = 0.55f
+        closeCountdownTimer = object : android.os.CountDownTimer(seconds * 1000L, 1000L) {
+            override fun onTick(millisUntilFinished: Long) {
+                try {
+                    val secs = (millisUntilFinished + 999) / 1000
+                    closeButton?.text = "${service.getString(R.string.close)} ($secs)"
+                } catch (t: Throwable) {
+                    Timber.w(t, "BlockOverlayManager: countdown tick failed")
+                }
+            }
+
+            override fun onFinish() {
+                wireImmediateClose()
+            }
+        }.start()
+        Timber.d("BlockOverlayManager: close countdown started (%ds)", seconds)
     }
 
     /**
@@ -493,7 +628,10 @@ class BlockOverlayManager(
             layoutParams = LinearLayout.LayoutParams(0, dp(24))
         })
 
-        // Close button — full-width, prominent
+        // Close button — full-width, prominent. The click listener + enabled
+        // state are wired asynchronously by applyCloseButtonBehavior() (countdown
+        // value comes from the DB). Until then the button is visibly disabled so
+        // the user can't dismiss before the dwell is enforced.
         val closeBtn = TextView(ctx).apply {
             text = ctx.getString(R.string.close)
             setTextColor(0xFF000000.toInt())
@@ -502,10 +640,10 @@ class BlockOverlayManager(
             setBackgroundColor(0xFFFFB74B.toInt())
             setPadding(dp(24), dp(16), dp(24), dp(16))
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            setOnClickListener {
-                hideBlockOverlay()
-            }
+            isClickable = false
+            alpha = 0.55f
         }
+        closeButton = closeBtn
         val closeParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
