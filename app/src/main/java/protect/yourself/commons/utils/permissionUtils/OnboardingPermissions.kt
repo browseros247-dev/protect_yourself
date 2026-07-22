@@ -8,7 +8,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
-import protect.yourself.features.protectedApps.AccessibilityGuard
+import protect.yourself.features.protectedApps.AccessibilityPersistUtils
 import timber.log.Timber
 
 /**
@@ -117,9 +117,15 @@ object OnboardingPermissions {
             false
         }
 
-    /** True when our accessibility service is in enabled_accessibility_services. */
+    /**
+     * True when our accessibility service is EFFECTIVELY enabled (v1.0.69,
+     * A11Y-PERSIST-03): our entry is in enabled_accessibility_services AND the
+     * master accessibility_enabled switch is ON. Entry-only checks report
+     * "granted" while blocking is actually dead after an OEM master-switch
+     * flip — the onboarding row must reflect the real blocking capability.
+     */
     fun isAccessibilityServiceEnabled(context: Context): Boolean = try {
-        AccessibilityGuard.isAccessibilityServiceEnabled(context)
+        AccessibilityPersistUtils.isAccessibilityEffectivelyEnabled(context)
     } catch (t: Throwable) {
         Timber.w(t, "$TAG: accessibility state read failed — assuming disabled")
         false

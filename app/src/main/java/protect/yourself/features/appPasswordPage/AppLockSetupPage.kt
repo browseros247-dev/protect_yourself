@@ -396,7 +396,8 @@ private fun LockTypeSelector(
                 Button(
                     onClick = { viewModel.disableLock() },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
                     ),
                     modifier = Modifier.fillMaxWidth()
                 ) {

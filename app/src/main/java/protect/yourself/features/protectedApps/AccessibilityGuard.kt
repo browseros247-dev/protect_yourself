@@ -144,7 +144,17 @@ class AccessibilityGuard {
                 false,
                 servicesObserver
             )
-            Timber.i("AccessibilityGuard: ContentObserver registered")
+            // A11Y-PERSIST-03: also watch the MASTER switch URI. Settings
+            // change notifications are dispatched per key — an OEM flip of
+            // accessibility_enabled alone does NOT notify the
+            // enabled-services URI, so without this a master-only flip would
+            // only be caught by the 30s poll instead of instantly.
+            cr.registerContentObserver(
+                Settings.Secure.getUriFor(Settings.Secure.ACCESSIBILITY_ENABLED),
+                false,
+                servicesObserver
+            )
+            Timber.i("AccessibilityGuard: ContentObserver registered (services list + master switch)")
         } catch (t: Throwable) {
             observerRegistered.set(false)
             Timber.w(t, "AccessibilityGuard: failed to register ContentObserver")
@@ -158,11 +168,32 @@ class AccessibilityGuard {
         } catch (_: Throwable) {}
     }
 
+    // A11Y-PERSIST-05: last observed effective state, for transition
+    // breadcrumbs (diagnostics — lets crash logs show exactly WHEN the
+    // service flipped, instead of only that it was found disabled later).
+    @Volatile
+    private var lastEffectiveState: Boolean? = null
+
     private fun checkAccessibilityServiceEnabled() {
         val ctx = context ?: return
-        val isEnabled = isAccessibilityServiceEnabled(ctx)
+        // A11Y-PERSIST-03 (v1.0.69): use the EFFECTIVE check — our entry can
+        // remain in enabled_accessibility_services while an OEM/MIUI/Knox
+        // component flips the master accessibility_enabled switch to 0, which
+        // silently kills blocking even though the entry-only check reports
+        // "enabled". The master switch must be ON *and* our entry present.
+        val isEnabled = AccessibilityPersistUtils.isAccessibilityEffectivelyEnabled(ctx)
+        val previous = lastEffectiveState
+        lastEffectiveState = isEnabled
+        if (previous != null && previous != isEnabled) {
+            try {
+                protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                    "A11yGuard",
+                    "effective state transition: ${if (previous) "enabled" else "disabled"} -> ${if (isEnabled) "enabled" else "disabled"}"
+                )
+            } catch (_: Throwable) {}
+        }
         if (!isEnabled) {
-            Timber.w("AccessibilityGuard: service disabled — attempting self-heal")
+            Timber.w("AccessibilityGuard: service effectively disabled (entry and/or master switch) — attempting self-heal")
             selfHeal(ctx)
         }
     }

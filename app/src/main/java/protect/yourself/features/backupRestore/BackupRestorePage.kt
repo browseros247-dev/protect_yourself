@@ -393,7 +393,13 @@ private fun ActionCard(
                 onClick = onClick,
                 enabled = enabled,
                 colors = if (isDestructive) {
-                    ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    // DARK-CONTRAST-01: pair error container with its onError role —
+                    // the dark-scheme error color is now the M3 light tone, so a
+                    // default (white) content color would be unreadable.
+                    ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
                 } else {
                     ButtonDefaults.buttonColors(containerColor = BrandOrange)
                 }
