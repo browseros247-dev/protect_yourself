@@ -7,22 +7,21 @@ This directory contains the **latest** pre-built, signed APK of **Protect Yourse
 - **Only the latest version** is kept here. When a new version is built, the previous APKs are removed.
 - Each version has two files: `*-debug.apk` (debug build with logging) and `*-release.apk` (production build, recommended).
 
-## Current Version: 1.0.67 (versionCode 67) — App Size & Performance Optimization (PERF)
+## Current Version: 1.0.68 (versionCode 68) — Block Screen Reliability + Default Countdown Timer
 
 | File | Size | Build Type | Description |
 |---|---|---|---|
-| `protect.yourself-v1.0.67-release.apk` | **~3.3 MB** | Release | **Recommended for installation.** Size & performance round (PERF-01..05): release APK shrank from **15.5 MB → 3.3 MB (−78%; raw payload 51 → 6.5 MB, −87%)** by enabling R8 code shrinking+obfuscation and unused-resource shrinking, English-only `resourceConfigurations`, and removing two unused dependencies (`runtime.livedata`, `lottie.compose`). All reflection entry points are pinned by keep rules + a regression-guard test (Gson backup/crash-log models incl. Room entities, WorkManager workers, enum constants). Startup improved: WorkManager scheduling and the crash-log disk scan now run off the main thread (PERF-02/03), and per-step + total init timing is logged (PERF-04). All functionality preserved — carry-over: v1.0.66 onboarding permissions, v1.0.63–65 VPN + App Lock fixes. See `docs/PERF_SIZE_OPTIMIZATION_REPORT_v1.0.67.md`. 348/348 tests pass. |
-| `protect.yourself-v1.0.67-debug.apk` | ~20.3 MB | Debug | Same code with debug logging, `Protect Yourself DEBUG` label, debuggable, unminified by design. |
+| `protect.yourself-v1.0.68-release.apk` | **~3.3 MB** | Release | **Recommended for installation.** Block-screen reliability round: **(1) Default countdown timer** — previously unset (no code path could ever persist a custom value), so block screens closed instantly; now a **3s default** applies whenever no valid custom value is set (TIMER-DEFAULT-01), on BOTH the overlay and activity block paths. **(2) Block screen reliability** (BLOCK-SCREEN-01..04): stuck single-flight latch that permanently suppressed the overlay after permission revoke/service rebind (self-healing via attach-state check), silent background-activity-launch drops on API 29+ (post-launch visibility verification + escalation), `singleTop` stale-extras rebind in `PornBlockActivity.onNewIntent`, wall-clock throttle replaced with monotonic clock, overlay close button can never be left dead. Carries v1.0.67 R8 size optimization (3.3 MB release), v1.0.66 onboarding permissions, v1.0.63–65 VPN + App Lock fixes. See `docs/BLOCK_SCREEN_RELIABILITY_REPORT_v1.0.68.md`. 358/358 tests pass. |
+| `protect.yourself-v1.0.68-debug.apk` | ~20.3 MB | Debug | Same code with debug logging, `Protect Yourself DEBUG` label, debuggable, unminified by design. |
 
-## Build verification (v1.0.67)
+## Build verification (v1.0.68)
 
-- `./gradlew :app:assembleRelease` → **BUILD SUCCESSFUL** (R8 `minifyReleaseWithR8` + `shrinkReleaseRes` completed)
+- `./gradlew :app:assembleRelease` → **BUILD SUCCESSFUL** (R8 minified; size held at ~3.3 MB)
 - `./gradlew :app:assembleDebug` → **BUILD SUCCESSFUL**
-- `./gradlew :app:testDebugUnitTest` → **348/348 tests pass, 0 failures, 0 errors, 0 skipped** (23 suites; +8 new ProguardRulesRegressionTest guards)
-- Size delta measured on the packaged artifacts: release **15.48 MB → 3.30 MB** (−78.7%); raw uncompressed **51.0 MB → 6.54 MB**; dex payload **48.2 MB → 4.85 MB**
-- `apksigner verify` → **signature valid** for both APKs (debug keystore per `release { signingConfig = signingConfigs.getByName("debug") }` — re-sign with your own release keystore for Play Store distribution)
-- `aapt2 dump badging` → package `protect.yourself`, versionCode `67`, versionName `1.0.67`, minSdk 26, targetSdk 35
-- Post-R8 integrity: critical FQNs verified present in dex (`VpnRestartWorker`, `ScheduleCheckWorker`, `BackupEnvelope`, `CrashLogEntry`, `MyVpnService`, `BootVpnRestoreAlarmReceiver`, `MyAccessibilityService`, `OnboardingPermissions`); 26 manifest components intact; baseline profile + all four ABI `libandroidx.graphics.path.so` retained
+- `./gradlew :app:testDebugUnitTest` → **358/358 tests pass, 0 failures, 0 errors, 0 skipped** (24 suites; +10 new BlockScreenReliabilityTest cases covering unset/zero/negative/unparsable/above-max/custom/boundary countdown values + visibility-flag contract)
+- `apksigner verify` → **signature valid** for both APKs (debug keystore — re-sign with your own release keystore for Play distribution)
+- `aapt2 dump badging` → package `protect.yourself`, versionCode `68`, versionName `1.0.68`, minSdk 26, targetSdk 35
+- Post-R8 dex check: `BlockOverlayManager`, `PornBlockActivity`, `DEFAULT_BLOCK_SCREEN_*` all present in the release DEX
 
 ## New tests (10 across v1.0.63+v1.0.64, all passing)
 
