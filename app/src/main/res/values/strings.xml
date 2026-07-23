@@ -27,6 +27,8 @@
     <string name="block_page_default_in_app_browser_message">In-app browsers are blocked inside this app.</string>
     <string name="block_page_default_stop_me_message">Stop Me is active. Apps not on your whitelist are blocked.</string>
     <string name="block_page_default_pu_message">Prevent uninstall is on. You cannot uninstall Protect Yourself.</string>
+    <string name="pu_blocked_vpn_settings_message">Prevent Uninstall is on. VPN settings are blocked to keep DNS protection active.</string>
+    <string name="pu_blocked_a11y_page_toast">Prevent Uninstall is on — the accessibility settings for Protect Yourself are blocked.</string>
     <string name="block_page_default_system_keyword_message">This settings page is on your blocked list.</string>
     <string name="block_page_default_notification_drawer_message">The notification drawer is blocked to prevent bypassing.</string>
     <string name="block_phone_reboot_bw_message">Phone reboot is blocked to prevent bypassing via safe mode.</string>

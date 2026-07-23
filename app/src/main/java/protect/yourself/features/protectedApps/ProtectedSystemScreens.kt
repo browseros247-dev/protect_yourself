@@ -120,4 +120,62 @@ object ProtectedSystemScreens {
     /** Normalize free-form page/description text for marker matching. */
     fun normalize(text: String): String =
         text.lowercase(Locale.ROOT).replace(" ", "")
+
+    // ============================================================================
+    // PU-SETTINGS-01 (v1.0.75): PU-gated protection of system settings pages
+    // ============================================================================
+
+    /**
+     * Class-name markers that uniquely identify the system VPN settings
+     * screen across AOSP and OEM skins:
+     *  - AOSP 12+: `com.android.settings.Settings$VpnSettingsActivity`
+     *  - Android 13/14 network rework: `...network.vpn.VpnSettingsActivity`
+     *  - Legacy AOSP host for `vpn2.VpnSettings`: `Settings$VpnSettingsActivity`
+     *  - OEM (MIUI/vivo/ColorOS) VPN pages keep a `…Vpn…` activity class name
+     *    inside their settings package.
+     */
+    private const val VPN_SETTINGS_CLASS_MARKER = "vpn"
+
+    /**
+     * True when [packageName]/[className] identify the system VPN settings
+     * screen (the page where a VPN app can be disconnected/forgotten and
+     * always-on can be toggled). Used by PU-VPN-01: while Prevent Uninstall
+     * is ON, this screen gets the standard PU block screen.
+     *
+     * Covering this screen is SAFE — the OS kill-switch only applies to
+     * accessibility-management screens. Class-only matching on purpose:
+     * the event TEXT "VPN" also appears on the Network overview page, which
+     * must stay reachable (only the VPN page itself is blocked).
+     */
+    fun isVpnSettingsScreen(packageName: String, className: String): Boolean {
+        if (className.isBlank()) return false
+        if (!isSettingsPackage(packageName)) return false
+        return className.lowercase(Locale.ROOT).contains(VPN_SETTINGS_CLASS_MARKER)
+    }
+
+    /**
+     * Derives a normalized fingerprint that appears ONLY on our accessibility
+     * service's DETAIL page, never on the services LIST. The list row shows
+     * [serviceSummaryNormalized] (a prefix of the description); the detail
+     * page shows the full [serviceDescriptionNormalized]. The suffix that
+     * follows the summary is therefore unique to the detail page.
+     *
+     * Returns "" when the inputs cannot yield a distinctive marker
+     * (caller then fails open = no blocking, same as v1.0.74 behavior).
+     */
+    fun detailOnlyFingerprint(
+        serviceDescriptionNormalized: String,
+        serviceSummaryNormalized: String
+    ): String {
+        val suffix = if (serviceSummaryNormalized.length >= 8 &&
+            serviceDescriptionNormalized.startsWith(serviceSummaryNormalized)
+        ) {
+            serviceDescriptionNormalized.removePrefix(serviceSummaryNormalized)
+        } else {
+            // Fallback: use the tail of the description — the summary
+            // conventionally carries its beginning, not its end.
+            serviceDescriptionNormalized.drop(40)
+        }
+        return suffix.take(40)
+    }
 }
