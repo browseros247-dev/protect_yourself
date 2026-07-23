@@ -338,6 +338,26 @@ class MyAccessibilityService : AccessibilityService() {
         val eventClassName = event.className?.toString() ?: ""
 
         try {
+            // PU-A11Y-PAGE-01 (v1.0.75): while Prevent Uninstall is ON, the
+            // user must not reach OUR OWN accessibility-service toggle page —
+            // that is the one place where protection can be switched off.
+            // We can NEVER cover that page (A11Y-KILL-01: the OS disables a
+            // service whose window obscures a11y-management screens), so the
+            // anti-circumvention is eviction, not obstruction: a throttled
+            // GLOBAL_ACTION_HOME plus an explanation toast after the screen
+            // has closed. This check runs BEFORE the A11Y-KILL-01 early-return
+            // so OEM variants whose host class matches the a11y markers are
+            // covered too. Only OUR detail page evicts (detail fingerprint) —
+            // the accessibility services list of OTHER apps stays reachable.
+            if (isPreventUninstallOn &&
+                packageName != this.packageName &&
+                packageName != "com.android.systemui" &&
+                evictFromOurA11yServicePage(
+                    packageName, eventClassName, event.text?.joinToString(" ").orEmpty()
+                )
+            ) {
+                return
+            }
             // A11Y-KILL-01 (v1.0.70): NEVER run block logic over the
             // accessibility-management screens themselves. Drawing our block
             // UI over the a11y service page makes Android DISABLE this
@@ -382,6 +402,20 @@ class MyAccessibilityService : AccessibilityService() {
             ) {
                 val className = eventClassName
                 val text = event.text?.joinToString(" ").orEmpty()
+                // PU-VPN-01 (v1.0.75): block the system VPN settings screen
+                // while Prevent Uninstall is on — it is where the user can
+                // disconnect/forget our VPN or toggle always-on. Reachable
+                // via Settings and via Quick Settings long-press (same
+                // activity). Covering it is SAFE (the OS kill-switch only
+                // protects a11y-management screens, which isVpnSettingsScreen
+                // can never match). Class-only matching avoids over-blocking
+                // the Network overview page, whose event text mentions "VPN".
+                if (protect.yourself.features.protectedApps.ProtectedSystemScreens
+                    .isVpnSettingsScreen(packageName, className)
+                ) {
+                    launchBlockActivity(packageName, "pu_blocked_vpn_settings_message", eventClassName = className)
+                    return
+                }
                 if (isAppInfoPage(packageName, className, text)) {
                     launchBlockActivity(packageName, "block_page_default_pu_message", eventClassName = className)
                     return
@@ -1922,6 +1956,118 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * PU-A11Y-PAGE-01 (v1.0.75): while Prevent Uninstall is ON, evict the
+     * user from OUR OWN accessibility-service detail (toggle) page.
+     *
+     * Why eviction (GLOBAL_ACTION_HOME) instead of the block screen:
+     * A11Y-KILL-01 proved the OS auto-disables an accessibility service
+     * whose window covers a11y-management screens. Between HOME and the
+     * block activity, HOME is the only option that can never obscure.
+     *
+     * Precision: fires ONLY on our service's detail page. Detection uses the
+     * [ProtectedSystemScreens.detailOnlyFingerprint] — a text marker present
+     * in the full service description (detail page) but absent from the
+     * one-line summary shown in the services LIST — so the general
+     * Accessibility settings remain reachable for other apps' services.
+     *
+     * While the service is OFF (fresh enable / OEM kill), no events flow at
+     * all, so enabling is never obstructed: by the time this check can fire,
+     * the service is alive and self-heal + this eviction keep it that way.
+     *
+     * Costs: all checks are cheap string scans except a bounded node-tree
+     * probe, throttled to once per [A11Y_PAGE_PROBE_THROTTLE_MS]; the HOME
+     * press itself is throttled to once per [A11Y_PAGE_KICK_THROTTLE_MS].
+     *
+     * @return true when the event was consumed (page confirmed + handled)
+     */
+    private fun evictFromOurA11yServicePage(packageName: String, className: String, text: String): Boolean {
+        val screens = protect.yourself.features.protectedApps.ProtectedSystemScreens
+        if (!screens.isSettingsPackage(packageName)) return false
+        // Probe only inside accessibility-management contexts: class-marker
+        // matches (OEM hosts) or the generic SubSettings host (modern AOSP
+        // hosts our service detail page inside it).
+        val a11yContext = screens.isAccessibilityManagementScreen(packageName, className) ||
+            className.lowercase(java.util.Locale.ROOT).contains("subsettings")
+        if (!a11yContext) return false
+
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastA11yPageProbeMs < A11Y_PAGE_PROBE_THROTTLE_MS) return false
+        lastA11yPageProbeMs = now
+
+        if (!isOurA11yServiceDetailPage(screens.normalize(text))) return false
+
+        // Confirmed: OUR service detail page while PU is ON — evict.
+        maybeTriggerSelfHealOnA11yScreen(packageName, className)  // keep the service armed (backstop)
+        if (now - lastA11yPageKickMs < A11Y_PAGE_KICK_THROTTLE_MS) return true
+        lastA11yPageKickMs = now
+        Timber.i("PU-A11Y-PAGE-01: our a11y service page visible while Prevent Uninstall ON — HOME eviction (pkg=$packageName class=$className)")
+        protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+            "PuScreenProtection",
+            "a11y service page evicted (pkg=$packageName class=$className)"
+        )
+        try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (t: Throwable) {
+            Timber.w(t, "PU-A11Y-PAGE-01: HOME global action failed")
+        }
+        showPuEvictionToast()
+        return true
+    }
+
+    /**
+     * True when the visible settings page is OUR accessibility service's
+     * DETAIL page. Two layers: event text, then a bounded node-tree probe
+     * for OEM hosts whose event text only carries the page title.
+     */
+    private fun isOurA11yServiceDetailPage(pageTextNorm: String): Boolean {
+        val screens = protect.yourself.features.protectedApps.ProtectedSystemScreens
+        val description = try {
+            getString(protect.yourself.R.string.accessibility_service_description)
+        } catch (_: Throwable) { "" }
+        val summary = try {
+            getString(protect.yourself.R.string.accessibility_service_summary)
+        } catch (_: Throwable) { "" }
+        val marker = screens.detailOnlyFingerprint(
+            screens.normalize(description), screens.normalize(summary)
+        )
+        if (marker.length < 8) return false  // fail open: cannot distinguish detail from list
+        if (pageTextNorm.contains(marker)) return true
+        return try {
+            val root = rootInActiveWindow ?: return false
+            root.findAccessibilityNodeInfosByText(marker.take(30))?.isNotEmpty() == true
+        } catch (t: Throwable) {
+            Timber.w(t, "PU-A11Y-PAGE-01: detail-page node probe failed — assuming not our detail page")
+            false
+        }
+    }
+
+    /**
+     * Explanation toast after a PU eviction. DELAYED past the HOME
+     * transition so the toast lands over the launcher, never over the
+     * accessibility screen itself (a toast is still one of our windows —
+     * keep the zero-obscure discipline from A11Y-KILL-01). Throttled to
+     * once per [PU_KICK_TOAST_THROTTLE_MS] against event storms.
+     */
+    private fun showPuEvictionToast() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastPuKickToastMs < PU_KICK_TOAST_THROTTLE_MS) return
+        lastPuKickToastMs = now
+        try {
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                try {
+                    android.widget.Toast.makeText(
+                        applicationContext,
+                        protect.yourself.R.string.pu_blocked_a11y_page_toast,
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                } catch (t: Throwable) {
+                    Timber.w(t, "PU-A11Y-PAGE-01: eviction toast failed")
+                }
+            }, PU_KICK_TOAST_DELAY_MS)
+        } catch (t: Throwable) {
+            Timber.w(t, "PU-A11Y-PAGE-01: failed to schedule eviction toast")
+        }
+    }
+
+    /**
      * Detect power menu / ultra power saving mode.
      * Uses localized strings from BlockerPageUtils.HUAWEI_ULTRA_POWER_SAVING_TEXTS.
      *
@@ -2626,9 +2772,24 @@ class MyAccessibilityService : AccessibilityService() {
         // (switch animations, content changes) — one heal attempt per 10 s is
         // plenty and keeps the Settings.Secure reads negligible.
         private const val A11Y_SCREEN_HEAL_THROTTLE_MS = 10_000L
-
         @Volatile
         private var lastA11yScreenHealMs = 0L
+
+        // PU-A11Y-PAGE-01 (v1.0.75): throttle constants for the Prevent-
+        // Uninstall-gated eviction from our own accessibility-service page.
+        // The node-tree detail-page probe is throttled (settings screens emit
+        // dense event streams); the HOME press and the toast are throttled
+        // harder so a stuck page can never storm.
+        private const val A11Y_PAGE_PROBE_THROTTLE_MS = 400L
+        private const val A11Y_PAGE_KICK_THROTTLE_MS = 1_500L
+        private const val PU_KICK_TOAST_DELAY_MS = 700L
+        private const val PU_KICK_TOAST_THROTTLE_MS = 20_000L
+        @Volatile
+        private var lastA11yPageProbeMs = 0L
+        @Volatile
+        private var lastA11yPageKickMs = 0L
+        @Volatile
+        private var lastPuKickToastMs = 0L
 
         // A11Y-ANR-01 (v1.0.71): last heavy content-scan timestamp per package
         // (monotonic ms). Accessibility events for a service instance are

@@ -205,4 +205,118 @@ class ProtectedSystemScreensTest {
     fun `normalize - lowercases and strips spaces`() {
         assertThat(ProtectedSystemScreens.normalize("App Info  SETTINGS")).isEqualTo("appinfosettings")
     }
+
+    // ============================================================================
+    // PU-SETTINGS-01 (v1.0.75): VPN settings screen detection (PU-gated block)
+    // ============================================================================
+
+    @Test
+    fun `vpn settings screen - AOSP and OEM hosts detected`() {
+        assertThat(
+            ProtectedSystemScreens.isVpnSettingsScreen(
+                "com.android.settings", "com.android.settings.Settings\$VpnSettingsActivity"
+            )
+        ).isTrue()
+        assertThat(
+            ProtectedSystemScreens.isVpnSettingsScreen(
+                "com.android.settings", "com.android.settings.network.vpn.VpnSettingsActivity"
+            )
+        ).isTrue()
+        assertThat(
+            ProtectedSystemScreens.isVpnSettingsScreen(
+                "com.android.settings", "com.android.settings.vpn2.VpnSettings"
+            )
+        ).isTrue()
+        // OEM variants (settings packages / substring-rule packages)
+        assertThat(
+            ProtectedSystemScreens.isVpnSettingsScreen(
+                "com.android.settings.miui", "com.android.settings.Settings\$VpnSettingsActivity"
+            )
+        ).isTrue()
+        assertThat(
+            ProtectedSystemScreens.isVpnSettingsScreen(
+                "com.vivo.settings", "com.vivo.settings.network.VpnSettingsActivity"
+            )
+        ).isTrue()
+    }
+
+    @Test
+    fun `vpn settings screen - rejects network overview non-settings packages and blank classes`() {
+        // Network & internet overview must stay reachable (its text mentions VPN).
+        assertThat(
+            ProtectedSystemScreens.isVpnSettingsScreen(
+                "com.android.settings", "com.android.settings.Settings\$NetworkDashboardActivity"
+            )
+        ).isFalse()
+        // Accessibility pages are not VPN pages — and must NEVER be blockable.
+        assertThat(
+            ProtectedSystemScreens.isVpnSettingsScreen(
+                "com.android.settings", "com.android.settings.Settings\$AccessibilitySettingsActivity"
+            )
+        ).isFalse()
+        // Non-settings package even with a vpn-ish class
+        assertThat(
+            ProtectedSystemScreens.isVpnSettingsScreen(
+                "com.google.android.gms", "com.google.android.gms.vpn.VpnActivity"
+            )
+        ).isFalse()
+        assertThat(ProtectedSystemScreens.isVpnSettingsScreen("com.android.settings", "")).isFalse()
+        assertThat(ProtectedSystemScreens.isVpnSettingsScreen("com.android.settings", "   ")).isFalse()
+        // Our own in-app VPN management page is not a settings screen at all
+        assertThat(
+            ProtectedSystemScreens.isVpnSettingsScreen(
+                "protect.yourself", "protect.yourself.features.mainActivityPage.MainActivity"
+            )
+        ).isFalse()
+    }
+
+    // ============================================================================
+    // PU-A11Y-PAGE-01 (v1.0.75): detail-only fingerprint
+    // ============================================================================
+
+    private val serviceDescription: String =
+        "In order to block adult content on your device, Protect Yourself will need this " +
+            "permission (accessibility services). Protect Yourself will also be able to block " +
+            "specific websites/apps that you add to the list of blocked items with this permission."
+    private val serviceSummary: String =
+        "In order to block adult content on your device, Protect Yourself will need this " +
+            "permission (accessibility services)."
+
+    @Test
+    fun `detail fingerprint - matches detail page text, never the services list summary`() {
+        val screens = ProtectedSystemScreens
+        val descNorm = screens.normalize(serviceDescription)
+        val sumNorm = screens.normalize(serviceSummary)
+        val marker = screens.detailOnlyFingerprint(descNorm, sumNorm)
+
+        assertThat(marker.length).isAtLeast(8)
+        // Detail page (full description visible) matches
+        assertThat(descNorm.contains(marker)).isTrue()
+        // Services LIST row (summary only) must NOT match — the list stays
+        // reachable so other apps' accessibility services can be managed.
+        assertThat(sumNorm.contains(marker)).isFalse()
+    }
+
+    @Test
+    fun `detail fingerprint - embedded in surrounding page text still matches`() {
+        val screens = ProtectedSystemScreens
+        val descNorm = screens.normalize(serviceDescription)
+        val sumNorm = screens.normalize(serviceSummary)
+        val marker = screens.detailOnlyFingerprint(descNorm, sumNorm)
+        val pageText = screens.normalize("Protect Yourself Use service $serviceDescription Off")
+        assertThat(pageText.contains(marker)).isTrue()
+    }
+
+    @Test
+    fun `detail fingerprint - degrades gracefully on junk inputs and stale summary`() {
+        val screens = ProtectedSystemScreens
+        // Unknown / short inputs → no marker (caller fails open)
+        assertThat(screens.detailOnlyFingerprint("short", "shorter-summary")).isEmpty()
+        // Summary not actually a prefix (edited translation) → tail fallback, still distinctive
+        val descNorm = screens.normalize(serviceDescription)
+        val fallback = screens.detailOnlyFingerprint(descNorm, "unrelatedsummary")
+        assertThat(fallback.length).isAtLeast(8)
+        // Sanity: fallback drawn from the description tail
+        assertThat(descNorm.endsWith(fallback) || descNorm.contains(fallback)).isTrue()
+    }
 }
