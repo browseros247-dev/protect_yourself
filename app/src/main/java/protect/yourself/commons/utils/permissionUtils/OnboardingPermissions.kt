@@ -49,7 +49,7 @@ object OnboardingPermissions {
     private const val TAG = "OnboardingPermissions"
 
     /** Permission rows shown during onboarding, in display order. */
-    enum class Kind { NOTIFICATIONS, BATTERY_OPTIMIZATION, EXACT_ALARMS, ACCESSIBILITY }
+    enum class Kind { NOTIFICATIONS, BATTERY_OPTIMIZATION, EXACT_ALARMS, ACCESSIBILITY, BACKGROUND_AUTOSTART }
 
     /** REQUIRED = app features silently break without it; RECOMMENDED = reliability improves. */
     enum class Urgency { REQUIRED, RECOMMENDED }
@@ -145,11 +145,13 @@ object OnboardingPermissions {
         notificationsEnabled: Boolean,
         batteryIgnored: Boolean,
         exactAlarmsAllowed: Boolean,
-        accessibilityEnabled: Boolean
+        accessibilityEnabled: Boolean,
+        autostartApplicable: Boolean = false,
+        autostartAcknowledged: Boolean = false
     ): List<Row> {
         val notifApplicable = notificationsRuntimePromptRequired(sdkInt)
         val exactApplicable = exactAlarmsApplicable(sdkInt)
-        return listOf(
+        val rows = mutableListOf(
             Row(
                 kind = Kind.NOTIFICATIONS,
                 urgency = Urgency.REQUIRED,
@@ -198,6 +200,28 @@ object OnboardingPermissions {
                     "Settings → Accessibility → Protect Yourself → ON."
             )
         )
+        // OEM-BG (v1.0.74): RECOMMENDED row, only on devices whose OEM runs an
+        // autostart/background manager (vivo/MIUI/ColorOS/EMUI class). These
+        // builds kill "non-autostart" apps within seconds and can scrub the
+        // accessibility entry — the root cause of the field-reported
+        // accessibility self-disable and dying DNS/VPN. Android has no API to
+        // query or force the OEM whitelist, so "granted" means the user was
+        // sent to the OEM screen (acknowledged), not a verified toggle.
+        if (autostartApplicable) {
+            rows.add(
+                Row(
+                    kind = Kind.BACKGROUND_AUTOSTART,
+                    urgency = Urgency.RECOMMENDED,
+                    applicable = true,
+                    granted = autostartAcknowledged,
+                    title = "Auto-start (OEM)",
+                    description = "This device's system aggressively stops background apps, which can " +
+                        "turn off the accessibility service and DNS protection by itself. Enable " +
+                        "auto-start / background running for Protect Yourself in the next screen."
+                )
+            )
+        }
+        return rows
     }
 
     /**
@@ -209,7 +233,14 @@ object OnboardingPermissions {
         notificationsEnabled = areNotificationsEnabled(context),
         batteryIgnored = isIgnoringBatteryOptimizations(context),
         exactAlarmsAllowed = canScheduleExactAlarms(context),
-        accessibilityEnabled = isAccessibilityServiceEnabled(context)
+        accessibilityEnabled = isAccessibilityServiceEnabled(context),
+        autostartApplicable = try {
+            OemBackgroundUtils.isAutostartManagedDevice()
+        } catch (t: Throwable) {
+            Timber.w(t, "$TAG: autostart-managed detection failed — hiding row")
+            false
+        },
+        autostartAcknowledged = OemBackgroundUtils.isAutostartHintAcknowledged(context)
     )
 
     /** True only when every applicable REQUIRED row is granted. */

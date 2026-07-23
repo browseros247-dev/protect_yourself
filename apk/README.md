@@ -7,41 +7,39 @@ This directory contains the **latest** pre-built, signed APK of **Protect Yourse
 - **Only the latest version** is kept here. When a new version is built, the previous APKs are removed.
 - Each version has two files: `*-debug.apk` (debug build with logging) and `*-release.apk` (production build, recommended).
 
-## Current Version: 1.0.73 (versionCode 73) — Proactive audit round: CrashLogger thread-safety + per-WARN binder-IPC fix
+## Current Version: 1.0.74 (versionCode 74) — Field-bug RCA round: accessibility self-disable + VPN ("DNS") dying (OEM background policing)
 
 | File | Size | Build Type | Description |
 |---|---|---|---|
-| `protect.yourself-v1.0.73-release.apk` | **~3.27 MB** | Release | **Recommended for installation.** A full proactive audit round (per the standing "find and fix all bugs while preserving functionality" objective) swept the high-risk subsystems — broadcast receivers & manifest filters, singleton/DB initialization, coroutine scopes (ViewModel/Service/Widget), BackupManager export/import/restore, the v1.0.71-hardened accessibility traversal budgets, and VPN stop/revoke state sync. All proven safe, **except one subsystem with two real defects in CrashLogger**: **(1) CRLOG-TS-01 — thread-unsafe `SimpleDateFormat`.** The logger's two shared formatters were used UNGUARDED while `CrashLoggingTree` enters the logger concurrently from every WARN+ Timber call on ANY thread (accessibility binder thread, WorkManager workers, IO coroutines, main). `SimpleDateFormat.format()` mutates an internal Calendar; concurrent calls corrupt timestamp strings (or throw internal AIOOBE) — corrupting/loosing the very crash entries meant to diagnose field issues. Fix: a single `timestampLock` funnelled through `formatTimestamp`/`formatFileTimestamp`, all 5 format sites wrapped. **(2) CRLOG-IPC-01 — 3–4 binder IPCs per WARN log.** Every WARN+ entry synchronously captured AppInfo (`getCurrentProcessName` + `getInstallerPackageName`, 2 binder IPCs) and ServiceStateInfo (Settings.Secure read + `DevicePolicyManager.isAdminActive`, ~2 IPCs) **on the caller thread** — the exact per-event binder-storm class that caused the vivo V2206 ANRs in v1.0.71, re-triggerable during any warn-loop storm. Fix: `cachedAppInfo` (immutable per process → captured once) + 1-second TTL `captureServiceStateCached` (same pattern as the existing memory/disk caches). Behavior, file formats, dedup, and crash-capture content are all unchanged; only the concurrency correctness and per-log syscall cost differ. Carries v1.0.72 (top-bar theme switcher, mandatory onboarding, dark-mode buttons, layout audit), v1.0.71, and all earlier rounds. See `docs/PROACTIVE_AUDIT_CRASHLOG_REPORT_v1.0.73.md`. **458/458 tests pass.** |
-| `protect.yourself-v1.0.73-debug.apk` | ~20.9 MB | Debug | Same code with debug logging, `Protect Yourself DEBUG` label, debuggable, unminified by design. |
+| `protect.yourself-v1.0.74-release.apk` | **~3.27 MB** | Release | **Recommended for installation.** Fixes the two field-reported bugs. **(1) A11Y-SELFDISABLE-01 — "Accessibility Service turns itself off 1–5 s after enabling" (and the suspected "Prevent Uninstall" trigger).** Full root-cause analysis: the app's own kill vectors are provably closed — since v1.0.70 no draw-over window can cover accessibility-management screens, the device-admin (Prevent Uninstall) toggle path was audited and never touches accessibility settings, and the keyword-matching engine scores **0 hits** against the app's own accessibility description. The root cause is **OEM background-process policing** (vivo/Funtouch class and MIUI/ColorOS/EMUI families): the system kills "non-autostart" apps within seconds and, on several vivo builds, scrubs the app's entry from enabled-accessibility-services; enabling/disabling device admin makes the OEM security service re-evaluate the app — which explains both the 1–5 s delay and the observed Prevent-Uninstall correlation without any app-code linkage. Mitigations: new RECOMMENDED onboarding row **"Auto-start (OEM)"** (only on affected manufacturers) deep-linking into the OEM autostart/background-startup manager via a candidate chain (vivo `BgStartUpManagerActivity` → iQOO Secure; MIUI `AutoStartManagementActivity`; ColorOS/Oplus startup lists; EMUI startup + protected-apps; always ending at the guaranteed app-details screen), plus an in-banner **"Fix auto-kill (OEM background setting)"** CTA on the accessibility warning card on managed devices. **(2) VPN-RESUME-01 — "DNS automatically disabling, sometimes".** The VPN service was killed by the same OEM policing while the app was backgrounded, and the only restore triggers were boot, connectivity changes, and the 15-min WorkManager reconcile (unreliable under exactly these killers). Fix: `MainActivity.onResume` in the MAIN state now runs the same idempotent `VpnRestoreHelper.restoreIfEnabled(..., "foreground_resume")` used by the boot path — it no-ops when the switch is off or the VPN is up/starting, and re-syncs the switch if VPN consent was revoked. Carries v1.0.73 (CrashLogger thread-safety + IPC caching), v1.0.72 and all earlier rounds. See `docs/A11Y_SELFDISABLE_VPN_REPORT_v1.0.74.md`. **479/479 tests pass.** |
+| `protect.yourself-v1.0.74-debug.apk` | ~20.3 MB | Debug | Same code with debug logging, `Protect Yourself DEBUG` label, debuggable, unminified by design. |
 
-## Build verification (v1.0.73)
+## Build verification (v1.0.74)
 
-- `./gradlew :app:assembleRelease` → **BUILD SUCCESSFUL** in 5 m 46 s (R8 minified, 3,274,757 bytes; byte-identical size to v1.0.72)
+- `./gradlew :app:assembleRelease` → **BUILD SUCCESSFUL** (R8 minified; 3,274,757 bytes — byte-size coincidence with v1.0.73, sha256 differs), built BEFORE the test run per the release-first process
 - `./gradlew :app:assembleDebug` → **BUILD SUCCESSFUL** (21,296,115 bytes)
-- `./gradlew :app:testDebugUnitTest` → **458/458 tests pass, 0 failures, 0 errors, 0 skipped** (37 suites; +5 new `CrashLoggerRobustnessTest`; run AFTER the builds, per release-first process)
+- `./gradlew :app:testDebugUnitTest` → **479/479 tests pass, 0 failures, 0 errors, 0 skipped** (39 suites; +21 vs v1.0.73: new `OemBackgroundUtilsTest` 12, new `OemMitigationWiringTest` 5, `OnboardingPermissionsTest` 14→18)
 - `apksigner verify` → **signature valid** for both APKs (debug keystore — re-sign with your own release keystore for Play distribution)
-- `aapt2 dump badging` → package `protect.yourself`, versionCode `73`, versionName `1.0.73`, minSdk 26, targetSdk 35
-- Post-R8 mapping check → `CrashLogger.cachedAppInfo$delegate`, `captureServiceStateCached()` present in the release APK; `CrashLogger` class retained and fully mapped
-- Audit of `!!` operator sites (5 total): all verified state-guarded (import-confirmation URI), loop-invariant (KeywordMatcher failure-chain, covered by 43 `BlockingValidatorTest` tests) — no unguarded force-unwraps found
+- `aapt2 dump badging` → package `protect.yourself`, versionCode `74`, versionName `1.0.74`, minSdk 26, targetSdk 35
+- Post-R8 mapping check → `OemBackgroundUtils` retained and fully mapped; `MainActivity.reconcileVpnOnForeground` compiled into `onResume`; `OnboardingPermissions$Kind.BACKGROUND_AUTOSTART` present in the enum mapping
 
-## New tests (5 in v1.0.73, all passing)
+## New tests (21 in v1.0.74, all passing)
 
-`features/crashLog/CrashLoggerRobustnessTest` (5; static pins + real Robolectric concurrency smoke tests):
+`commons/utils/permissionUtils/OemBackgroundUtilsTest` (12):
+manufacturer detection matrix (managed set incl. vivo/iqoo/MIUI/ColorOS/EMUI aliases; case/whitespace tolerance; **Samsung/Google etc. explicitly excluded** — Samsung uses the standard battery-optimization model already covered by the existing onboarding row), per-OEM candidate-chain order and class names, **app-details fallback always last and always present** (even for unmanaged manufacturers), `openAutostartSettings` launch smoke test, ack-prefs default-false + round-trip.
 
-| Test | What it pins |
-|---|---|
-| `every SimpleDateFormat use goes through the timestampLock wrappers` | Zero bare `dateFormat.format(Date())`/`fileDateFormat.format(Date())` sites; wrappers exist and hold `timestampLock` for the full format call (TS-01 can't regress) |
-| `app info is captured once per process, not once per log call` | `cachedAppInfo` by lazy; entry builds use it (3 sites); no per-call `captureAppInfo()` in entry construction (IPC-01 can't regress) |
-| `service state capture has a TTL cache like memory and disk` | `SERVICE_STATE_CACHE_TTL_MS = 1000L` + `captureServiceStateCached()`; entry builds no longer call the IPC-heavy path directly |
-| `concurrent logMessage from 8 threads - all entries well-formed, nothing lost` | 8×60 real concurrent `logMessage` calls against the real logger: zero escaped exceptions, 480/480 ids returned, persisted files carry `crash_yyyyMMdd_HHmmss_####` names + well-formed `"timestampFormatted"` values (pre-fix this could corrupt) |
-| `concurrent breadcrumbs from 4 threads - buffer bounded, no corruption` | 4×50 concurrent `logBreadcrumb` calls: zero escaped exceptions; a subsequent entry still builds cleanly after the storm |
+`commons/utils/permissionUtils/OemMitigationWiringTest` (5; static pins):
+onboarding BACKGROUND_AUTOSTART kind/row/live-evaluate wiring (row gated on `autostartApplicable`), MainActivity dispatch branch + "Open" label + ack persistence, VPN foreground reconcile in `onResume` (MAIN state) via `restoreIfEnabled(applicationContext, "foreground_resume")` on `Dispatchers.IO`, warning-banner CTA on managed devices, OEM-utility no-crash contract.
+
+`OnboardingPermissionsTest` (+4, now 18):
+autostart row present on managed device (RECOMMENDED, ungranted until ack, **does not block the mandatory gate**), renders granted after acknowledgement, omitted on unmanaged devices (ack cannot resurrect it), legacy 5-arg `buildRows` calls unchanged (4 rows).
 
 ## Manual device checklist (post-install)
 
-1. Use the app normally for a few minutes (blocking on), then open Profile → Crash Log: entries show correct human-readable timestamps (no garbled characters).
-2. Trigger a burst of warnings (e.g. toggle a permission off and on while the app is in the foreground) → crash log gains well-formed WARN entries; the app stays responsive (no ANR) during the burst.
-3. Regression sweep: crash log dedup still groups repeats within 5 min into a count; breadcrumbs still attach to entries; export-to-file still produces a complete JSON export; FATAL entries still carry the logcat tail.
-4. Full regression sweep from v1.0.72 still holds: top-bar theme switcher, mandatory onboarding gate, dark-mode button contrast, and all blocking/VPN/schedules/focus/lock behavior.
+1. **Affected OEM (vivo/iQOO/Xiaomi/Oppo/Realme/OnePlus/Huawei/Honor):** fresh install → onboarding shows the **"Auto-start (OEM)"** row (Recommended) → tap **Open** → enable auto-start/background running for Protect Yourself in the OEM screen → row shows granted on return. Re-enable the accessibility service afterward: it must stay on (no 1–5 s self-disable).
+2. **Same device:** with VPN/"DNS" ON, background the app for a while, then reopen it → if the system killed the VPN, it is silently restored on foregrounding (VPN key icon returns); the DNS switch state is consistent.
+3. **Unaffected device (e.g. Samsung/Google):** onboarding shows exactly the 4 previous rows — no autostart row.
+4. Regression sweep: mandatory onboarding gate still blocks "Continue to App" until Required rows are granted (autostart row never blocks); accessibility warning banner still deep-links to the service page on tap; Prevent Uninstall toggle behaves exactly as before (its code path is untouched); all blocking/VPN/schedules/focus/lock behavior unchanged.
 
 ## Removed APKs
 

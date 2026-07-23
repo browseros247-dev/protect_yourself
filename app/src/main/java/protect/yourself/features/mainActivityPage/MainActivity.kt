@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
@@ -195,6 +196,35 @@ class MainActivity : FragmentActivity() {
             // warning banner + self-heal instead of a surprise bounce to
             // onboarding — re-enabling restores the session seamlessly.
             checkAppState(enforceRequiredPermissions = false)
+            reconcileVpnOnForeground()
+        }
+    }
+
+    /**
+     * VPN-RESUME-01 (v1.0.74): reconcile VPN state on every foreground return.
+     *
+     * Field bug: "DNS automatically disabling, sometimes". Root cause: OEM
+     * background-process policing (vivo/MIUI/ColorOS class) kills the VPN
+     * service while the app is backgrounded; previously the only restore
+     * triggers were boot, the 15-min WorkManager reconcile (unreliable under
+     * exactly these OEM killers) and connectivity changes — so DNS protection
+     * could silently stay OFF until the user toggled it manually.
+     *
+     * Fix: when the app comes to the foreground, run the same idempotent
+     * restore used by boot/alarm triggers. It no-ops when the switch is OFF
+     * or the VPN is CONNECTING/CONNECTED/running, syncs the switch when VPN
+     * consent was revoked, and never throws — so the worst case is one cheap
+     * state read per foregrounding. Trigger label distinguishes this path in
+     * logs/breadcrumbs from the boot and worker paths.
+     */
+    private fun reconcileVpnOnForeground() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                protect.yourself.commons.utils.vpn.VpnRestoreHelper
+                    .restoreIfEnabled(applicationContext, "foreground_resume")
+            } catch (t: Throwable) {
+                Timber.w(t, "reconcileVpnOnForeground failed (non-fatal)")
+            }
         }
     }
 
@@ -582,6 +612,7 @@ private fun OnboardingPermissionsStep(onFinish: () -> Unit) {
                     OnboardingPermissions.Kind.BATTERY_OPTIMIZATION -> "Exempt"
                     OnboardingPermissions.Kind.EXACT_ALARMS -> "Enable"
                     OnboardingPermissions.Kind.ACCESSIBILITY -> "Open"
+                    OnboardingPermissions.Kind.BACKGROUND_AUTOSTART -> "Open"
                 },
                 onAction = {
                     handleOnboardingPermissionAction(
@@ -666,6 +697,7 @@ private fun PermissionRowCard(
                     OnboardingPermissions.Kind.BATTERY_OPTIMIZATION -> Icons.Filled.BatterySaver
                     OnboardingPermissions.Kind.EXACT_ALARMS -> Icons.Filled.Alarm
                     OnboardingPermissions.Kind.ACCESSIBILITY -> Icons.Filled.Accessibility
+                    OnboardingPermissions.Kind.BACKGROUND_AUTOSTART -> Icons.Filled.PlayArrow
                 },
                 contentDescription = null,
                 tint = BrandOrange,
@@ -750,6 +782,22 @@ private fun handleOnboardingPermissionAction(
         OnboardingPermissions.Kind.ACCESSIBILITY -> {
             if (!launchSystemScreen(context, OnboardingPermissions.accessibilitySettingsIntent(), "accessibility settings")) {
                 Toast.makeText(context, "Couldn't open accessibility settings — please enable Protect Yourself manually.", Toast.LENGTH_LONG).show()
+            }
+        }
+        OnboardingPermissions.Kind.BACKGROUND_AUTOSTART -> {
+            // OEM-BG (v1.0.74): deep-link into the OEM autostart/background
+            // manager (candidate chain with guaranteed app-details fallback
+            // inside openAutostartSettings), then mark the hint acknowledged
+            // so the row renders as done — the OEM toggle state itself cannot
+            // be queried by any API.
+            val opened = protect.yourself.commons.utils.permissionUtils.OemBackgroundUtils
+                .openAutostartSettings(context)
+            if (opened) {
+                protect.yourself.commons.utils.permissionUtils.OemBackgroundUtils
+                    .markAutostartHintAcknowledged(context)
+                logOnboardingBreadcrumb("autostart_settings_opened")
+            } else {
+                Toast.makeText(context, "Couldn't open background settings — please enable auto-start for Protect Yourself manually.", Toast.LENGTH_LONG).show()
             }
         }
     }
