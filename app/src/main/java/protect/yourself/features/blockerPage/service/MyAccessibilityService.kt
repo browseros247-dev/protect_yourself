@@ -166,6 +166,9 @@ class MyAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         Timber.i("Accessibility service connected")
         instance = this
+        // A11Y-OVL-COOLDOWN (v1.0.76): reference-equivalent 5 s grace window.
+        serviceConnectCoolDownUntilMs =
+            android.os.SystemClock.elapsedRealtime() + SERVICE_CONNECT_COOLDOWN_MS
         protect.yourself.core.ProtectYourselfApp.getCrashLogger()
             ?.logBreadcrumb("AccessibilityService", "onServiceConnected")
         configureService()
@@ -274,6 +277,10 @@ class MyAccessibilityService : AccessibilityService() {
      * in the enabled list before the system finishes tearing us down.
      */
     override fun onUnbind(intent: Intent?): Boolean {
+        // A11Y-OVL-01 (v1.0.76): the overlay's window dies with the service
+        // token, but clear the sticky singleton so a stale isShowing=true
+        // can never suppress the first block after re-connect.
+        try { protect.yourself.features.blockerPage.utils.A11yBlockOverlay.hide() } catch (_: Throwable) {}
         // LC-01/LC-03 fix (v1.0.56): launch on selfHealScope (NOT serviceScope)
         // so the self-heal survives a subsequent onDestroy().
         //
@@ -406,14 +413,20 @@ class MyAccessibilityService : AccessibilityService() {
                 // while Prevent Uninstall is on — it is where the user can
                 // disconnect/forget our VPN or toggle always-on. Reachable
                 // via Settings and via Quick Settings long-press (same
-                // activity). Covering it is SAFE (the OS kill-switch only
-                // protects a11y-management screens, which isVpnSettingsScreen
-                // can never match). Class-only matching avoids over-blocking
-                // the Network overview page, whose event text mentions "VPN".
+                // activity). Class-only matching avoids over-blocking the
+                // Network overview page, whose event text mentions "VPN".
+                // A11Y-OVL-01 (v1.0.76): drawn as the a11y-overlay surface
+                // (reference mechanism); the activity block screen remains
+                // the fallback if the overlay cannot be added.
                 if (protect.yourself.features.protectedApps.ProtectedSystemScreens
                     .isVpnSettingsScreen(packageName, className)
                 ) {
-                    launchBlockActivity(packageName, "pu_blocked_vpn_settings_message", eventClassName = className)
+                    if (!protect.yourself.features.blockerPage.utils.A11yBlockOverlay.show(
+                            this, protect.yourself.R.string.pu_blocked_vpn_settings_message
+                        )
+                    ) {
+                        launchBlockActivity(packageName, "pu_blocked_vpn_settings_message", eventClassName = className)
+                    }
                     return
                 }
                 if (isAppInfoPage(packageName, className, text)) {
@@ -1956,13 +1969,18 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * PU-A11Y-PAGE-01 (v1.0.75): while Prevent Uninstall is ON, evict the
-     * user from OUR OWN accessibility-service detail (toggle) page.
+     * PU-A11Y-PAGE-01 (v1.0.75, mechanism upgraded by A11Y-OVL-01 v1.0.76):
+     * while Prevent Uninstall is ON, block OUR OWN accessibility-service
+     * detail (toggle) page.
      *
-     * Why eviction (GLOBAL_ACTION_HOME) instead of the block screen:
-     * A11Y-KILL-01 proved the OS auto-disables an accessibility service
-     * whose window covers a11y-management screens. Between HOME and the
-     * block activity, HOME is the only option that can never obscure.
+     * Primary mechanism: cover the page with [A11yBlockOverlay] — a
+     * TYPE_ACCESSIBILITY_OVERLAY window drawn BY this service. The
+     * reverse-engineered reference (NopoX 1.0.53, rule #12) proves this
+     * window type is exempt from the obscuring/consent protection that
+     * auto-disables services when a regular app window (Activity/SAW
+     * overlay) covers a11y-management screens. The v1.0.75 HOME eviction
+     * (which cannot obscure anything) is retained as the fallback for when
+     * the overlay cannot be added.
      *
      * Precision: fires ONLY on our service's detail page. Detection uses the
      * [ProtectedSystemScreens.detailOnlyFingerprint] — a text marker present
@@ -1972,11 +1990,12 @@ class MyAccessibilityService : AccessibilityService() {
      *
      * While the service is OFF (fresh enable / OEM kill), no events flow at
      * all, so enabling is never obstructed: by the time this check can fire,
-     * the service is alive and self-heal + this eviction keep it that way.
+     * the service is alive and self-heal + this protection keep it that way.
      *
      * Costs: all checks are cheap string scans except a bounded node-tree
-     * probe, throttled to once per [A11Y_PAGE_PROBE_THROTTLE_MS]; the HOME
-     * press itself is throttled to once per [A11Y_PAGE_KICK_THROTTLE_MS].
+     * probe, throttled to once per [A11Y_PAGE_PROBE_THROTTLE_MS]; the block
+     * action itself is throttled to once per [A11Y_PAGE_KICK_THROTTLE_MS]
+     * (the overlay is a sticky singleton, so this hardly ever re-arms).
      *
      * @return true when the event was consumed (page confirmed + handled)
      */
@@ -1996,14 +2015,42 @@ class MyAccessibilityService : AccessibilityService() {
 
         if (!isOurA11yServiceDetailPage(screens.normalize(text))) return false
 
-        // Confirmed: OUR service detail page while PU is ON — evict.
+        // Confirmed: OUR service detail page while PU is ON — block it.
         maybeTriggerSelfHealOnA11yScreen(packageName, className)  // keep the service armed (backstop)
         if (now - lastA11yPageKickMs < A11Y_PAGE_KICK_THROTTLE_MS) return true
         lastA11yPageKickMs = now
-        Timber.i("PU-A11Y-PAGE-01: our a11y service page visible while Prevent Uninstall ON — HOME eviction (pkg=$packageName class=$className)")
+
+        // A11Y-OVL-01 (v1.0.76): cover the page with a TYPE_ACCESSIBILITY_OVERLAY
+        // window — the reference (NopoX) mechanism. This window type is drawn
+        // BY the accessibility service and is exempt from the obscuring/
+        // consent protection that kills services covered by app Activities —
+        // which is what makes covering safe here (and what our v1.0.70–75
+        // lineage could not do with PornBlockActivity). The PU page becomes
+        // visibly blocked; the user cannot reach the toggle at all.
+        if (protect.yourself.features.blockerPage.utils.A11yBlockOverlay.show(
+                this, protect.yourself.R.string.pu_blocked_a11y_page_message
+            )
+        ) {
+            Timber.i("PU-A11Y-PAGE-01: our a11y service page covered by a11y overlay while Prevent Uninstall ON (pkg=$packageName class=$className)")
+            protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
+                "PuScreenProtection",
+                "a11y service page covered by overlay (pkg=$packageName class=$className)"
+            )
+            return true
+        }
+
+        // Fallback (overlay add failed — e.g. service shutting down): the
+        // v1.0.75 eviction, which never draws anything. Skipped inside the
+        // service-connect cool-down so a fragile service startup is never
+        // compounded by navigation side effects.
+        if (android.os.SystemClock.elapsedRealtime() < serviceConnectCoolDownUntilMs) {
+            Timber.i("PU-A11Y-PAGE-01: overlay failed within connect cool-down — no eviction this event")
+            return true
+        }
+        Timber.i("PU-A11Y-PAGE-01: overlay failed — HOME eviction fallback (pkg=$packageName class=$className)")
         protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
             "PuScreenProtection",
-            "a11y service page evicted (pkg=$packageName class=$className)"
+            "a11y service page evicted (overlay fallback) (pkg=$packageName class=$className)"
         )
         try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (t: Throwable) {
             Timber.w(t, "PU-A11Y-PAGE-01: HOME global action failed")
@@ -2790,6 +2837,17 @@ class MyAccessibilityService : AccessibilityService() {
         private var lastA11yPageKickMs = 0L
         @Volatile
         private var lastPuKickToastMs = 0L
+
+        // A11Y-OVL-COOLDOWN (v1.0.76): grace window after onServiceConnected.
+        // The reference sets `accessibilityServiceConnectCoolDownTime = +5s`
+        // and suppresses any APP-LEVEL window (its promo Activity) over
+        // accessibility screens while it lasts — app windows near the consent
+        // flow are the kill-triggering kind. Our overlay is exempt by type,
+        // but the cool-down still gates the *eviction fallback* so service
+        // startup is never compounded by navigation side effects.
+        private const val SERVICE_CONNECT_COOLDOWN_MS = 5_000L
+        @Volatile
+        private var serviceConnectCoolDownUntilMs = 0L
 
         // A11Y-ANR-01 (v1.0.71): last heavy content-scan timestamp per package
         // (monotonic ms). Accessibility events for a service instance are
