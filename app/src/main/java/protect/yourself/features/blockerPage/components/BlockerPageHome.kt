@@ -1058,6 +1058,40 @@ private fun AccessibilityWarningCard(context: android.content.Context) {
                     Text("Accessibility not enabled", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
                     Text("Blocking features are disabled. Tap here to enable.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
                     Text("Settings → Accessibility → Protect Yourself → ON", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Medium)
+                    // OEM-BG (v1.0.74): on autostart-managed devices (vivo/MIUI/
+                    // ColorOS/EMUI class) the system itself turns the service
+                    // back off seconds after enabling — re-enabling alone is a
+                    // loop. Offer the one effective fix: whitelisting the app
+                    // in the OEM background/autostart manager.
+                    if (protect.yourself.commons.utils.permissionUtils.OemBackgroundUtils
+                            .isAutostartManagedDevice()
+                    ) {
+                        TextButton(
+                            onClick = {
+                                val opened = protect.yourself.commons.utils.permissionUtils
+                                    .OemBackgroundUtils.openAutostartSettings(context)
+                                if (opened) {
+                                    protect.yourself.commons.utils.permissionUtils
+                                        .OemBackgroundUtils.markAutostartHintAcknowledged(context)
+                                } else {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "Couldn't open background settings — please enable auto-start for Protect Yourself manually.",
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        ) {
+                            Text(
+                                "Keeps turning off by itself? Fix auto-kill (OEM background setting)",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
                 }
             }
         }

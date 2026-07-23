@@ -79,6 +79,18 @@ class CrashLogger private constructor(private val context: Context) {
     private val breadcrumbFile: File by lazy { File(crashDir, "breadcrumbs.json") }
 
     private val sequenceCounter = AtomicLong(0L)
+    // CRLOG-TS-01 (v1.0.73): SimpleDateFormat is NOT thread-safe — it mutates
+    // an internal Calendar while formatting. CrashLogger is called concurrently
+    // from every WARN+ Timber log on ANY thread (accessibility binder thread,
+    // WorkManager workers, IO coroutines, main — see CrashLoggingTree), and
+    // these two formatters were used UNGUARDED outside every synchronized
+    // block. Concurrent .format() calls can produce corrupted timestamp
+    // strings or internal ArrayIndexOutOfBounds — both corrupt the very crash
+    // records meant to diagnose field issues (and a throw inside logThrowable
+    // goes through the crash-handler re-entrancy guard, losing the entry).
+    // All uses are funnelled through [formatTimestamp]/[formatFileTimestamp],
+    // which hold this lock for the whole format call.
+    private val timestampLock = Any()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
     private val fileDateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
 
@@ -108,6 +120,20 @@ class CrashLogger private constructor(private val context: Context) {
     @Volatile private var cachedMemoryInfoAtMs: Long = 0L
     @Volatile private var cachedDiskInfo: DiskInfo? = null
     @Volatile private var cachedDiskInfoAtMs: Long = 0L
+
+    // CRLOG-IPC-01 (v1.0.73): every WARN+ Timber log builds a crash entry on
+    // the CALLER thread (often the accessibility binder thread). Before this
+    // round, each entry synchronously captured AppInfo (up to 2 binder IPCs:
+    // current-process-name lookup + installer-package lookup) and
+    // ServiceStateInfo (~2 IPCs: Settings.Secure read + DevicePolicyManager
+    // isAdminActive) — 3–4 binder calls per WARN, the exact ANR class hit in
+    // the vivo V2206 field log during warning storms. AppInfo is immutable
+    // for the process lifetime (package/SDK/installer never change at
+    // runtime) → capture once. Service state drifts slowly → 1 s TTL cache,
+    // identical to the memory/disk caches above.
+    private val cachedAppInfo: AppInfo by lazy { captureAppInfo() }
+    @Volatile private var cachedServiceState: ServiceStateInfo? = null
+    @Volatile private var cachedServiceStateAtMs: Long = 0L
 
     /**
      * CRLOG-INIT-01 (v1.0.71): this buffer MUST be declared before [init] —
@@ -171,7 +197,7 @@ class CrashLogger private constructor(private val context: Context) {
         val entry = CrashLogEntry(
             id = generateId(),
             timestamp = System.currentTimeMillis(),
-            timestampFormatted = dateFormat.format(Date()),
+            timestampFormatted = formatTimestamp(Date()),
             severity = severity,
             tag = tag,
             message = if (message.isNotBlank()) message else (throwable.message ?: throwable.javaClass.simpleName),
@@ -183,10 +209,10 @@ class CrashLogger private constructor(private val context: Context) {
             processId = Process.myPid(),
             isMainThread = Thread.currentThread() === android.os.Looper.getMainLooper().thread,
             deviceInfo = cachedDeviceInfo,
-            appInfo = captureAppInfo(),
+            appInfo = cachedAppInfo,
             memoryInfo = captureMemoryInfoCached(),
             diskInfo = captureDiskInfoCached(),
-            serviceState = captureServiceState(),
+            serviceState = captureServiceStateCached(),
             logcatTail = if (severity == CrashSeverity.FATAL) captureLogcatTail() else "",
             breadcrumbs = getRecentBreadcrumbs(),
             extraContext = extraContext,
@@ -211,7 +237,7 @@ class CrashLogger private constructor(private val context: Context) {
         val entry = CrashLogEntry(
             id = generateId(),
             timestamp = System.currentTimeMillis(),
-            timestampFormatted = dateFormat.format(Date()),
+            timestampFormatted = formatTimestamp(Date()),
             severity = severity,
             tag = tag,
             message = message,
@@ -223,10 +249,10 @@ class CrashLogger private constructor(private val context: Context) {
             processId = Process.myPid(),
             isMainThread = Thread.currentThread() === android.os.Looper.getMainLooper().thread,
             deviceInfo = cachedDeviceInfo,
-            appInfo = captureAppInfo(),
+            appInfo = cachedAppInfo,
             memoryInfo = captureMemoryInfoCached(),
             diskInfo = captureDiskInfoCached(),
-            serviceState = captureServiceState(),
+            serviceState = captureServiceStateCached(),
             // Logcat capture is expensive (subprocess) — only do it for FATAL.
             // For WARN/ERROR, the Timber log already went to logcat; the user
             // can re-read logcat if needed.
@@ -257,7 +283,7 @@ class CrashLogger private constructor(private val context: Context) {
     fun logBreadcrumb(category: String, message: String, data: Map<String, String> = emptyMap()) {
         val breadcrumb = Breadcrumb(
             timestamp = System.currentTimeMillis(),
-            timestampFormatted = dateFormat.format(Date()),
+            timestampFormatted = formatTimestamp(Date()),
             category = category,
             message = message,
             data = data
@@ -361,10 +387,10 @@ class CrashLogger private constructor(private val context: Context) {
         val entries = readEntries(limit = 1000)
         val export = CrashLogExport(
             exportedAt = System.currentTimeMillis(),
-            exportedAtFormatted = dateFormat.format(Date()),
+            exportedAtFormatted = formatTimestamp(Date()),
             entryCount = entries.size,
             deviceInfo = captureDeviceInfo(),
-            appInfo = captureAppInfo(),
+            appInfo = cachedAppInfo,
             entries = entries
         )
         return gson.toJson(export)
@@ -573,7 +599,7 @@ class CrashLogger private constructor(private val context: Context) {
 
     private fun generateId(): String {
         val seq = sequenceCounter.incrementAndGet()
-        val ts = fileDateFormat.format(Date())
+        val ts = formatFileTimestamp(Date())
         return "crash_${ts}_${seq.toString().padStart(4, '0')}"
     }
 
@@ -720,6 +746,14 @@ class CrashLogger private constructor(private val context: Context) {
         return fresh
     }
 
+    // ---- CRLOG-TS-01: thread-safe timestamp formatting ---------------------
+
+    private fun formatTimestamp(date: Date): String =
+        synchronized(timestampLock) { dateFormat.format(date) }
+
+    private fun formatFileTimestamp(date: Date): String =
+        synchronized(timestampLock) { fileDateFormat.format(date) }
+
     /**
      * Capture the status of the app's critical services — accessibility,
      * VPN, device admin. These are the #1 diagnostic questions when a user
@@ -736,6 +770,19 @@ class CrashLogger private constructor(private val context: Context) {
         } catch (t: Throwable) {
             ServiceStateInfo()
         }
+    }
+
+    /** Service-state snapshot with the same 1-second TTL as memory/disk. */
+    private fun captureServiceStateCached(): ServiceStateInfo {
+        val now = System.currentTimeMillis()
+        val cached = cachedServiceState
+        if (cached != null && now - cachedServiceStateAtMs < SERVICE_STATE_CACHE_TTL_MS) {
+            return cached
+        }
+        val fresh = captureServiceState()
+        cachedServiceState = fresh
+        cachedServiceStateAtMs = now
+        return fresh
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
@@ -938,6 +985,7 @@ class CrashLogger private constructor(private val context: Context) {
         private const val DEDUP_WINDOW_MS = 5 * 60 * 1000L  // 5 minutes
         private const val MEM_CACHE_TTL_MS = 1000L  // 1 second
         private const val DISK_CACHE_TTL_MS = 1000L  // 1 second
+        private const val SERVICE_STATE_CACHE_TTL_MS = 1000L  // 1 second
 
         @Volatile
         private var instance: CrashLogger? = null

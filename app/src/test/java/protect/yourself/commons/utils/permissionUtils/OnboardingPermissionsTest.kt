@@ -222,4 +222,77 @@ class OnboardingPermissionsTest {
         assertThat(notif.action).isEqualTo(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
         assertThat(notif.getStringExtra(Settings.EXTRA_APP_PACKAGE)).isEqualTo("protect.yourself")
     }
+
+    // ============================================================================
+    // OEM-BG (v1.0.74): BACKGROUND_AUTOSTART row
+    // ============================================================================
+
+    @Test
+    fun `autostart row present on managed device - recommended and ungranted until ack`() {
+        val rows = OnboardingPermissions.buildRows(
+            sdkInt = 34,
+            notificationsEnabled = true,
+            batteryIgnored = true,
+            exactAlarmsAllowed = true,
+            accessibilityEnabled = true,
+            autostartApplicable = true,
+            autostartAcknowledged = false
+        )
+        assertThat(rows).hasSize(5)
+        val auto = rows.last()
+        assertThat(auto.kind).isEqualTo(OnboardingPermissions.Kind.BACKGROUND_AUTOSTART)
+        assertThat(auto.urgency).isEqualTo(OnboardingPermissions.Urgency.RECOMMENDED)
+        assertThat(auto.applicable).isTrue()
+        assertThat(auto.granted).isFalse()
+        // Missing a RECOMMENDED row must NOT block the required gate.
+        assertThat(OnboardingPermissions.allRequiredGranted(rows)).isTrue()
+        assertThat(OnboardingPermissions.missingKinds(rows))
+            .containsExactly(OnboardingPermissions.Kind.BACKGROUND_AUTOSTART)
+    }
+
+    @Test
+    fun `autostart row renders granted after acknowledgement`() {
+        val rows = OnboardingPermissions.buildRows(
+            sdkInt = 34,
+            notificationsEnabled = true,
+            batteryIgnored = true,
+            exactAlarmsAllowed = true,
+            accessibilityEnabled = true,
+            autostartApplicable = true,
+            autostartAcknowledged = true
+        )
+        val auto = rows.first { it.kind == OnboardingPermissions.Kind.BACKGROUND_AUTOSTART }
+        assertThat(auto.granted).isTrue()
+        assertThat(OnboardingPermissions.missingKinds(rows)).isEmpty()
+    }
+
+    @Test
+    fun `autostart row omitted on unmanaged devices`() {
+        val rows = OnboardingPermissions.buildRows(
+            sdkInt = 34,
+            notificationsEnabled = true,
+            batteryIgnored = true,
+            exactAlarmsAllowed = true,
+            accessibilityEnabled = true,
+            autostartApplicable = false,
+            autostartAcknowledged = true // ack must not resurrect the row
+        )
+        assertThat(rows).hasSize(4)
+        assertThat(rows.none { it.kind == OnboardingPermissions.Kind.BACKGROUND_AUTOSTART }).isTrue()
+    }
+
+    @Test
+    fun `autostart defaults keep legacy four row calls compiling and behaving`() {
+        // Call without the new trailing params — exactly the pre-v1.0.74
+        // signature usage. Behavior must be identical: 4 rows, no autostart.
+        val rows = OnboardingPermissions.buildRows(
+            sdkInt = 30,
+            notificationsEnabled = false,
+            batteryIgnored = false,
+            exactAlarmsAllowed = false,
+            accessibilityEnabled = false
+        )
+        assertThat(rows).hasSize(4)
+        assertThat(rows.none { it.kind == OnboardingPermissions.Kind.BACKGROUND_AUTOSTART }).isTrue()
+    }
 }
