@@ -15,8 +15,14 @@ import androidx.compose.ui.graphics.Color
 // DARK-CONTRAST-01: internal (not private) so ColorContrastTest can assert
 // WCAG ratios on every role pairing and prevent contrast regressions.
 internal val DarkColorScheme = darkColorScheme(
-    primary = DarkPrimary,
-    onPrimary = DarkOnPrimary,
+    // DARK-BTN-01 (v1.0.72): primary must work as a CONTENT color — every
+    // TextButton/OutlinedButton label+border and dialog action in the app
+    // uses it. The near-black brand navy #1F323F was ≈1.3:1 on the dark
+    // surface (invisible buttons in Dark Mode), so the interactive pair is
+    // a light blue-gray that stays ≈8:1 both ways. The navy survives as
+    // primaryContainer (white on it ≈13.2:1) and as the light theme primary.
+    primary = DarkPrimaryInteractive,
+    onPrimary = DarkOnPrimaryInteractive,
     primaryContainer = DarkPrimary,
     onPrimaryContainer = Color.White,
     secondary = AccentCyan,

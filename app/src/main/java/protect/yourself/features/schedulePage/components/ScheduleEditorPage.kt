@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -364,10 +363,7 @@ fun ScheduleEditorPage(
                     },
                     enabled = isValid,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = BrandOrange,
-                        contentColor = Color.White
-                    )
+                    colors = protect.yourself.theme.brandButtonColors()
                 ) {
                     Text("Save Schedule", fontWeight = FontWeight.Bold)
                 }

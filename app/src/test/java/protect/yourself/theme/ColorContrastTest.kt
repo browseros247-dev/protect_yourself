@@ -101,7 +101,7 @@ class ColorContrastTest {
     }
 
     @Test
-    fun `dark scheme - pins the v1_0_69 contrast-corrected role colors`() {
+    fun `dark scheme - pins the v1_0_69 and v1_0_72 contrast-corrected role colors`() {
         // If someone reverts these to the brand oranges, the ratio tests above
         // will fail — but pinning the exact values documents the intended
         // canonical M3 pairings and produces a clearer failure.
@@ -113,6 +113,28 @@ class ColorContrastTest {
         assertThat(DarkColorScheme.onTertiaryContainer).isEqualTo(Color(0xFFFFDCC2))
         assertThat(DarkColorScheme.onTertiary).isEqualTo(Color(0xFF3B2700))
         assertThat(DarkColorScheme.outline).isEqualTo(Color(0xFF5D7E93))
+        // v1.0.72 (DARK-BTN-01): primary is a CONTENT color (TextButton /
+        // OutlinedButton labels & borders). Near-black #1F323F was ≈1.3:1 on
+        // the dark surface — invisible dialog/onboarding buttons.
+        assertThat(DarkColorScheme.primary).isEqualTo(Color(0xFF9DB8C6))
+        assertThat(DarkColorScheme.onPrimary).isEqualTo(Color(0xFF0A2029))
+        // Brand navy survives only as primaryContainer (container role).
+        assertThat(DarkColorScheme.primaryContainer).isEqualTo(Color(0xFF1F323F))
+        assertThat(DarkColorScheme.onPrimaryContainer).isEqualTo(Color.White)
+    }
+
+    @Test
+    fun `dark primary works as content color on dark surfaces (button labels, borders)`() {
+        // DARK-BTN-01: every TextButton/OutlinedButton in dark mode renders
+        // its label/border in `primary` on surface/background — must stay ≥4.5:1.
+        for ((name, bg) in listOf(
+            "dark surface" to DarkColorScheme.surface,
+            "dark background" to DarkColorScheme.background
+        )) {
+            val ratio = contrastRatio(DarkColorScheme.primary, bg)
+            assertWithMessage("DARK primary (content color) on $name: %.2f:1 < 4.5:1".format(ratio))
+                .that(ratio).isAtLeast(4.5)
+        }
     }
 
     // ---- LIGHT scheme -------------------------------------------------------
@@ -135,28 +157,59 @@ class ColorContrastTest {
     }
 
     @Test
-    fun `light scheme - pins the v1_0_69 contrast-corrected role colors`() {
+    fun `light scheme - pins the v1_0_69 and v1_0_72 contrast-corrected role colors`() {
         assertThat(LightColorScheme.error).isEqualTo(Color(0xFFBA1A1A))
         assertThat(LightColorScheme.onError).isEqualTo(Color.White)
         assertThat(LightColorScheme.errorContainer).isEqualTo(Color(0xFFFFDAD6))
         assertThat(LightColorScheme.onErrorContainer).isEqualTo(Color(0xFF410002))
         assertThat(LightColorScheme.tertiaryContainer).isEqualTo(Color(0xFFFFE0C8))
         assertThat(LightColorScheme.onTertiaryContainer).isEqualTo(Color(0xFF311300))
+        // v1.0.72: light primary unchanged — near-black navy is CORRECT as a
+        // content color on the white light surface (≈13.2:1).
+        assertThat(LightColorScheme.primary).isEqualTo(Color(0xFF1F323F))
+        assertThat(LightColorScheme.onPrimary).isEqualTo(Color.White)
     }
 
-    // ---- documented brand exception -----------------------------------------
+    // ---- brand button pair (v1.0.72) ------------------------------------------
+
+    @Test
+    fun `brand button pair - white label on BrandOrangeButton meets WCAG AA in both schemes`() {
+        // DARK-BTN-01: every filled brand action button (Accept & Continue,
+        // Continue to App, Unlock, Next, Confirm & Save, Save, Save Schedule,
+        // Export/Import, …) uses brandButtonColors() = BrandOrangeButton +
+        // white. Pin the pair at AA normal-text level.
+        assertThat(BrandOrangeButton).isEqualTo(Color(0xFFB85700))
+        val ratio = contrastRatio(Color.White, BrandOrangeButton)
+        assertWithMessage("white on BrandOrangeButton #B85700: %.2f:1 < 4.5:1".format(ratio))
+            .that(ratio).isAtLeast(4.5)
+    }
+
+    @Test
+    fun `semantic status pairs - white icon reaches WCAG non-text 3_1`() {
+        // UI-CONSIST-01: Reliable Accessibility status indicators.
+        for ((name, bg) in listOf("success" to StatusSuccess, "warning" to StatusWarning)) {
+            val ratio = contrastRatio(Color.White, bg)
+            assertWithMessage("white icon on $name status color: %.2f:1 < 3.0:1".format(ratio))
+                .that(ratio).isAtLeast(3.0)
+        }
+    }
+
+    // ---- documented brand accent exception -----------------------------------
 
     /**
-     * The brand-gradient buttons (#FF7100 → #FF9900) keep bold WHITE labels —
-     * the app's visual signature. M3 `labelLarge` (14sp bold) qualifies as
-     * WCAG "large text" (3:1 required; #FF7100+white ≈ 2.76:1 and the #FF9900
-     * gradient end ≈ 2.14:1 — a KNOWN, pre-existing deviation documented in
+     * LARGE brand-accent headlines ("Protect Yourself", "Welcome to Protect
+     * Yourself", VPN hero gradient #FF7100 → #FF9900) keep the raw brand
+     * orange — the app's visual signature. Since v1.0.72 filled BUTTONS no
+     * longer use this pair (they moved to [BrandOrangeButton]); the remaining
+     * uses are bold display-size text where WCAG "large text" applies (3:1
+     * required; #FF7100+white ≈ 2.76:1 and the #FF9900 gradient end ≈ 2.14:1
+     * — a KNOWN, pre-existing deviation documented since
      * docs/A11Y_PERSIST_DARKMODE_REPORT_v1.0.69.md; fixing it is a brand
-     * decision, out of scope for the settings-readability bug).
+     * decision, out of scope for the button-readability bug).
      *
      * This test pins the #FF7100 floor at 2.7:1 as a tripwire so the pair can
      * never silently degrade further — any darkening of the brand orange or
-     * lightening of the label color fails loudly here.
+     * lightening of the accent text color fails loudly here.
      */
     @Test
     fun `documented exception - brand orange with white bold label stays above floor`() {

@@ -19,8 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -28,7 +27,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,7 +43,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import protect.yourself.BuildConfig
 import protect.yourself.theme.BrandOrange
-import protect.yourself.theme.ThemePreferences
 
 /**
  * ProfilePage — the "Profile" tab content.
@@ -93,8 +90,6 @@ fun ProfilePage() {
         ProfileItem("Delete account", "Permanently delete your account + data", isDestructive = true)
     )
 
-    // Theme preference state
-    val currentThemeMode by ThemePreferences.themeMode.collectAsState()
     var showReliableAccessibility by remember { mutableStateOf(false) }
 
     // If Reliable Accessibility setup page is open
@@ -220,45 +215,6 @@ fun ProfilePage() {
             }
         }
 
-        // ===== Theme Selector =====
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = if (currentThemeMode == ThemePreferences.MODE_DARK)
-                                Icons.Filled.DarkMode else Icons.Filled.LightMode,
-                            contentDescription = null,
-                            tint = BrandOrange,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.size(8.dp))
-                        Text(
-                            text = "Theme",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    // Theme options
-                    ThemeOptionRow("Light", currentThemeMode == ThemePreferences.MODE_LIGHT) {
-                        ThemePreferences.setThemeMode(context, ThemePreferences.MODE_LIGHT)
-                    }
-                    ThemeOptionRow("Dark", currentThemeMode == ThemePreferences.MODE_DARK) {
-                        ThemePreferences.setThemeMode(context, ThemePreferences.MODE_DARK)
-                    }
-                    ThemeOptionRow("System Default", currentThemeMode == ThemePreferences.MODE_SYSTEM) {
-                        ThemePreferences.setThemeMode(context, ThemePreferences.MODE_SYSTEM)
-                    }
-                }
-            }
-        }
-
         // ===== Reliable Accessibility (moved from Home tab) =====
         item {
             Card(
@@ -294,7 +250,15 @@ fun ProfilePage() {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Text("View", color = BrandOrange, style = MaterialTheme.typography.labelMedium)
+                    // UI-CONSIST-01 (v1.0.72): the text-only "View" label in
+                    // BrandOrange failed contrast on the light surface
+                    // (≈2.8:1) and looked like static text, not an affordance.
+                    Icon(
+                        imageVector = Icons.Filled.KeyboardArrowRight,
+                        contentDescription = "Open Reliable Accessibility setup",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
             }
         }
@@ -364,26 +328,3 @@ private data class ProfileItem(
     val subtitle: String,
     val isDestructive: Boolean = false
 )
-
-@Composable
-private fun ThemeOptionRow(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        RadioButton(
-            selected = selected,
-            onClick = { onClick() }
-        )
-        Spacer(modifier = Modifier.size(8.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (selected) BrandOrange else MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
-        )
-    }
-}

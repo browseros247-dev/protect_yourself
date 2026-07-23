@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -45,6 +44,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -80,6 +81,8 @@ import protect.yourself.features.mainActivityPage.repository.MainPageScreen
 import protect.yourself.features.profilePage.components.ProfilePage
 import protect.yourself.theme.AppTheme
 import protect.yourself.theme.BrandOrange
+import protect.yourself.theme.ThemeSwitcherIcon
+import protect.yourself.theme.brandButtonColors
 import timber.log.Timber
 
 /**
@@ -105,6 +108,11 @@ class MainActivity : FragmentActivity() {
     // Observable state — Compose watches this for changes
     private var appState by mutableStateOf(AppState.LOADING)
 
+    // OB-ENFORCE-01 (v1.0.72): when terms are accepted but required
+    // permissions are missing, onboarding must re-open directly at the
+    // permissions step. Set by checkAppState() before flipping to ONBOARDING.
+    private var onboardingStartAtPermissions by mutableStateOf(false)
+
     // Deep-link target tab. Set when the activity is launched/re-launched
     // via StreakWidget (which puts EXTRA_OPEN_TAB = "Streak" on the intent).
     // Consumed by MainScreen on the next recomposition.
@@ -119,6 +127,10 @@ class MainActivity : FragmentActivity() {
                 when (appState) {
                     AppState.LOADING -> LoadingScreen()
                     AppState.ONBOARDING -> OnboardingPage(
+                        // True when terms were accepted earlier but required
+                        // permissions are still missing — skip straight to the
+                        // mandatory checklist (OB-ENFORCE-01, v1.0.72).
+                        startAtPermissions = onboardingStartAtPermissions,
                         onAccept = { openAccessibilitySettings ->
                             lifecycleScope.launch(Dispatchers.IO) {
                                 try {
@@ -178,23 +190,57 @@ class MainActivity : FragmentActivity() {
         // was inside the app). Don't re-lock during initial launch (LOADING)
         // or during onboarding.
         if (appState == AppState.MAIN) {
-            checkAppState()
+            // OB-ENFORCE-01: the required-permission gate runs on ENTRY only
+            // (onCreate). Mid-session revocation is surfaced by the in-app
+            // warning banner + self-heal instead of a surprise bounce to
+            // onboarding — re-enabling restores the session seamlessly.
+            checkAppState(enforceRequiredPermissions = false)
         }
     }
 
-    private fun checkAppState() {
+    private fun checkAppState(enforceRequiredPermissions: Boolean = true) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val switchValues = SwitchStatusValues(
                     AppDatabase.getInstance(this@MainActivity).switchStatusDao()
                 )
                 val termsAccepted = switchValues.isTermsApproved()
+                // OB-ENFORCE-01 (v1.0.72): even with terms accepted, the user
+                // must never reach the main app while a REQUIRED permission is
+                // missing (accessibility; notifications on API 33+). evaluate()
+                // is fail-closed per permission (a broken OEM read counts as
+                // "not granted"); only a catastrophic evaluator CRASH is
+                // fail-open here — locking the user out of the whole app on an
+                // OEM platform bug would be worse than degraded protection.
+                val requiredPermissionsReady = if (termsAccepted && enforceRequiredPermissions) {
+                    try {
+                        OnboardingPermissions.allRequiredGranted(
+                            OnboardingPermissions.evaluate(this@MainActivity)
+                        )
+                    } catch (t: Throwable) {
+                        Timber.e(t, "Required-permission gate evaluation crashed (fail-open)")
+                        try {
+                            protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logThrowable(
+                                throwable = t,
+                                severity = protect.yourself.features.crashLog.CrashSeverity.ERROR,
+                                tag = "MainActivity",
+                                message = "required-permission gate failed open",
+                                extraContext = mapOf("fallback" to "allow-entry")
+                            )
+                        } catch (_: Throwable) {}
+                        true
+                    }
+                } else true
+                // Start at the permissions checklist when terms are already
+                // accepted but the mandatory grants are still missing.
+                onboardingStartAtPermissions = termsAccepted && !requiredPermissionsReady
                 val lockEnabled = if (termsAccepted) {
                     AppLockManager.getInstance(this@MainActivity).isLockEnabled()
                 } else false
 
                 appState = when {
                     !termsAccepted -> AppState.ONBOARDING
+                    !requiredPermissionsReady -> AppState.ONBOARDING
                     lockEnabled -> {
                         // LOCKSESSION-01 fix (v1.0.65): reset the retained
                         // lock-screen ViewModel BEFORE Compose recomposes into
@@ -222,7 +268,7 @@ class MainActivity : FragmentActivity() {
                     }
                     else -> AppState.MAIN
                 }
-                Timber.i("App state: $appState (terms=$termsAccepted, lock=$lockEnabled)")
+                Timber.i("App state: $appState (terms=$termsAccepted, lock=$lockEnabled, requiredPerms=$requiredPermissionsReady)")
             } catch (t: Throwable) {
                 // BUG-25 fix: default to ONBOARDING instead of MAIN on DB error.
                 // Defaulting to MAIN would bypass the terms + lock checks,
@@ -307,15 +353,27 @@ private enum class OnboardingStep { TERMS, PERMISSIONS }
  *  whether the user wanted to jump straight to accessibility settings.
  *  (Kept for API compatibility — the permissions step now owns all settings
  *  navigation, so the new flow always passes `false`.)
+ * @param startAtPermissions OB-ENFORCE-01 (v1.0.72): when terms were already
+ *  accepted in a previous run but required permissions are still missing,
+ *  onboarding re-opens DIRECTLY at the permissions checklist. Back on that
+ *  step then exits the app (there is no earlier step to return to).
  */
 @Composable
-private fun OnboardingPage(onAccept: (openAccessibilitySettings: Boolean) -> Unit) {
+private fun OnboardingPage(
+    startAtPermissions: Boolean,
+    onAccept: (openAccessibilitySettings: Boolean) -> Unit
+) {
     // OB-PERM-06: rememberSaveable so the current step survives rotation and
     // process re-creation while the user sits on a system permission screen.
-    var step by rememberSaveable { mutableStateOf(OnboardingStep.TERMS.name) }
+    var step by rememberSaveable {
+        mutableStateOf(
+            if (startAtPermissions) OnboardingStep.PERMISSIONS.name else OnboardingStep.TERMS.name
+        )
+    }
 
-    // Back on the permissions step returns to terms instead of exiting the app.
-    BackHandler(enabled = step == OnboardingStep.PERMISSIONS.name) {
+    // Back on the permissions step returns to terms — but only when the user
+    // actually came from terms this session (startAtPermissions = false).
+    BackHandler(enabled = step == OnboardingStep.PERMISSIONS.name && !startAtPermissions) {
         step = OnboardingStep.TERMS.name
     }
 
@@ -407,9 +465,9 @@ private fun OnboardingTermsStep(onContinue: () -> Unit) {
                 Text("⚠️ Important: Permissions", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "On the next step you can grant the required permissions — " +
-                        "accessibility, notifications and background running. " +
-                        "Without these, protection features will not work.",
+                    text = "On the next step you must grant the required permissions — " +
+                        "accessibility and notifications. They are mandatory: " +
+                        "without them the protection features cannot work and the app stays locked.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer
                 )
@@ -440,10 +498,7 @@ private fun OnboardingTermsStep(onContinue: () -> Unit) {
             onClick = onContinue,
             enabled = agreed,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = BrandOrange,
-                disabledContainerColor = BrandOrange.copy(alpha = 0.3f)
-            )
+            colors = brandButtonColors()
         ) {
             Text("Accept & Continue", fontWeight = FontWeight.Bold)
         }
@@ -457,8 +512,10 @@ private fun OnboardingTermsStep(onContinue: () -> Unit) {
  *
  * - States are re-evaluated (a) after every action result and (b) on ON_RESUME
  *   (returning from a system settings screen) via a LifecycleEventObserver.
- * - Skippable by design: the user can continue with missing permissions; the
- *   skip is logged (kinds only) for diagnostics.
+ * - OB-ENFORCE-01 (v1.0.72): NO LONGER skippable. "Continue to App" stays
+ *   disabled until every REQUIRED permission is granted (accessibility;
+ *   notifications on API 33+). RECOMMENDED permissions stay optional. The
+ *   finish is logged (kinds only) for diagnostics.
  * - Every settings launch goes through [launchSystemScreen], which catches
  *   ActivityNotFound/Security exceptions and surfaces a toast instead of
  *   crashing (broken OEM Settings providers are common in the wild).
@@ -511,7 +568,8 @@ private fun OnboardingPermissionsStep(onFinish: () -> Unit) {
         )
         Text(
             text = "Protect Yourself needs a few permissions to keep blocking reliably. " +
-                "Tap each item below — granted items are checked automatically.",
+                "Tap each item below — granted items are checked automatically. " +
+                "Items marked Required must be granted before you can continue.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onBackground
         )
@@ -547,10 +605,15 @@ private fun OnboardingPermissionsStep(onFinish: () -> Unit) {
             color = MaterialTheme.colorScheme.onBackground,
             fontWeight = FontWeight.Bold
         )
-        if (!OnboardingPermissions.allRequiredGranted(rows)) {
+        // OB-ENFORCE-01 (v1.0.72): permissions marked REQUIRED are mandatory —
+        // the flow can no longer be finished while any of them is missing.
+        // RECOMMENDED rows (battery exemption, exact alarms) stay optional:
+        // they improve reliability but the app works without them.
+        val requiredReady = OnboardingPermissions.allRequiredGranted(rows)
+        if (!requiredReady) {
             Text(
-                text = "You can continue without them, but protection will stay limited " +
-                    "until the required permissions are granted.",
+                text = "Grant the Required permissions above to continue — " +
+                    "protective features cannot work without them.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error
             )
@@ -559,17 +622,21 @@ private fun OnboardingPermissionsStep(onFinish: () -> Unit) {
         Button(
             onClick = {
                 val missing = OnboardingPermissions.missingKinds(rows)
-                if (missing.isNotEmpty()) {
-                    Timber.w("Onboarding: continuing with missing permissions: $missing")
-                    logOnboardingBreadcrumb("finish_with_missing", mapOf("missing" to missing.joinToString(",")))
-                } else {
+                if (missing.isEmpty()) {
                     Timber.i("Onboarding: all permissions granted")
                     logOnboardingBreadcrumb("finish_all_granted")
+                } else {
+                    Timber.i("Onboarding: required granted; continuing with recommended missing: $missing")
+                    logOnboardingBreadcrumb(
+                        "finish_required_complete",
+                        mapOf("recommended_missing" to missing.joinToString(","))
+                    )
                 }
                 onFinish()
             },
+            enabled = requiredReady,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = BrandOrange)
+            colors = brandButtonColors()
         ) {
             Text("Continue to App", fontWeight = FontWeight.Bold)
         }
@@ -609,23 +676,26 @@ private fun PermissionRowCard(
                     .weight(1f)
                     .padding(horizontal = 12.dp)
             ) {
-                androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(row.title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                    Text(
-                        text = when {
-                            row.granted -> "  ✓ Granted"
-                            !row.applicable -> "  • Not required here"
-                            row.urgency == OnboardingPermissions.Urgency.REQUIRED -> "  • Required"
-                            else -> "  • Recommended"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = when {
-                            row.granted -> MaterialTheme.colorScheme.primary
-                            row.urgency == OnboardingPermissions.Urgency.REQUIRED -> MaterialTheme.colorScheme.error
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                }
+                Text(row.title, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                // UI-CONSIST-01 (v1.0.72): the status tag used to be appended
+                // inline next to the title ("Title  • Required") and wrapped
+                // unpredictably on narrow screens. It now sits on its own line
+                // between title and description, matching every other labeled
+                // row in the app.
+                Text(
+                    text = when {
+                        row.granted -> "✓ Granted"
+                        !row.applicable -> "• Not required on this device"
+                        row.urgency == OnboardingPermissions.Urgency.REQUIRED -> "• Required"
+                        else -> "• Recommended"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = when {
+                        row.granted -> MaterialTheme.colorScheme.primary
+                        row.urgency == OnboardingPermissions.Urgency.REQUIRED -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
                 Text(
                     text = row.description,
                     style = MaterialTheme.typography.bodySmall,
@@ -736,6 +806,27 @@ private fun MainScreen(
     }
 
     Scaffold(
+        topBar = {
+            // THEME-SWITCH-01 (v1.0.72): compact top bar for the whole main UI —
+            // app title on the left, theme switcher (icon + dropdown menu with
+            // System Default / Dark / Light) on the right. Replaces the old
+            // "Theme" selection card on the Profile tab.
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Protect Yourself",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                },
+                actions = { ThemeSwitcherIcon() },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    actionIconContentColor = MaterialTheme.colorScheme.primary
+                )
+            )
+        },
         bottomBar = {
             // Hide bottom bar when schedule editor is open
             if (!(selectedTab == MainPageScreen.Schedule && showScheduleEditor)) {

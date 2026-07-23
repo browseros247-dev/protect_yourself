@@ -54,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import protect.yourself.theme.BrandOrange
+import protect.yourself.theme.brandButtonColors
 
 /**
  * BackupRestorePage — UI for local JSON backup/restore.
@@ -401,7 +402,7 @@ private fun ActionCard(
                         contentColor = MaterialTheme.colorScheme.onError
                     )
                 } else {
-                    ButtonDefaults.buttonColors(containerColor = BrandOrange)
+                    brandButtonColors()
                 }
             ) {
                 Text(buttonText)
