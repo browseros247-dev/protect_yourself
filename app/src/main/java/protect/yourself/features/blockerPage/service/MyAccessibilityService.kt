@@ -1982,7 +1982,8 @@ class MyAccessibilityService : AccessibilityService() {
      * (which cannot obscure anything) is retained as the fallback for when
      * the overlay cannot be added.
      *
-     * Precision: fires ONLY on our service's detail page. Detection uses the
+     * Precision: fires ONLY on our service's detail page AND its disable-
+     * confirmation dialog. Detection uses the
      * [ProtectedSystemScreens.detailOnlyFingerprint] — a text marker present
      * in the full service description (detail page) but absent from the
      * one-line summary shown in the services LIST — so the general
@@ -1997,27 +1998,79 @@ class MyAccessibilityService : AccessibilityService() {
      * action itself is throttled to once per [A11Y_PAGE_KICK_THROTTLE_MS]
      * (the overlay is a sticky singleton, so this hardly ever re-arms).
      *
+     * PU-A11Y-FIX-01 (v1.0.77): comprehensive rewrite of detection to fix
+     * the root cause of \"Prevent Uninstall fails to stop disabling a11y\".
+     * Previous bugs:
+     *  1. Node probe used normalized marker (no spaces) with
+     *     findAccessibilityNodeInfosByText which searches for text WITH spaces
+     *     → never matched, so detail page was only detected via event.text.
+     *  2. Probe throttle 400ms caused race where first event had empty text,
+     *     second event with real text arrived within 400ms and was skipped.
+     *  3. Disable-confirmation dialog (Stop / Disable) was not blocked at all.
+     *  4. Only SubSettings was considered, missing AlertDialog hosts for the
+     *     confirmation dialog.
+     *
      * @return true when the event was consumed (page confirmed + handled)
      */
     private fun evictFromOurA11yServicePage(packageName: String, className: String, text: String): Boolean {
         val screens = protect.yourself.features.protectedApps.ProtectedSystemScreens
         if (!screens.isSettingsPackage(packageName)) return false
-        // Probe only inside accessibility-management contexts: class-marker
-        // matches (OEM hosts) or the generic SubSettings host (modern AOSP
-        // hosts our service detail page inside it).
+        // Probe inside accessibility-management contexts: class-marker
+        // matches (OEM hosts), SubSettings host (modern AOSP detail page),
+        // or dialog hosts (disable-confirmation dialog).
+        // PU-A11Y-FIX-01: also consider dialog contexts — the confirmation
+        // dialog after toggling OFF is an AlertDialog inside Settings, not a
+        // SubSettings, so the old check missed it entirely.
+        val lowerClass = className.lowercase(Locale.ROOT)
         val a11yContext = screens.isAccessibilityManagementScreen(packageName, className) ||
-            className.lowercase(java.util.Locale.ROOT).contains("subsettings")
-        if (!a11yContext) return false
+            lowerClass.contains("subsettings") ||
+            lowerClass.contains("alertdialog") ||
+            lowerClass.contains("dialog") ||
+            lowerClass.contains("alert") ||
+            lowerClass.contains("appalert")
+        // For the disable-dialog path we also allow generic settings contexts
+        // when the text already contains our app name + stop/disable keywords,
+        // even if className doesn't match the markers (defense-in-depth).
+        val isPotentialDisableDialog = !a11yContext && isPotentialDisableDialogQuickCheck(text)
+        if (!a11yContext && !isPotentialDisableDialog) return false
 
         val now = android.os.SystemClock.elapsedRealtime()
+        // PU-A11Y-FIX-01: if overlay is already showing, keep returning true
+        // (page remains blocked) even if throttled — prevents a gap where the
+        // user could interact during the throttle window.
+        if (protect.yourself.features.blockerPage.utils.A11yBlockOverlay.isShowing) {
+            // Still trigger self-heal as backstop (throttled inside maybeTrigger...)
+            maybeTriggerSelfHealOnA11yScreen(packageName, className)
+            return true
+        }
         if (now - lastA11yPageProbeMs < A11Y_PAGE_PROBE_THROTTLE_MS) return false
         lastA11yPageProbeMs = now
 
-        if (!isOurA11yServiceDetailPage(screens.normalize(text))) return false
+        val normalizedText = screens.normalize(text)
+        val isDetail = isOurA11yServiceDetailPage(normalizedText)
+        val isDisableDialog = isOurA11yDisableDialog(text, className)
 
-        // Confirmed: OUR service detail page while PU is ON — block it.
+        if (!isDetail && !isDisableDialog) return false
+
+        // Confirmed: OUR service detail page OR its disable confirmation while PU is ON — block it.
         maybeTriggerSelfHealOnA11yScreen(packageName, className)  // keep the service armed (backstop)
-        if (now - lastA11yPageKickMs < A11Y_PAGE_KICK_THROTTLE_MS) return true
+        if (now - lastA11yPageKickMs < A11Y_PAGE_KICK_THROTTLE_MS) {
+            // Already kicked recently but overlay not yet showing (e.g. first
+            // show failed) — still consume the event to prevent other blocks
+            // from interfering, but don't spam kick.
+            // If overlay is showing, we already returned early above; this
+            // branch is for when kick throttle is active but overlay failed.
+            // We still want to attempt overlay again if it was not showing.
+            // To avoid spamming HOME, we return true without further action
+            // if we already attempted recently, unless overlay is not showing
+            // and we are in disable-dialog path (critical).
+            if (isDisableDialog) {
+                // For disable dialog, always try to show overlay even within kick throttle
+                // (it's a critical protection path)
+            } else {
+                return true
+            }
+        }
         lastA11yPageKickMs = now
 
         // A11Y-OVL-01 (v1.0.76): cover the page with a TYPE_ACCESSIBILITY_OVERLAY
@@ -2031,10 +2084,16 @@ class MyAccessibilityService : AccessibilityService() {
                 this, protect.yourself.R.string.pu_blocked_a11y_page_message
             )
         ) {
-            Timber.i("PU-A11Y-PAGE-01: our a11y service page covered by a11y overlay while Prevent Uninstall ON (pkg=$packageName class=$className)")
+            val logMsg = if (isDisableDialog) {
+                "PU-A11Y-FIX-01: our a11y DISABLE DIALOG covered by overlay while Prevent Uninstall ON (pkg=$packageName class=$className)"
+            } else {
+                "PU-A11Y-PAGE-01: our a11y service page covered by a11y overlay while Prevent Uninstall ON (pkg=$packageName class=$className)"
+            }
+            Timber.i(logMsg)
             protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
                 "PuScreenProtection",
-                "a11y service page covered by overlay (pkg=$packageName class=$className)"
+                if (isDisableDialog) "a11y disable dialog covered (pkg=$packageName class=$className)"
+                else "a11y service page covered by overlay (pkg=$packageName class=$className)"
             )
             return true
         }
@@ -2047,10 +2106,10 @@ class MyAccessibilityService : AccessibilityService() {
             Timber.i("PU-A11Y-PAGE-01: overlay failed within connect cool-down — no eviction this event")
             return true
         }
-        Timber.i("PU-A11Y-PAGE-01: overlay failed — HOME eviction fallback (pkg=$packageName class=$className)")
+        Timber.i("PU-A11Y-PAGE-01: overlay failed — HOME eviction fallback (pkg=$packageName class=$className isDisableDialog=$isDisableDialog)")
         protect.yourself.core.ProtectYourselfApp.getCrashLogger()?.logBreadcrumb(
             "PuScreenProtection",
-            "a11y service page evicted (overlay fallback) (pkg=$packageName class=$className)"
+            "a11y service page evicted (overlay fallback) (pkg=$packageName class=$className isDisableDialog=$isDisableDialog)"
         )
         try { performGlobalAction(GLOBAL_ACTION_HOME) } catch (t: Throwable) {
             Timber.w(t, "PU-A11Y-PAGE-01: HOME global action failed")
@@ -2060,9 +2119,30 @@ class MyAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Quick pre-check for potential disable-dialog: does event text contain
+     * our app name + a stop/disable keyword? Used to allow probing of generic
+     * settings dialogs that don't match a11y class markers.
+     */
+    private fun isPotentialDisableDialogQuickCheck(eventText: String): Boolean {
+        if (eventText.isBlank()) return false
+        val appName = try { getString(protect.yourself.R.string.app_name) } catch (_: Throwable) { "Protect Yourself" }
+        val lower = eventText.lowercase(Locale.ROOT)
+        val lowerApp = appName.lowercase(Locale.ROOT)
+        if (!lower.contains(lowerApp)) return false
+        return lower.contains("stop") || lower.contains("disable") || lower.contains("turn off") || lower.contains("off")
+    }
+
+    /**
      * True when the visible settings page is OUR accessibility service's
-     * DETAIL page. Two layers: event text, then a bounded node-tree probe
-     * for OEM hosts whose event text only carries the page title.
+     * DETAIL page.
+     *
+     * PU-A11Y-FIX-01 (v1.0.77): rewrote node-tree probe to use ORIGINAL text
+     * with spaces instead of normalized marker (which has no spaces and never
+     * matched findAccessibilityNodeInfosByText). The detail page is uniquely
+     * identified by the suffix of our description that is NOT in the summary:
+     * \"Protect Yourself will also be able to block specific websites/apps...\"
+     * We search for multiple distinctive substrings with spaces to tolerate
+     * truncation and OEM variations.
      */
     private fun isOurA11yServiceDetailPage(pageTextNorm: String): Boolean {
         val screens = protect.yourself.features.protectedApps.ProtectedSystemScreens
@@ -2072,16 +2152,168 @@ class MyAccessibilityService : AccessibilityService() {
         val summary = try {
             getString(protect.yourself.R.string.accessibility_service_summary)
         } catch (_: Throwable) { "" }
-        val marker = screens.detailOnlyFingerprint(
-            screens.normalize(description), screens.normalize(summary)
-        )
-        if (marker.length < 8) return false  // fail open: cannot distinguish detail from list
-        if (pageTextNorm.contains(marker)) return true
+        if (description.isBlank() || summary.isBlank()) return false
+
+        val descNorm = screens.normalize(description)
+        val summNorm = screens.normalize(summary)
+        val marker = screens.detailOnlyFingerprint(descNorm, summNorm)
+
+        // Layer 1: normalized marker in event text (fast path)
+        if (marker.length >= 8 && pageTextNorm.contains(marker)) {
+            Timber.d("PU-A11Y-FIX-01: detail page detected via normalized marker in event text")
+            return true
+        }
+
+        // Layer 2: also check if normalized full description tail appears in text
+        // (some OEMs include full description in event.text but not our marker due to truncation)
+        if (descNorm.length >= 20) {
+            val tailProbe = descNorm.takeLast(40)
+            if (tailProbe.length >= 8 && pageTextNorm.contains(tailProbe)) {
+                Timber.d("PU-A11Y-FIX-01: detail page detected via description tail in normalized text")
+                return true
+            }
+        }
+
+        // Layer 3: node-tree search using ORIGINAL text with spaces (the previous
+        // implementation's bug was using normalized marker without spaces).
         return try {
             val root = rootInActiveWindow ?: return false
-            root.findAccessibilityNodeInfosByText(marker.take(30))?.isNotEmpty() == true
+
+            // Compute suffixOriginal: the part of description NOT in summary.
+            // This is the unique fingerprint of the detail page vs the list page.
+            val suffixOriginal: String = if (description.startsWith(summary) && description.length > summary.length) {
+                description.substring(summary.length).trim()
+            } else {
+                // Fallback: use the last 80 chars of description as distinctive tail
+                description.takeLast(80).trim()
+            }
+
+            if (suffixOriginal.length >= 8) {
+                // Probe 1: full suffix first 40 chars (with spaces) — most precise
+                val probe40 = suffixOriginal.take(40)
+                if (probe40.length >= 8 && root.findAccessibilityNodeInfosByText(probe40)?.isNotEmpty() == true) {
+                    Timber.d("PU-A11Y-FIX-01: detail page detected via node probe 40: '$probe40'")
+                    return true
+                }
+                // Probe 2: first 30 chars
+                val probe30 = suffixOriginal.take(30)
+                if (probe30.length >= 8 && root.findAccessibilityNodeInfosByText(probe30)?.isNotEmpty() == true) {
+                    Timber.d("PU-A11Y-FIX-01: detail page detected via node probe 30: '$probe30'")
+                    return true
+                }
+                // Probe 3: first 20 chars
+                val probe20 = suffixOriginal.take(20)
+                if (probe20.length >= 8 && root.findAccessibilityNodeInfosByText(probe20)?.isNotEmpty() == true) {
+                    Timber.d("PU-A11Y-FIX-01: detail page detected via node probe 20: '$probe20'")
+                    return true
+                }
+                // Probe 4: distinctive middle snippet that is unique to our app
+                // \"also be able to block\" appears ONLY in our description, never in other services
+                val distinctiveSnippets = listOf(
+                    "also be able to block",
+                    "specific websites/apps",
+                    "list of blocked items",
+                    "Protect Yourself will also"
+                )
+                for (snippet in distinctiveSnippets) {
+                    if (root.findAccessibilityNodeInfosByText(snippet)?.isNotEmpty() == true) {
+                        Timber.d("PU-A11Y-FIX-01: detail page detected via distinctive snippet: '$snippet'")
+                        return true
+                    }
+                }
+            }
+            false
         } catch (t: Throwable) {
-            Timber.w(t, "PU-A11Y-PAGE-01: detail-page node probe failed — assuming not our detail page")
+            Timber.w(t, "PU-A11Y-FIX-01: detail-page node probe failed — assuming not our detail page")
+            false
+        }
+    }
+
+    /**
+     * PU-A11Y-FIX-01 (v1.0.77): detects the confirmation dialog that Android
+     * shows after the user toggles OFF our accessibility service.
+     *
+     * Typical dialog (AOSP):
+     *   Title: \"Stop Protect Yourself?\"
+     *   Body:  \"Stop [service description]?\" / \"Your [service] will stop working\"
+     *   Buttons: \"Stop\" / \"Cancel\"
+     *
+     * On some OEMs the dialog is inside com.android.settings with class
+     * AlertDialog, AppAlertDialog, etc.
+     *
+     * This dialog must be blocked when Prevent Uninstall is ON, otherwise
+     * the user can complete the disable flow even if the detail page itself
+     * was blocked (race where toggle was tapped before overlay appeared).
+     *
+     * Detection uses multiple signals:
+     *  1. Settings package + app name + stop/disable keywords in event text
+     *  2. Dialog class name (AlertDialog, etc.)
+     *  3. Node-tree search for app name + Stop button
+     */
+    private fun isOurA11yDisableDialog(eventText: String, className: String): Boolean {
+        val appName = try { getString(protect.yourself.R.string.app_name) } catch (_: Throwable) { "Protect Yourself" }
+        val lowerEvent = eventText.lowercase(Locale.ROOT)
+        val lowerApp = appName.lowercase(Locale.ROOT)
+
+        // Fast path: event text contains app name + stop/disable keywords
+        val textHasApp = lowerEvent.contains(lowerApp)
+        val hasStopKeyword = lowerEvent.contains("stop") || lowerEvent.contains("disable") ||
+            lowerEvent.contains("turn off") || lowerEvent.contains("off") || lowerEvent.contains("deactivate")
+
+        if (textHasApp && hasStopKeyword) {
+            val lowerClass = className.lowercase(Locale.ROOT)
+            // If class looks like a dialog, it's almost certainly the confirmation
+            if (lowerClass.contains("alertdialog") || lowerClass.contains("dialog") ||
+                lowerClass.contains("appalert") || lowerEvent.contains("accessibility")) {
+                Timber.d("PU-A11Y-FIX-01: disable dialog detected via text+dialog class (eventText='$eventText' class='$className')")
+                return true
+            }
+            // Even without dialog class, app name + stop in settings is strong signal
+            // (the confirmation dialog's body contains our app name and Stop)
+            Timber.d("PU-A11Y-FIX-01: disable dialog detected via app+stop keywords (eventText='$eventText')")
+            return true
+        }
+
+        // Fallback: node-tree search when event text is empty or missing keywords
+        // (some OEMs don't populate event.text for dialogs, only node tree)
+        return try {
+            val root = rootInActiveWindow ?: return false
+            val hasAppInTree = root.findAccessibilityNodeInfosByText(appName)?.isNotEmpty() == true
+            if (!hasAppInTree) return false
+
+            // Must have Stop/Disable button in tree
+            val hasStopInTree = root.findAccessibilityNodeInfosByText("Stop")?.isNotEmpty() == true ||
+                root.findAccessibilityNodeInfosByText("stop")?.isNotEmpty() == true ||
+                root.findAccessibilityNodeInfosByText("Disable")?.isNotEmpty() == true ||
+                root.findAccessibilityNodeInfosByText("Turn off")?.isNotEmpty() == true ||
+                root.findAccessibilityNodeInfosByText("Deactivate")?.isNotEmpty() == true ||
+                root.findAccessibilityNodeInfosByText("OK")?.isNotEmpty() == true && hasStopKeyword
+
+            if (!hasStopInTree) return false
+
+            // Additional confirmation: tree contains accessibility keyword or our distinctive snippet
+            val hasA11yInTree = root.findAccessibilityNodeInfosByText("accessibility")?.isNotEmpty() == true ||
+                root.findAccessibilityNodeInfosByText("Accessibility")?.isNotEmpty() == true ||
+                root.findAccessibilityNodeInfosByText("also be able to block")?.isNotEmpty() == true
+
+            if (hasA11yInTree) {
+                Timber.d("PU-A11Y-FIX-01: disable dialog detected via node tree (app + stop + a11y)")
+                return true
+            }
+
+            // If app name + stop button present in settings dialog, treat as disable dialog
+            val lowerClass = className.lowercase(Locale.ROOT)
+            if (lowerClass.contains("alertdialog") || lowerClass.contains("dialog") || lowerClass.contains("alert")) {
+                Timber.d("PU-A11Y-FIX-01: disable dialog detected via node tree dialog class + app")
+                return true
+            }
+
+            // Last resort: app name + stop in settings package is enough for PU protection
+            // (better to over-block a settings dialog mentioning our app than to allow disable)
+            Timber.d("PU-A11Y-FIX-01: disable dialog detected via app+stop in settings (fallback)")
+            true
+        } catch (t: Throwable) {
+            Timber.w(t, "PU-A11Y-FIX-01: disable dialog node probe failed")
             false
         }
     }
@@ -2827,7 +3059,14 @@ class MyAccessibilityService : AccessibilityService() {
         // The node-tree detail-page probe is throttled (settings screens emit
         // dense event streams); the HOME press and the toast are throttled
         // harder so a stuck page can never storm.
-        private const val A11Y_PAGE_PROBE_THROTTLE_MS = 400L
+        // PU-A11Y-FIX-01 (v1.0.77): reduced probe throttle from 400ms to 100ms.
+        // The previous 400ms window caused a race where the first event for
+        // the detail page often had empty text (initial window transition),
+        // then the second event with the actual description arrived within
+        // 400ms and was skipped due to throttling, leaving the page unprotected
+        // for long enough for the user to tap the toggle. 100ms collapses
+        // bursts but still allows rapid re-probing when text becomes available.
+        private const val A11Y_PAGE_PROBE_THROTTLE_MS = 100L
         private const val A11Y_PAGE_KICK_THROTTLE_MS = 1_500L
         private const val PU_KICK_TOAST_DELAY_MS = 700L
         private const val PU_KICK_TOAST_THROTTLE_MS = 20_000L
